@@ -8,7 +8,6 @@ import {
 } from 'lucide-react';
 
 // --- ICONS MAPPING ---
-// We map these to keep your dynamic icon rendering logic intact
 const Icons = {
     MessageSquare, LayoutDashboard, Monitor, Wifi, AlertCircle, CheckCircle,
     Clock, Search, Laptop, User, Users, Building, Send, Briefcase, Filter,
@@ -17,7 +16,7 @@ const Icons = {
     Calendar, History, Activity, Lightbulb, BookOpen, ThumbsUp, MapPin, School
 };
 
-// --- BUSINESS LOGIC ENGINE (THE IRON DOME V6) ---
+// --- BUSINESS LOGIC ENGINE ---
 const TicketEngine = {
     getVisibleTickets: (tickets, currentUser, filters, keywords) => {
         return tickets.filter(t => {
@@ -30,28 +29,19 @@ const TicketEngine = {
             // 2. Super Admin (God Mode)
             if (currentUser.isSuperAdmin) return true;
 
-            // 3. The "Own Ticket" Fallback (I can always see what I requested)
+            // 3. Own Ticket Fallback
             if (t.user === currentUser.name) return true;
 
-            // 4. Access Matrix Logic
-            
-            // A. Vertical Access (Department)
+            // 4. Matrix Access
             const categoryConfig = keywords[t.category];
             const ticketOwnerDept = categoryConfig ? categoryConfig.owner : 'Unassigned';
-            
-            // Do I belong to this dept OR have an override scope for it?
             const userScopes = currentUser.accessScopes || [];
             const hasDeptAccess = (currentUser.dept === ticketOwnerDept) || userScopes.includes(ticketOwnerDept);
 
             if (!hasDeptAccess) return false;
 
-            // B. Horizontal Access (Geography/School)
             const userSchools = currentUser.accessSchools || [];
-            
-            // "ALL" Wildcard (For HQ/IT Staff)
             if (userSchools.includes('ALL')) return true;
-
-            // Specific School Match
             return userSchools.includes(t.school);
         });
     },
@@ -123,8 +113,7 @@ const initialKnowledgeBase = [
 
 const initialDepartments = ['IT', 'Site', 'Teaching', 'Admin', 'HR'];
 
-// --- COMPONENTS ---
-
+// --- APP COMPONENT ---
 export default function App() {
     const [view, setView] = useState('chat');
     const [tickets, setTickets] = useState(initialTickets);
@@ -267,7 +256,7 @@ export default function App() {
     );
 }
 
-// --- SUB COMPONENTS (ChatInterface, AdminDashboard, etc.) ---
+// --- SUB COMPONENTS ---
 
 function ChatInterface({ onTicketCreate, categorizer, currentUser, kbArticles }) {
     const [messages, setMessages] = useState([
