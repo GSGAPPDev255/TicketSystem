@@ -29,7 +29,7 @@ const TicketEngine = {
             // 4. Matrix Access
             const categoryConfig = keywords[t.category];
             const ticketOwnerDept = categoryConfig ? categoryConfig.owner : 'Unassigned';
-            const userScopes = currentUser.access_scopes || []; // Note: Database uses snake_case
+            const userScopes = currentUser.access_scopes || []; 
             const hasDeptAccess = (currentUser.department === ticketOwnerDept) || userScopes.includes(ticketOwnerDept);
 
             if (!hasDeptAccess) return false;
@@ -94,7 +94,7 @@ export default function App() {
             setLoading(true);
             
             // Fetch Users
-            const { data: userData, error: userError } = await supabase.from('users').select('*').order('full_name');
+            const { data: userData } = await supabase.from('users').select('*').order('full_name');
             if (userData) {
                 setUsers(userData);
                 // Default to the first user found (usually CTO from seed)
@@ -102,22 +102,20 @@ export default function App() {
             }
 
             // Fetch Tickets
-            const { data: ticketData, error: ticketError } = await supabase.from('tickets').select('*').order('created_at', { ascending: false });
+            const { data: ticketData } = await supabase.from('tickets').select('*').order('created_at', { ascending: false });
             if (ticketData) setTickets(ticketData);
-
-            // Fetch Updates (Chat History) - Ideally we join this, but for now we'll fetch on demand or simply separate
-            // For this prototype, we will fetch updates inside the DetailView to save bandwidth
 
             setLoading(false);
         };
 
         fetchData();
 
-        // Realtime Subscription
+        // Realtime Subscription (The "Electric Motor")
         const channel = supabase.channel('schema-db-changes')
             .on('postgres_changes', { event: '*', schema: 'public', table: 'tickets' }, (payload) => {
-                console.log('Change received!', payload);
-                fetchData(); // Simple re-fetch strategy for now
+                // When DB updates, we refresh. 
+                // In production, we'd append smartly, but fetching all is safer for prototype.
+                fetchData(); 
                 if(payload.eventType === 'INSERT') setNotifications(prev => prev + 1);
             })
             .subscribe();
@@ -128,7 +126,7 @@ export default function App() {
     // 2. Handlers (Updated for Database)
     
     const handleNewTicket = async (ticket) => {
-        // Optimistic UI Update
+        // Optimistic UI Update (Shows instantly)
         setTickets(prev => [ticket, ...prev]); 
         
         // Database Insert
@@ -156,9 +154,6 @@ export default function App() {
         await supabase.from('tickets').update({
             status: updatedTicket.status,
             assigned_to: updatedTicket.assignedTo
-            // Note: We aren't saving 'updates' array to the ticket row anymore, 
-            // we should save to ticket_updates table. 
-            // See TicketDetailView for that logic.
         }).eq('id', updatedTicket.id);
     };
 
@@ -178,7 +173,7 @@ export default function App() {
         if (data) setUsers([...users, data[0]]);
     };
 
-    if (loading) return <div className="h-screen flex items-center justify-center bg-zinc-50 text-zinc-400">Loading System...</div>;
+    if (loading) return <div className="h-screen flex items-center justify-center bg-zinc-50 text-zinc-400 animate-pulse">Initializing System...</div>;
 
     return (
         <div className="min-h-screen flex flex-col font-sans text-zinc-900 bg-zinc-50">
@@ -336,7 +331,9 @@ function ChatInterface({ onTicketCreate, categorizer, currentUser, kbArticles })
 
     return (
         <div className="h-full flex flex-col justify-center items-center">
+            {/* FIXED: Increased Width (max-w-5xl) and Height (h-[80vh]) for Command Center feel */}
             <div className="w-full max-w-5xl bg-white rounded-2xl shadow-2xl overflow-hidden border border-zinc-200 h-[80vh] flex flex-col ring-1 ring-zinc-900/5">
+                {/* Fixed Chat Header */}
                 <div className="bg-zinc-900 p-4 flex items-center justify-between text-white shadow-md z-10">
                     <div className="flex items-center gap-3">
                         <div className="w-8 h-8 rounded-full bg-white/20 flex items-center justify-center backdrop-blur-sm">
@@ -403,6 +400,7 @@ function ChatInterface({ onTicketCreate, categorizer, currentUser, kbArticles })
 function AdminDashboard({ tickets, onUpdateTicket, currentUser, users, onAddUser, keywords, setKeywords, departments, onAddDepartment, onRemoveDepartment, kbArticles, onAddKbArticle, onRemoveKbArticle, schools }) {
     const [activeTab, setActiveTab] = useState('tickets');
     const [selectedTicket, setSelectedTicket] = useState(null);
+    const [showLogicModal, setShowLogicModal] = useState(false);
     const [filters, setFilters] = useState({ status: 'ACTIVE', category: 'ALL_CATS', school: 'ALL_SCHOOLS' });
 
     const visibleTickets = useMemo(() => TicketEngine.getVisibleTickets(tickets, currentUser, filters, keywords), [tickets, currentUser, filters, keywords]);
@@ -419,19 +417,28 @@ function AdminDashboard({ tickets, onUpdateTicket, currentUser, users, onAddUser
         <div className="h-full flex flex-col bg-white rounded-2xl border border-zinc-200 shadow-sm overflow-hidden">
             <div className="bg-white border-b border-zinc-200 px-6 py-2 flex items-center justify-between sticky top-0 z-40">
                 <div className="flex gap-1">
-                    {['tickets', 'users'].map(tab => {
-                        if (tab === 'users' && !currentUser.is_super_admin) return null;
+                    {['tickets', 'users', 'kb', 'depts'].map(tab => {
+                        if (tab === 'users' && !currentUser.isAdmin) return null;
+                        if (tab === 'kb' && !currentUser.isAdmin) return null;
+                        if (tab === 'depts' && !currentUser.isSuperAdmin) return null;
                         return (
                             <button key={tab} onClick={() => setActiveTab(tab)} className={`px-4 py-3 text-xs font-bold transition-all border-b-2 ${activeTab === tab ? 'border-zinc-900 text-zinc-900' : 'border-transparent text-zinc-500 hover:text-zinc-800'}`}>
-                                {tab === 'tickets' ? 'Dashboard' : 'Directory'}
+                                {tab === 'tickets' ? 'Dashboard' : tab === 'users' ? 'Directory' : tab === 'kb' ? 'Knowledge' : 'Settings'}
                             </button>
                         );
                     })}
                 </div>
+                {currentUser.isSuperAdmin && (
+                    <button onClick={() => setShowLogicModal(true)} className="text-xs flex items-center gap-1.5 text-zinc-500 hover:text-zinc-900 transition-colors font-medium border border-zinc-200 rounded-lg px-3 py-1.5 hover:bg-zinc-50">
+                        <Settings size={14} /> Logic Config
+                    </button>
+                )}
             </div>
 
             <div className="flex-1 overflow-hidden">
                 {activeTab === 'users' ? <UserDirectory users={users} currentUser={currentUser} onAddUser={onAddUser} departments={departments} schools={schools} /> :
+                 activeTab === 'depts' ? <DepartmentManager departments={departments} onAdd={onAddDepartment} onRemove={onRemoveDepartment} /> :
+                 activeTab === 'kb' ? <KnowledgeBaseManager articles={kbArticles} onAdd={onAddKbArticle} onRemove={onRemoveKbArticle} /> :
                  (
                     <div className="h-full flex">
                         <div className="w-[400px] flex flex-col border-r border-zinc-200 bg-zinc-50/50">
@@ -448,6 +455,10 @@ function AdminDashboard({ tickets, onUpdateTicket, currentUser, users, onAddUser
                                     </select>
                                     <select value={filters.category} onChange={e => setFilters({...filters, category: e.target.value})} className="w-full px-3 py-2 text-xs border border-zinc-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-zinc-900/10">
                                         <option value="ALL_CATS">Category</option>{Object.keys(keywords).map(c => <option key={c} value={c}>{c}</option>)}
+                                    </select>
+                                    <select value={filters.school} onChange={e => setFilters({...filters, school: e.target.value})} className="w-full px-3 py-2 text-xs border border-zinc-200 rounded-lg bg-white col-span-2 focus:outline-none focus:ring-2 focus:ring-zinc-900/10">
+                                        <option value="ALL_SCHOOLS">All Locations</option>
+                                        {((currentUser.accessSchools || []).includes('ALL') ? schools : (currentUser.accessSchools || [])).map(s => <option key={s} value={s}>{s}</option>)}
                                     </select>
                                 </div>
                             </div>
@@ -494,6 +505,7 @@ function AdminDashboard({ tickets, onUpdateTicket, currentUser, users, onAddUser
                     </div>
                 )}
             </div>
+            {showLogicModal && <LogicConfigModal keywords={keywords} setKeywords={setKeywords} departments={departments} onClose={() => setShowLogicModal(false)} />}
         </div>
     );
 }
@@ -632,6 +644,7 @@ function UserDirectory({ users, currentUser, onAddUser, departments, schools }) 
                     <div><h2 className="text-2xl font-bold text-zinc-900 tracking-tight">Staff Directory</h2><p className="text-sm text-zinc-500 mt-1">Manage user access & roles</p></div>
                     {currentUser.is_super_admin && <button onClick={() => setIsAdding(true)} className="bg-zinc-900 hover:bg-zinc-800 text-white px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 shadow-sm transition-all"><UserPlus size={16}/> Add User</button>}
                 </div>
+                
                 <div className="bg-white rounded-xl shadow-sm border border-zinc-200 overflow-hidden">
                     <table className="w-full text-left text-sm">
                         <thead className="bg-zinc-50/80 text-xs uppercase text-zinc-500 font-bold border-b border-zinc-200">
@@ -775,6 +788,162 @@ function UserEditModal({ user, isAdding, onClose, onSave, departments, schools }
                 <div className="px-6 py-4 bg-zinc-50 border-t border-zinc-200 flex justify-end gap-3">
                     <button onClick={onClose} className="px-4 py-2 text-zinc-600 hover:bg-zinc-200 rounded-lg text-sm font-medium transition-colors">Cancel</button>
                     <button onClick={() => onSave(formData)} className="px-6 py-2 bg-zinc-900 text-white rounded-lg text-sm font-bold hover:bg-zinc-700 shadow-sm transition-colors">Save Changes</button>
+                </div>
+            </div>
+        </div>
+    );
+}
+
+function DepartmentManager({ departments, onAdd, onRemove }) {
+    const [newDept, setNewDept] = useState('');
+    return (
+        <div className="h-full p-8 flex flex-col items-center">
+            <div className="w-full max-w-2xl">
+                <h2 className="text-2xl font-bold text-zinc-900 mb-6">Departments</h2>
+                <div className="bg-white p-6 rounded-xl shadow-sm border border-zinc-200">
+                    <form onSubmit={(e) => { e.preventDefault(); if(newDept.trim()) { onAdd(newDept.trim()); setNewDept(''); } }} className="flex gap-2 mb-6">
+                        <input type="text" className="flex-1 px-4 py-2 border border-zinc-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-zinc-900/10" placeholder="New Department Name..." value={newDept} onChange={e => setNewDept(e.target.value)} />
+                        <button type="submit" className="bg-zinc-900 text-white px-4 py-2 rounded-lg font-bold hover:bg-zinc-700 flex items-center gap-2"><Plus size={18}/> Add</button>
+                    </form>
+                    <div className="grid grid-cols-2 gap-3">
+                        {departments.map(d => (
+                            <div key={d} className="flex justify-between items-center p-3 bg-zinc-50 border border-zinc-200 rounded-lg group hover:border-zinc-300 transition-colors">
+                                <span className="font-medium text-sm text-zinc-700">{d}</span>
+                                <button onClick={() => onRemove(d)} className="text-zinc-400 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity p-1"><Trash2 size={16}/></button>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            </div>
+        </div>
+    );
+}
+
+function KnowledgeBaseManager({ articles, onAdd, onRemove }) {
+    const [isAdding, setIsAdding] = useState(false);
+    const [form, setForm] = useState({ title: '', content: '', triggers: '' });
+
+    const handleSubmit = (e) => {
+        e.preventDefault();
+        onAdd({ title: form.title, content: form.content, triggers: form.triggers.split(',').map(t=>t.trim()) });
+        setIsAdding(false); setForm({ title: '', content: '', triggers: '' });
+    };
+
+    return (
+        <div className="h-full p-8 overflow-y-auto">
+            <div className="max-w-5xl mx-auto">
+                <div className="flex justify-between items-center mb-6">
+                    <div><h2 className="text-2xl font-bold text-zinc-900">Knowledge Base</h2><p className="text-sm text-zinc-500">Automated deflection answers</p></div>
+                    <button onClick={() => setIsAdding(true)} className="bg-zinc-900 text-white px-4 py-2 rounded-lg text-sm font-bold hover:bg-zinc-700 flex items-center gap-2 shadow-sm"><Plus size={16}/> Add Article</button>
+                </div>
+                
+                {isAdding && (
+                    <div className="bg-white p-6 rounded-xl border border-zinc-200 shadow-lg mb-8 animate-enter ring-1 ring-zinc-500/10">
+                        <h3 className="font-bold text-zinc-900 mb-4 flex items-center gap-2"><Lightbulb size={18}/> New Article</h3>
+                        <form onSubmit={handleSubmit} className="space-y-4">
+                            <div><label className="text-xs font-bold text-zinc-500 uppercase mb-1 block">Title</label><input type="text" className="w-full px-3 py-2 border border-zinc-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-zinc-900/10" value={form.title} onChange={e => setForm({...form, title: e.target.value})} placeholder="e.g. How to restart printer"/></div>
+                            <div><label className="text-xs font-bold text-zinc-500 uppercase mb-1 block">Solution</label><textarea className="w-full px-3 py-2 border border-zinc-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-zinc-900/10 h-24" value={form.content} onChange={e => setForm({...form, content: e.target.value})} placeholder="Step 1..."/></div>
+                            <div><label className="text-xs font-bold text-zinc-500 uppercase mb-1 block">Triggers</label><input type="text" className="w-full px-3 py-2 border border-zinc-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-zinc-900/10" value={form.triggers} onChange={e => setForm({...form, triggers: e.target.value})} placeholder="printer, jam, error (comma separated)"/></div>
+                            <div className="flex justify-end gap-2 pt-2"><button type="button" onClick={() => setIsAdding(false)} className="px-4 py-2 text-zinc-600 hover:bg-zinc-100 rounded-lg text-sm font-medium">Cancel</button><button type="submit" className="px-6 py-2 bg-zinc-900 text-white rounded-lg text-sm font-bold hover:bg-zinc-700">Save Article</button></div>
+                        </form>
+                    </div>
+                )}
+
+                <div className="grid grid-cols-2 gap-4">
+                    {articles.map(a => (
+                        <div key={a.id} className="bg-white p-6 rounded-xl border border-zinc-200 shadow-sm hover:shadow-md transition-all hover:-translate-y-1 relative group">
+                            <button onClick={() => onRemove(a.id)} className="absolute top-4 right-4 text-zinc-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity p-2"><Trash2 size={16}/></button>
+                            <h3 className="font-bold text-zinc-900 mb-2 text-lg">{a.title}</h3>
+                            <p className="text-sm text-zinc-600 line-clamp-3 mb-4 leading-relaxed">{a.content}</p>
+                            <div className="flex gap-2 flex-wrap">{a.triggers.map(t => <span key={t} className="text-[10px] bg-zinc-100 text-zinc-600 px-2 py-1 rounded border border-zinc-200 font-medium">{t}</span>)}</div>
+                        </div>
+                    ))}
+                </div>
+            </div>
+        </div>
+    );
+}
+
+function LogicConfigModal({ keywords, setKeywords, departments, onClose }) {
+    const [newKeywordInputs, setNewKeywordInputs] = useState({});
+    const [isCreating, setIsCreating] = useState(false);
+    const [newCatName, setNewCatName] = useState('');
+    const [newCatOwner, setNewCatOwner] = useState(departments[0] || 'IT');
+    const [newCatSensitive, setNewCatSensitive] = useState(false);
+
+    const handleAddKeyword = (cat, e) => {
+        if (e.key === 'Enter' && e.target.value.trim()) {
+            const word = e.target.value.trim().toLowerCase();
+            const newKeywords = { ...keywords };
+            if (!newKeywords[cat].keywords.includes(word)) { newKeywords[cat].keywords.push(word); setKeywords(newKeywords); }
+            setNewKeywordInputs({ ...newKeywordInputs, [cat]: '' });
+        }
+    };
+    const handleRemoveKeyword = (cat, word) => {
+        const newKeywords = { ...keywords };
+        newKeywords[cat].keywords = newKeywords[cat].keywords.filter(w => w !== word);
+        setKeywords(newKeywords);
+    };
+    const handleCreateCategory = () => {
+        if (!newCatName.trim()) return alert("Please enter a category name.");
+        const updatedKeywords = { [newCatName]: { owner: newCatOwner, sensitive: newCatSensitive, score: 0, keywords: [] }, ...keywords };
+        setKeywords(updatedKeywords); setIsCreating(false); setNewCatName('');
+    };
+    const handleDeleteCategory = (catName) => {
+        if (confirm(`Delete ${catName}?`)) { const n = {...keywords}; delete n[catName]; setKeywords(n); }
+    };
+
+    return (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/30 backdrop-blur-sm p-4 animate-enter">
+            <div className="bg-white w-full max-w-4xl max-h-[85vh] rounded-2xl shadow-2xl flex flex-col border border-zinc-200 overflow-hidden">
+                <div className="p-6 border-b border-zinc-100 flex justify-between items-center bg-zinc-50/80">
+                    <div><h3 className="text-xl font-bold text-zinc-900 flex items-center gap-2"><Settings size={20} className="text-zinc-600" /> Routing Logic</h3><p className="text-sm text-zinc-500">Auto-assign tickets based on keywords</p></div>
+                    <button onClick={onClose}><X size={24} className="text-zinc-400 hover:text-zinc-600"/></button>
+                </div>
+                <div className="p-8 overflow-y-auto bg-white flex-1 space-y-8">
+                    {/* Add Category */}
+                    <div className="bg-zinc-50/50 p-6 rounded-2xl border border-zinc-200">
+                        {isCreating ? (
+                            <div className="flex gap-4 items-end">
+                                <div className="flex-1"><label className="text-xs font-bold text-zinc-900 uppercase mb-1 block">Category Name</label><input type="text" className="w-full px-3 py-2 border border-zinc-200 rounded-lg focus:ring-2 focus:ring-zinc-500 focus:outline-none" value={newCatName} onChange={e => setNewCatName(e.target.value)} placeholder="e.g. Finance"/></div>
+                                <div className="w-48"><label className="text-xs font-bold text-zinc-900 uppercase mb-1 block">Route To</label><select className="w-full px-3 py-2 border border-zinc-200 rounded-lg bg-white" value={newCatOwner} onChange={e => setNewCatOwner(e.target.value)}>{departments.map(d => <option key={d} value={d}>{d}</option>)}</select></div>
+                                <button onClick={handleCreateCategory} className="px-6 py-2 bg-zinc-900 text-white rounded-lg font-bold shadow-sm hover:bg-zinc-700">Save</button>
+                                <button onClick={() => setIsCreating(false)} className="px-4 py-2 text-zinc-600 font-medium hover:bg-zinc-100 rounded-lg">Cancel</button>
+                            </div>
+                        ) : (
+                            <button onClick={() => setIsCreating(true)} className="w-full py-4 border-2 border-dashed border-zinc-200 rounded-xl text-zinc-400 hover:border-zinc-500 hover:text-zinc-600 hover:bg-zinc-50 transition-all text-sm font-bold flex items-center justify-center gap-2">
+                                <Plus size={20} /> Add New Routing Rule
+                            </button>
+                        )}
+                    </div>
+
+                    <div className="grid gap-6">
+                        {Object.entries(keywords).map(([cat, data]) => (
+                            <div key={cat} className="bg-white border border-zinc-200 rounded-2xl p-6 shadow-sm hover:border-zinc-300 transition-colors">
+                                <div className="flex justify-between items-start mb-6">
+                                    <div className="flex items-center gap-4">
+                                        <div className="bg-zinc-100 p-3 rounded-xl"><Layers size={20} className="text-zinc-600"/></div>
+                                        <div><h4 className="text-lg font-bold text-zinc-900">{cat}</h4><span className="text-xs font-medium text-zinc-500 bg-zinc-100 px-2 py-1 rounded">Routed to: {data.owner}</span></div>
+                                    </div>
+                                    <div className="flex items-center gap-3">
+                                        <button onClick={() => handleDeleteCategory(cat)} className="text-zinc-300 hover:text-red-500 p-2 hover:bg-red-50 rounded-lg transition-colors"><Trash2 size={18}/></button>
+                                    </div>
+                                </div>
+                                <div>
+                                    <label className="text-xs font-bold text-zinc-400 uppercase mb-3 block">Trigger Keywords</label>
+                                    <div className="flex flex-wrap gap-2">
+                                        {data.keywords.map(kw => (
+                                            <span key={kw} className="text-xs bg-zinc-50 text-zinc-700 px-3 py-1.5 rounded-lg border border-zinc-200 flex items-center gap-2 font-medium">
+                                                {kw} <button onClick={() => handleRemoveKeyword(cat, kw)} className="text-zinc-400 hover:text-red-500"><X size={12}/></button>
+                                            </span>
+                                        ))}
+                                        <input type="text" placeholder="+ add keyword" className="text-xs bg-transparent border-b border-dashed border-zinc-300 focus:border-zinc-600 focus:outline-none w-24 px-1 py-1" 
+                                            value={newKeywordInputs[cat] || ''} onChange={e => setNewKeywordInputs({...newKeywordInputs, [cat]: e.target.value})} onKeyDown={e => handleAddKeyword(cat, e)} />
+                                    </div>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
                 </div>
             </div>
         </div>
