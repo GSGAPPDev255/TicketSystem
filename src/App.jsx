@@ -56,7 +56,7 @@ const TicketEngine = {
     }
 };
 
-// --- MOCK DATA (UNCHANGED) ---
+// --- MOCK DATA ---
 const initialSchools = ['St. Marys', 'King Edwards', 'North High', 'South High'];
 const initialDirectoryUsers = [
     { id: 'u0', name: 'The CTO', role: 'Super Admin', dept: 'Executive', school: 'HQ', isAdmin: true, isSuperAdmin: true, avatar: 'BOSS', accessScopes: [], accessSchools: ['ALL'] },
@@ -199,7 +199,7 @@ export default function App() {
     );
 }
 
-// --- SUB COMPONENTS (RESTYLED) ---
+// --- SUB COMPONENTS ---
 
 function ChatInterface({ onTicketCreate, categorizer, currentUser, kbArticles }) {
     const [messages, setMessages] = useState([{ id: 1, sender: 'bot', text: 'How can I assist you today?' }]);
@@ -523,7 +523,7 @@ function UserDirectory({ users, currentUser, onAddUser, onUpdateUser, department
                 <div><h2 className="text-xl font-bold text-zinc-900">Directory</h2><p className="text-sm text-zinc-500">Manage access & roles</p></div>
                 {currentUser.isSuperAdmin && <button onClick={() => setIsAdding(true)} className="btn-primary px-4 py-2 rounded-lg text-sm flex items-center gap-2"><UserPlus size={16}/> Add User</button>}
             </div>
-            <div className="panel overflow-hidden">
+            <div className="panel overflow-hidden bg-white">
                 <table className="w-full text-left text-sm">
                     <thead className="bg-zinc-50 text-xs uppercase text-zinc-500 font-semibold border-b border-zinc-100">
                         <tr><th className="px-6 py-3">Name</th><th className="px-6 py-3">Role</th><th className="px-6 py-3">Access</th><th className="px-6 py-3 text-right">Action</th></tr>
@@ -600,87 +600,6 @@ function UserEditModal({ user, isAdding, onClose, onSave, departments, schools }
     );
 }
 
-function LogicConfigModal({ keywords, setKeywords, departments, onClose }) {
-    const [newKeywordInputs, setNewKeywordInputs] = useState({});
-    const [isCreating, setIsCreating] = useState(false);
-    const [newCatName, setNewCatName] = useState('');
-    const [newCatOwner, setNewCatOwner] = useState(departments[0] || 'IT');
-    const [newCatSensitive, setNewCatSensitive] = useState(false);
-
-    const handleAddKeyword = (cat, e) => {
-        if (e.key === 'Enter' && e.target.value.trim()) {
-            const word = e.target.value.trim().toLowerCase();
-            const newKeywords = { ...keywords };
-            if (!newKeywords[cat].keywords.includes(word)) { newKeywords[cat].keywords.push(word); setKeywords(newKeywords); }
-            setNewKeywordInputs({ ...newKeywordInputs, [cat]: '' });
-        }
-    };
-    const handleRemoveKeyword = (cat, word) => {
-        const newKeywords = { ...keywords };
-        newKeywords[cat].keywords = newKeywords[cat].keywords.filter(w => w !== word);
-        setKeywords(newKeywords);
-    };
-    const handleCreateCategory = () => {
-        if (!newCatName.trim()) return alert("Please enter a category name.");
-        const updatedKeywords = { [newCatName]: { owner: newCatOwner, sensitive: newCatSensitive, score: 0, keywords: [] }, ...keywords };
-        setKeywords(updatedKeywords); setIsCreating(false); setNewCatName('');
-    };
-
-    return (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/20 backdrop-blur-sm p-4">
-            <div className="bg-white w-full max-w-4xl max-h-[85vh] rounded-2xl shadow-2xl flex flex-col animate-slide-up border border-zinc-200">
-                <div className="p-6 border-b border-zinc-100 flex justify-between items-center">
-                    <div><h3 className="text-lg font-bold text-zinc-900 flex items-center gap-2"><Settings size={18} /> Routing Logic</h3><p className="text-xs text-zinc-500">Configure automated ticket distribution</p></div>
-                    <button onClick={onClose}><X size={20} className="text-zinc-400 hover:text-zinc-600"/></button>
-                </div>
-                <div className="p-6 overflow-y-auto bg-zinc-50/50 flex-1 space-y-6">
-                    {/* Add Category Section */}
-                    <div className="bg-white p-4 rounded-xl border border-zinc-200 shadow-sm">
-                        {isCreating ? (
-                            <div className="flex gap-4 items-end">
-                                <div className="flex-1"><label className="text-xs font-bold text-zinc-500 uppercase mb-1 block">Category</label><input type="text" className="input-base" value={newCatName} onChange={e => setNewCatName(e.target.value)} /></div>
-                                <div><label className="text-xs font-bold text-zinc-500 uppercase mb-1 block">Dept</label><select className="input-base" value={newCatOwner} onChange={e => setNewCatOwner(e.target.value)}>{departments.map(d => <option key={d} value={d}>{d}</option>)}</select></div>
-                                <button onClick={handleCreateCategory} className="btn-primary px-4 py-2 rounded-lg text-sm h-[38px]">Save</button>
-                                <button onClick={() => setIsCreating(false)} className="btn-secondary px-4 py-2 rounded-lg text-sm h-[38px]">Cancel</button>
-                            </div>
-                        ) : (
-                            <button onClick={() => setIsCreating(true)} className="w-full py-3 border-2 border-dashed border-zinc-300 rounded-xl text-zinc-500 hover:border-brand-800 hover:text-brand-800 hover:bg-brand-50 transition-all text-sm font-medium flex items-center justify-center gap-2">
-                                <Plus size={16} /> Add New Routing Rule
-                            </button>
-                        )}
-                    </div>
-
-                    <div className="space-y-4">
-                        {Object.entries(keywords).map(([cat, data]) => (
-                            <div key={cat} className="bg-white border border-zinc-200 rounded-xl p-5 shadow-sm">
-                                <div className="flex justify-between items-start mb-4">
-                                    <div className="flex items-center gap-3">
-                                        <div className="bg-zinc-100 p-2 rounded-lg"><Layers size={16} className="text-zinc-500"/></div>
-                                        <div><h4 className="text-sm font-bold text-zinc-900">{cat}</h4><span className="text-xs text-zinc-500">Routed to: {data.owner}</span></div>
-                                    </div>
-                                    <div className="flex items-center gap-2">
-                                        <span className={`text-[10px] font-bold px-2 py-1 rounded border ${data.sensitive ? 'bg-red-50 text-red-600 border-red-100' : 'bg-zinc-50 text-zinc-500 border-zinc-100'}`}>{data.sensitive ? 'CONFIDENTIAL' : 'PUBLIC'}</span>
-                                        <button onClick={() => {const n = {...keywords}; delete n[cat]; setKeywords(n);}} className="text-zinc-300 hover:text-red-500"><Trash2 size={16}/></button>
-                                    </div>
-                                </div>
-                                <div className="flex flex-wrap gap-2">
-                                    {data.keywords.map(kw => (
-                                        <span key={kw} className="text-xs bg-zinc-50 text-zinc-600 px-3 py-1 rounded-full border border-zinc-200 flex items-center gap-1">
-                                            {kw} <button onClick={() => handleRemoveKeyword(cat, kw)} className="hover:text-red-500"><X size={10}/></button>
-                                        </span>
-                                    ))}
-                                    <input type="text" placeholder="+ keyword" className="text-xs bg-transparent border-b border-dashed border-zinc-300 focus:border-brand-800 focus:outline-none w-20 px-1" 
-                                        value={newKeywordInputs[cat] || ''} onChange={e => setNewKeywordInputs({...newKeywordInputs, [cat]: e.target.value})} onKeyDown={e => handleAddKeyword(cat, e)} />
-                                </div>
-                            </div>
-                        ))}
-                    </div>
-                </div>
-            </div>
-        </div>
-    );
-}
-
 function DepartmentManager({ departments, onAdd, onRemove }) {
     const [newDept, setNewDept] = useState('');
     return (
@@ -745,6 +664,86 @@ function KnowledgeBaseManager({ articles, onAdd, onRemove }) {
                         <div className="flex gap-2 flex-wrap">{a.triggers.map(t => <span key={t} className="text-[10px] bg-zinc-100 text-zinc-600 px-2 py-1 rounded border border-zinc-200">{t}</span>)}</div>
                     </div>
                 ))}
+            </div>
+        </div>
+    );
+}
+
+function LogicConfigModal({ keywords, setKeywords, departments, onClose }) {
+    const [newKeywordInputs, setNewKeywordInputs] = useState({});
+    const [isCreating, setIsCreating] = useState(false);
+    const [newCatName, setNewCatName] = useState('');
+    const [newCatOwner, setNewCatOwner] = useState(departments[0] || 'IT');
+    const [newCatSensitive, setNewCatSensitive] = useState(false);
+
+    const handleAddKeyword = (cat, e) => {
+        if (e.key === 'Enter' && e.target.value.trim()) {
+            const word = e.target.value.trim().toLowerCase();
+            const newKeywords = { ...keywords };
+            if (!newKeywords[cat].keywords.includes(word)) { newKeywords[cat].keywords.push(word); setKeywords(newKeywords); }
+            setNewKeywordInputs({ ...newKeywordInputs, [cat]: '' });
+        }
+    };
+    const handleRemoveKeyword = (cat, word) => {
+        const newKeywords = { ...keywords };
+        newKeywords[cat].keywords = newKeywords[cat].keywords.filter(w => w !== word);
+        setKeywords(newKeywords);
+    };
+    const handleCreateCategory = () => {
+        if (!newCatName.trim()) return alert("Please enter a category name.");
+        const updatedKeywords = { [newCatName]: { owner: newCatOwner, sensitive: newCatSensitive, score: 0, keywords: [] }, ...keywords };
+        setKeywords(updatedKeywords); setIsCreating(false); setNewCatName('');
+    };
+
+    return (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/20 backdrop-blur-sm p-4">
+            <div className="bg-white w-full max-w-4xl max-h-[85vh] rounded-2xl shadow-2xl flex flex-col animate-slide-up border border-zinc-200">
+                <div className="p-6 border-b border-zinc-100 flex justify-between items-center">
+                    <div><h3 className="text-lg font-bold text-zinc-900 flex items-center gap-2"><Settings size={18} /> Routing Logic</h3><p className="text-xs text-zinc-500">Configure automated ticket distribution</p></div>
+                    <button onClick={onClose}><X size={20} className="text-zinc-400 hover:text-zinc-600"/></button>
+                </div>
+                <div className="p-6 overflow-y-auto bg-zinc-50/50 flex-1 space-y-6">
+                    <div className="bg-white p-4 rounded-xl border border-zinc-200 shadow-sm">
+                        {isCreating ? (
+                            <div className="flex gap-4 items-end">
+                                <div className="flex-1"><label className="text-xs font-bold text-zinc-500 uppercase mb-1 block">Category</label><input type="text" className="input-base" value={newCatName} onChange={e => setNewCatName(e.target.value)} /></div>
+                                <div><label className="text-xs font-bold text-zinc-500 uppercase mb-1 block">Dept</label><select className="input-base" value={newCatOwner} onChange={e => setNewCatOwner(e.target.value)}>{departments.map(d => <option key={d} value={d}>{d}</option>)}</select></div>
+                                <button onClick={handleCreateCategory} className="btn-primary px-4 py-2 rounded-lg text-sm h-[38px]">Save</button>
+                                <button onClick={() => setIsCreating(false)} className="btn-secondary px-4 py-2 rounded-lg text-sm h-[38px]">Cancel</button>
+                            </div>
+                        ) : (
+                            <button onClick={() => setIsCreating(true)} className="w-full py-3 border-2 border-dashed border-zinc-300 rounded-xl text-zinc-500 hover:border-brand-800 hover:text-brand-800 hover:bg-brand-50 transition-all text-sm font-medium flex items-center justify-center gap-2">
+                                <Plus size={16} /> Add New Routing Rule
+                            </button>
+                        )}
+                    </div>
+
+                    <div className="space-y-4">
+                        {Object.entries(keywords).map(([cat, data]) => (
+                            <div key={cat} className="bg-white border border-zinc-200 rounded-xl p-5 shadow-sm">
+                                <div className="flex justify-between items-start mb-4">
+                                    <div className="flex items-center gap-3">
+                                        <div className="bg-zinc-100 p-2 rounded-lg"><Layers size={16} className="text-zinc-500"/></div>
+                                        <div><h4 className="text-sm font-bold text-zinc-900">{cat}</h4><span className="text-xs text-zinc-500">Routed to: {data.owner}</span></div>
+                                    </div>
+                                    <div className="flex items-center gap-2">
+                                        <span className={`text-[10px] font-bold px-2 py-1 rounded border ${data.sensitive ? 'bg-red-50 text-red-600 border-red-100' : 'bg-zinc-50 text-zinc-500 border-zinc-100'}`}>{data.sensitive ? 'CONFIDENTIAL' : 'PUBLIC'}</span>
+                                        <button onClick={() => {const n = {...keywords}; delete n[cat]; setKeywords(n);}} className="text-zinc-300 hover:text-red-500"><Trash2 size={16}/></button>
+                                    </div>
+                                </div>
+                                <div className="flex flex-wrap gap-2">
+                                    {data.keywords.map(kw => (
+                                        <span key={kw} className="text-xs bg-zinc-50 text-zinc-600 px-3 py-1 rounded-full border border-zinc-200 flex items-center gap-1">
+                                            {kw} <button onClick={() => handleRemoveKeyword(cat, kw)} className="hover:text-red-500"><X size={10}/></button>
+                                        </span>
+                                    ))}
+                                    <input type="text" placeholder="+ keyword" className="text-xs bg-transparent border-b border-dashed border-zinc-300 focus:border-brand-800 focus:outline-none w-20 px-1" 
+                                        value={newKeywordInputs[cat] || ''} onChange={e => setNewKeywordInputs({...newKeywordInputs, [cat]: e.target.value})} onKeyDown={e => handleAddKeyword(cat, e)} />
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                </div>
             </div>
         </div>
     );
