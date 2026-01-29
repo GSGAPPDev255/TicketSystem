@@ -19,25 +19,20 @@ const TicketEngine = {
             if (filters.category !== 'ALL_CATS' && t.category !== filters.category) return false;
             if (filters.school && filters.school !== 'ALL_SCHOOLS' && t.school !== filters.school) return false;
 
-            // 2. Super Admin (God Mode) - Bypasses all subsequent checks
+            // 2. Super Admin (God Mode)
             if (currentUser.isSuperAdmin) return true;
 
             // 3. Own Ticket Fallback
             if (t.user === currentUser.name) return true;
 
-            // 4. Matrix Access (For Regular Admins/Staff)
-            
-            // A. Vertical Access (Department)
+            // 4. Matrix Access
             const categoryConfig = keywords[t.category];
             const ticketOwnerDept = categoryConfig ? categoryConfig.owner : 'Unassigned';
-            
-            // Do I belong to this dept OR have an override scope for it?
             const userScopes = currentUser.accessScopes || [];
             const hasDeptAccess = (currentUser.dept === ticketOwnerDept) || userScopes.includes(ticketOwnerDept);
 
             if (!hasDeptAccess) return false;
 
-            // B. Horizontal Access (Geography/School)
             const userSchools = currentUser.accessSchools || [];
             if (userSchools.includes('ALL')) return true;
             return userSchools.includes(t.school);
@@ -112,6 +107,7 @@ export default function App() {
         if (updatedUser) setCurrentUser(updatedUser);
     }, [users, currentUser.id]);
 
+    // Handlers
     const handleNewTicket = (ticket) => { setTickets([ticket, ...tickets]); setNotifications(prev => prev + 1); };
     const updateTicket = (updatedTicket) => { setTickets(tickets.map(t => t.id === updatedTicket.id ? updatedTicket : t)); };
     const handleAddUser = (newUser) => { const userWithAccess = { ...newUser, id: `u${Date.now()}`, accessSchools: newUser.accessSchools && newUser.accessSchools.length > 0 ? newUser.accessSchools : [newUser.school] }; setUsers([...users, userWithAccess]); };
