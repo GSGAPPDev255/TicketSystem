@@ -5,7 +5,7 @@ import {
   ChevronDown, X, UserCheck, Shield, Settings, ArrowUpCircle, Plus, Lock, 
   Globe, Trash2, EyeOff, AlertTriangle, Edit3, UserPlus, Save, Layers, 
   Calendar, History, Activity, Lightbulb, BookOpen, ThumbsUp, MapPin, School, 
-  MoreHorizontal, Command, LogOut, Zap
+  MoreHorizontal, Command, LogOut, Zap, Crown
 } from 'lucide-react';
 
 // --- BUSINESS LOGIC ENGINE ---
@@ -19,20 +19,25 @@ const TicketEngine = {
             if (filters.category !== 'ALL_CATS' && t.category !== filters.category) return false;
             if (filters.school && filters.school !== 'ALL_SCHOOLS' && t.school !== filters.school) return false;
 
-            // 2. Super Admin (God Mode)
+            // 2. Super Admin (God Mode) - Bypasses all subsequent checks
             if (currentUser.isSuperAdmin) return true;
 
             // 3. Own Ticket Fallback
             if (t.user === currentUser.name) return true;
 
-            // 4. Matrix Access
+            // 4. Matrix Access (For Regular Admins/Staff)
+            
+            // A. Vertical Access (Department)
             const categoryConfig = keywords[t.category];
             const ticketOwnerDept = categoryConfig ? categoryConfig.owner : 'Unassigned';
+            
+            // Do I belong to this dept OR have an override scope for it?
             const userScopes = currentUser.accessScopes || [];
             const hasDeptAccess = (currentUser.dept === ticketOwnerDept) || userScopes.includes(ticketOwnerDept);
 
             if (!hasDeptAccess) return false;
 
+            // B. Horizontal Access (Geography/School)
             const userSchools = currentUser.accessSchools || [];
             if (userSchools.includes('ALL')) return true;
             return userSchools.includes(t.school);
@@ -102,7 +107,11 @@ export default function App() {
     const [kbArticles, setKbArticles] = useState(initialKnowledgeBase); 
     const [currentUser, setCurrentUser] = useState(users[0]);
 
-    // Handlers
+    useEffect(() => {
+        const updatedUser = users.find(u => u.id === currentUser.id);
+        if (updatedUser) setCurrentUser(updatedUser);
+    }, [users, currentUser.id]);
+
     const handleNewTicket = (ticket) => { setTickets([ticket, ...tickets]); setNotifications(prev => prev + 1); };
     const updateTicket = (updatedTicket) => { setTickets(tickets.map(t => t.id === updatedTicket.id ? updatedTicket : t)); };
     const handleAddUser = (newUser) => { const userWithAccess = { ...newUser, id: `u${Date.now()}`, accessSchools: newUser.accessSchools && newUser.accessSchools.length > 0 ? newUser.accessSchools : [newUser.school] }; setUsers([...users, userWithAccess]); };
@@ -266,7 +275,8 @@ function ChatInterface({ onTicketCreate, categorizer, currentUser, kbArticles })
 
     return (
         <div className="h-full flex flex-col justify-center items-center">
-            <div className="w-full max-w-md bg-white rounded-2xl shadow-xl overflow-hidden border border-zinc-200 h-full max-h-[650px] flex flex-col ring-1 ring-zinc-900/5">
+            {/* FIXED: Increased Width (max-w-5xl) and Height (h-[80vh]) for Command Center feel */}
+            <div className="w-full max-w-5xl bg-white rounded-2xl shadow-2xl overflow-hidden border border-zinc-200 h-[80vh] flex flex-col ring-1 ring-zinc-900/5">
                 {/* Fixed Chat Header */}
                 <div className="bg-zinc-900 p-4 flex items-center justify-between text-white shadow-md z-10">
                     <div className="flex items-center gap-3">
@@ -278,14 +288,16 @@ function ChatInterface({ onTicketCreate, categorizer, currentUser, kbArticles })
                             <span className="text-[10px] text-zinc-400 flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-green-400"></span> Online</span>
                         </div>
                     </div>
-                    <MoreHorizontal size={16} className="text-white/60"/>
+                    <div className="flex items-center gap-2">
+                        <span className="text-[10px] bg-white/10 px-2 py-1 rounded text-zinc-300">AI Powered</span>
+                    </div>
                 </div>
                 
-                <div className="flex-1 overflow-y-auto p-5 space-y-6 bg-zinc-50">
+                <div className="flex-1 overflow-y-auto p-8 space-y-6 bg-zinc-50">
                     {messages.map(msg => (
                         <div key={msg.id} className={`flex ${msg.sender === 'user' ? 'justify-end' : 'justify-start'}`}>
                             {msg.isDeflection ? (
-                                <div className="max-w-[90%] bg-white border border-amber-200 rounded-xl shadow-sm overflow-hidden">
+                                <div className="max-w-[70%] bg-white border border-amber-200 rounded-xl shadow-sm overflow-hidden">
                                     <div className="bg-amber-50 px-4 py-2 border-b border-amber-100 flex items-center gap-2">
                                         <Lightbulb size={14} className="text-amber-600" />
                                         <span className="text-[10px] font-bold text-amber-700 uppercase tracking-wide">Suggestion</span>
@@ -300,16 +312,16 @@ function ChatInterface({ onTicketCreate, categorizer, currentUser, kbArticles })
                                     </div>
                                 </div>
                             ) : msg.isPrioritySelect ? (
-                                <div className="max-w-[85%] space-y-2">
-                                    <div className="bg-white border border-zinc-200 text-zinc-700 p-3 rounded-2xl rounded-bl-none shadow-sm text-sm leading-relaxed">{msg.text}</div>
+                                <div className="max-w-[60%] space-y-2">
+                                    <div className="bg-white border border-zinc-200 text-zinc-700 p-4 rounded-2xl rounded-bl-none shadow-sm text-sm leading-relaxed">{msg.text}</div>
                                     <div className="flex gap-2">
                                         {['Low', 'Medium', 'High'].map(p => (
-                                            <button key={p} onClick={() => handlePrioritySelect(p)} className="flex-1 px-3 py-2 text-xs font-medium border border-zinc-200 bg-white hover:bg-zinc-50 rounded-lg transition-all">{p}</button>
+                                            <button key={p} onClick={() => handlePrioritySelect(p)} className="flex-1 px-3 py-3 text-xs font-medium border border-zinc-200 bg-white hover:bg-zinc-50 rounded-lg transition-all shadow-sm">{p}</button>
                                         ))}
                                     </div>
                                 </div>
                             ) : (
-                                <div className={`max-w-[80%] rounded-2xl p-3.5 text-sm shadow-sm leading-relaxed ${msg.sender === 'user' ? 'bg-zinc-900 text-white rounded-br-none' : 'bg-white border border-zinc-200 text-zinc-700 rounded-bl-none'}`}>
+                                <div className={`max-w-[60%] rounded-2xl p-4 text-sm shadow-sm leading-relaxed ${msg.sender === 'user' ? 'bg-zinc-900 text-white rounded-br-none' : 'bg-white border border-zinc-200 text-zinc-700 rounded-bl-none'}`}>
                                     {msg.text}
                                 </div>
                             )}
@@ -319,9 +331,9 @@ function ChatInterface({ onTicketCreate, categorizer, currentUser, kbArticles })
                     <div ref={chatEndRef}></div>
                 </div>
                 {conversationStep !== 'PRIORITY' && (
-                    <form onSubmit={(e) => handleSend(e)} className="p-3 bg-white border-t border-zinc-200 flex gap-2">
-                        <input type="text" value={input} onChange={(e) => setInput(e.target.value)} placeholder={conversationStep === 'LOCATION' ? "Enter room..." : "Describe the issue..."} className="flex-1 bg-zinc-50 border border-zinc-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-zinc-900/10 focus:border-zinc-900 transition-all" />
-                        <button type="submit" className="bg-zinc-900 text-white p-2.5 rounded-xl hover:bg-zinc-700 transition-colors shadow-sm"><Send size={18} /></button>
+                    <form onSubmit={(e) => handleSend(e)} className="p-4 bg-white border-t border-zinc-200 flex gap-2">
+                        <input type="text" value={input} onChange={(e) => setInput(e.target.value)} placeholder={conversationStep === 'LOCATION' ? "Enter room..." : "Describe the issue..."} className="flex-1 bg-zinc-50 border border-zinc-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-zinc-900/10 focus:border-zinc-900 transition-all" />
+                        <button type="submit" className="bg-zinc-900 text-white p-3 rounded-xl hover:bg-zinc-700 transition-colors shadow-sm"><Send size={18} /></button>
                     </form>
                 )}
             </div>
@@ -584,7 +596,7 @@ function UserDirectory({ users, currentUser, onAddUser, onUpdateUser, department
                                         </div>
                                     </td>
                                     <td className="px-6 py-4 text-right">
-                                        {currentUser.isSuperAdmin && <button onClick={() => setEditingUser(u)} className="text-zinc-400 hover:text-zinc-900 p-2 hover:bg-zinc-50 rounded transition-all"><Edit3 size={16}/></button>}
+                                        {currentUser.isSuperAdmin && <button onClick={() => setEditingUser(u)} className="text-zinc-400 hover:text-indigo-600 p-2 hover:bg-indigo-50 rounded transition-all"><Edit3 size={16}/></button>}
                                     </td>
                                 </tr>
                             ))}
@@ -597,9 +609,20 @@ function UserDirectory({ users, currentUser, onAddUser, onUpdateUser, department
     );
 }
 
+// FIXED: Reinstated "Additional View Access" and "Super Admin" Logic
 function UserEditModal({ user, isAdding, onClose, onSave, departments, schools }) {
     const [formData, setFormData] = useState(user ? { ...user, accessSchools: user.accessSchools || [user.school] } : { name: '', role: 'Staff', dept: departments[0], school: schools[0], isAdmin: false, isSuperAdmin: false, avatar: 'NU', accessScopes: [], accessSchools: [schools[0]] });
+    
+    // Toggle Department Scope
+    const toggleScope = (dept) => {
+        const current = formData.accessScopes || [];
+        if (current.includes(dept)) setFormData({ ...formData, accessScopes: current.filter(d => d !== dept) });
+        else setFormData({ ...formData, accessScopes: [...current, dept] });
+    };
+
+    // Toggle School Access
     const toggleSchoolAccess = (s) => {
+        if (formData.isSuperAdmin) return; // Locked for Super Admin
         const current = formData.accessSchools || [];
         if (s === 'ALL') setFormData({ ...formData, accessSchools: current.includes('ALL') ? [formData.school] : ['ALL'] });
         else {
@@ -609,29 +632,88 @@ function UserEditModal({ user, isAdding, onClose, onSave, departments, schools }
         }
     };
 
+    // Toggle Super Admin (The "God Mode" Switch)
+    const toggleSuperAdmin = (e) => {
+        const isSuper = e.target.checked;
+        if (isSuper) {
+            setFormData({ ...formData, isSuperAdmin: true, isAdmin: true, accessSchools: ['ALL'], accessScopes: departments });
+        } else {
+            setFormData({ ...formData, isSuperAdmin: false, accessSchools: [formData.school], accessScopes: [] });
+        }
+    };
+
     return (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/30 backdrop-blur-sm p-4 animate-enter">
-            <div className="bg-white w-full max-w-lg rounded-2xl shadow-2xl p-0 border border-zinc-200 overflow-hidden">
+            <div className="bg-white w-full max-w-2xl rounded-2xl shadow-2xl p-0 border border-zinc-200 overflow-hidden">
                 <div className="px-6 py-4 border-b border-zinc-100 flex justify-between items-center bg-zinc-50/50">
-                    <h3 className="font-bold text-zinc-900">{isAdding ? 'Onboard New User' : 'Edit Profile'}</h3>
+                    <div>
+                        <h3 className="font-bold text-zinc-900 text-lg">{isAdding ? 'Onboard New User' : 'Edit User Profile'}</h3>
+                        <p className="text-xs text-zinc-500">Configure Identity, Role & Access Matrix</p>
+                    </div>
                     <button onClick={onClose}><X size={20} className="text-zinc-400 hover:text-zinc-600"/></button>
                 </div>
-                <div className="p-6 space-y-5 max-h-[70vh] overflow-y-auto">
-                    <div className="grid grid-cols-2 gap-4">
-                        <div className="col-span-2"><label className="text-xs font-bold text-zinc-500 uppercase mb-1 block">Full Name</label><input type="text" className="w-full px-3 py-2 text-sm border border-zinc-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-zinc-900/10" value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} /></div>
+                
+                <div className="p-6 flex gap-6 max-h-[70vh] overflow-y-auto">
+                    {/* Left Column: Identity */}
+                    <div className="flex-1 space-y-4">
+                        <div><label className="text-xs font-bold text-zinc-500 uppercase mb-1 block">Full Name</label><input type="text" className="w-full px-3 py-2 text-sm border border-zinc-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-zinc-900/10" value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} /></div>
                         <div><label className="text-xs font-bold text-zinc-500 uppercase mb-1 block">Role Title</label><input type="text" className="w-full px-3 py-2 text-sm border border-zinc-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-zinc-900/10" value={formData.role} onChange={e => setFormData({...formData, role: e.target.value})} /></div>
                         <div><label className="text-xs font-bold text-zinc-500 uppercase mb-1 block">Department</label><select className="w-full px-3 py-2 text-sm border border-zinc-200 rounded-lg bg-white" value={formData.dept} onChange={e => setFormData({...formData, dept: e.target.value})}>{departments.map(d => <option key={d} value={d}>{d}</option>)}</select></div>
-                    </div>
-                    <div className="bg-zinc-50 p-4 rounded-xl border border-zinc-200">
-                        <label className="text-xs font-bold text-zinc-900 uppercase mb-2 block flex items-center gap-2"><MapPin size={14}/> Location Access</label>
-                        <div className="grid grid-cols-2 gap-2">
-                            <button onClick={() => toggleSchoolAccess('ALL')} className={`p-2 rounded-lg text-xs font-bold border transition-all flex items-center justify-between ${formData.accessSchools?.includes('ALL') ? 'bg-zinc-900 text-white border-zinc-900' : 'bg-white text-zinc-500 border-zinc-200 hover:border-zinc-300'}`}>Global Access {formData.accessSchools?.includes('ALL') && <CheckCircle size={14}/>}</button>
-                            {schools.map(s => <button key={s} onClick={() => toggleSchoolAccess(s)} disabled={formData.accessSchools?.includes('ALL') || s === formData.school} className={`p-2 rounded-lg text-xs font-bold border transition-all text-left truncate ${s === formData.school ? 'bg-zinc-100 text-zinc-400 border-zinc-200' : (formData.accessSchools?.includes(s) ? 'bg-white border-zinc-900 ring-1 ring-zinc-900 text-zinc-900' : 'bg-white text-zinc-500 border-zinc-200 hover:border-zinc-300')}`}>{s}</button>)}
+                        <div className="pt-2">
+                            <label className="text-xs font-bold text-zinc-500 uppercase mb-1 block">Primary Campus</label>
+                            <select className="w-full px-3 py-2 text-sm border border-zinc-200 rounded-lg bg-white" value={formData.school} onChange={e => {
+                                const newPrimary = e.target.value;
+                                const currentAccess = formData.accessSchools.filter(s => s !== 'ALL');
+                                if (!currentAccess.includes(newPrimary)) currentAccess.push(newPrimary);
+                                setFormData({...formData, school: newPrimary, accessSchools: currentAccess});
+                            }}>
+                                {schools.map(s => <option key={s} value={s}>{s}</option>)}
+                                <option value="HQ">HQ (Head Office)</option>
+                            </select>
                         </div>
                     </div>
-                    <div className="flex items-center gap-3 p-3 bg-zinc-50 rounded-lg border border-zinc-200">
-                        <input type="checkbox" checked={formData.isAdmin} onChange={e => setFormData({...formData, isAdmin: e.target.checked})} className="rounded text-zinc-900 focus:ring-zinc-900 w-4 h-4" />
-                        <span className="text-sm font-medium text-zinc-700">Grant Admin Privileges</span>
+
+                    {/* Right Column: Permissions Matrix */}
+                    <div className="flex-1 space-y-5 border-l border-zinc-100 pl-6">
+                        {/* Role Toggle */}
+                        <div className={`p-4 rounded-xl border transition-all ${formData.isSuperAdmin ? 'bg-purple-50 border-purple-200' : 'bg-zinc-50 border-zinc-200'}`}>
+                            <div className="flex items-center justify-between mb-2">
+                                <label className="flex items-center gap-2 cursor-pointer">
+                                    <input type="checkbox" checked={formData.isSuperAdmin} onChange={toggleSuperAdmin} className="rounded text-purple-600 focus:ring-purple-600" />
+                                    <span className={`text-sm font-bold ${formData.isSuperAdmin ? 'text-purple-900' : 'text-zinc-700'}`}>Super Admin</span>
+                                </label>
+                                {formData.isSuperAdmin && <Crown size={16} className="text-purple-600"/>}
+                            </div>
+                            <p className="text-[10px] text-zinc-500 leading-tight">Super Admins automatically inherit global access to all schools and departments.</p>
+                        </div>
+
+                        {/* Departmental Overrides (Reinstated) */}
+                        <div className={formData.isSuperAdmin ? 'opacity-50 pointer-events-none' : ''}>
+                            <label className="text-xs font-bold text-zinc-500 uppercase mb-2 block">Additional View Access (Dept)</label>
+                            <p className="text-[10px] text-zinc-400 mb-2">Allow viewing tickets from other departments.</p>
+                            <div className="flex flex-wrap gap-2">
+                                {departments.filter(d => d !== formData.dept).map(dept => (
+                                    <button key={dept} onClick={() => toggleScope(dept)}
+                                        className={`px-2 py-1 text-[10px] rounded border transition-all ${
+                                            (formData.accessScopes || []).includes(dept) 
+                                            ? 'bg-zinc-800 text-white border-zinc-800' 
+                                            : 'bg-white text-zinc-500 border-zinc-200 hover:border-zinc-400'
+                                        }`}
+                                    >
+                                        {dept}
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+
+                        {/* School Access */}
+                        <div className={formData.isSuperAdmin ? 'opacity-50 pointer-events-none' : ''}>
+                            <label className="text-xs font-bold text-zinc-500 uppercase mb-2 block">Geographic Access</label>
+                            <div className="grid grid-cols-2 gap-2">
+                                <button onClick={() => toggleSchoolAccess('ALL')} className={`p-2 rounded text-[10px] font-bold border transition-all flex items-center justify-between ${formData.accessSchools?.includes('ALL') ? 'bg-zinc-800 text-white border-zinc-800' : 'bg-white text-zinc-500 border-zinc-200 hover:border-zinc-400'}`}>Global {formData.accessSchools?.includes('ALL') && <CheckCircle size={10}/>}</button>
+                                {schools.map(s => <button key={s} onClick={() => toggleSchoolAccess(s)} disabled={formData.accessSchools?.includes('ALL') || s === formData.school} className={`p-2 rounded text-[10px] font-bold border transition-all text-left truncate ${s === formData.school ? 'bg-zinc-100 text-zinc-400 border-zinc-200' : (formData.accessSchools?.includes(s) ? 'bg-zinc-800 text-white border-zinc-800' : 'bg-white text-zinc-500 border-zinc-200 hover:border-zinc-400')}`}>{s}</button>)}
+                            </div>
+                        </div>
                     </div>
                 </div>
                 <div className="px-6 py-4 bg-zinc-50 border-t border-zinc-200 flex justify-end gap-3">
