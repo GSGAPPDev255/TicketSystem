@@ -5,7 +5,7 @@ import {
   ChevronDown, X, UserCheck, Shield, Settings, ArrowUpCircle, Plus, Lock, 
   Globe, Trash2, EyeOff, AlertTriangle, Edit3, UserPlus, Save, Layers, 
   Calendar, History, Activity, Lightbulb, BookOpen, ThumbsUp, MapPin, School, 
-  MoreHorizontal, Command, LogOut
+  MoreHorizontal, Command, LogOut, Zap
 } from 'lucide-react';
 
 // --- BUSINESS LOGIC ENGINE (UNCHANGED) ---
@@ -110,56 +110,55 @@ export default function App() {
     const handleRemoveKbArticle = (id) => { if (confirm('Delete this knowledge base article?')) { setKbArticles(kbArticles.filter(kb => kb.id !== id)); } };
 
     return (
-        <div className="min-h-screen flex flex-col bg-gray-50/50 font-sans text-zinc-900">
-            {/* MODERN GLASS HEADER */}
-            <nav className="glass px-6 py-3 flex justify-between items-center sticky top-0 z-50">
+        <div className="min-h-screen flex flex-col font-sans text-zinc-900">
+            {/* GLASS HEADER */}
+            <nav className="glass-nav px-6 py-4 flex justify-between items-center">
                 <div className="flex items-center gap-3">
-                    <div className="bg-brand-800 text-white p-1.5 rounded-lg">
+                    <div className="bg-indigo-600 text-white p-1.5 rounded-lg shadow-lg shadow-indigo-600/30">
                         <Briefcase className="w-5 h-5" />
                     </div>
                     <div>
-                        <span className="font-bold text-sm tracking-tight block leading-none">CorpTicket</span>
-                        <span className="text-[10px] font-medium text-zinc-400 tracking-wider">INTERNAL OPS</span>
+                        <span className="font-bold text-sm tracking-tight block leading-none text-zinc-800">CorpTicket</span>
+                        <span className="text-[10px] font-semibold text-zinc-400 tracking-wider">INTERNAL OPS</span>
                     </div>
                 </div>
                 
                 <div className="flex items-center gap-4">
-                    <div className="flex bg-zinc-100/80 p-1 rounded-lg border border-zinc-200/50">
-                        <button onClick={() => setView('chat')} className={`px-3 py-1.5 rounded-md flex items-center gap-2 text-xs font-medium transition-all ${view === 'chat' ? 'bg-white text-zinc-900 shadow-sm border border-zinc-200' : 'text-zinc-500 hover:text-zinc-700'}`}>
+                    <div className="flex bg-zinc-100 p-1 rounded-lg border border-zinc-200">
+                        <button onClick={() => setView('chat')} className={`px-4 py-1.5 rounded-md flex items-center gap-2 text-xs font-semibold transition-all ${view === 'chat' ? 'bg-white text-indigo-600 shadow-sm border border-zinc-200' : 'text-zinc-500 hover:text-zinc-700'}`}>
                             <MessageSquare size={14} /> Helpdesk
                         </button>
-                        <button onClick={() => { setView('admin'); setNotifications(0); }} className={`px-3 py-1.5 rounded-md flex items-center gap-2 text-xs font-medium transition-all ${view === 'admin' ? 'bg-white text-zinc-900 shadow-sm border border-zinc-200' : 'text-zinc-500 hover:text-zinc-700'}`}>
+                        <button onClick={() => { setView('admin'); setNotifications(0); }} className={`px-4 py-1.5 rounded-md flex items-center gap-2 text-xs font-semibold transition-all ${view === 'admin' ? 'bg-white text-indigo-600 shadow-sm border border-zinc-200' : 'text-zinc-500 hover:text-zinc-700'}`}>
                             <div className="relative">
                                 <LayoutDashboard size={14} />
-                                {notifications > 0 && <span className="absolute -top-1.5 -right-1.5 bg-red-500 text-white text-[9px] font-bold w-4 h-4 flex items-center justify-center rounded-full animate-bounce">{notifications}</span>}
+                                {notifications > 0 && <span className="absolute -top-1 -right-1 bg-red-500 text-white text-[9px] font-bold w-3 h-3 flex items-center justify-center rounded-full animate-pulse">{notifications}</span>}
                             </div>
-                            {currentUser.isAdmin ? 'Command Center' : 'My Dashboard'}
+                            {currentUser.isAdmin ? 'Admin Panel' : 'My Dashboard'}
                         </button>
                     </div>
 
-                    <div className="h-6 w-px bg-zinc-200 mx-2"></div>
+                    <div className="h-6 w-px bg-zinc-300 mx-2"></div>
 
                     <div className="relative group">
-                        <button className="flex items-center gap-3 hover:bg-zinc-100 p-1.5 rounded-lg transition-colors border border-transparent hover:border-zinc-200">
-                            <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold text-white shadow-sm ring-2 ring-white ${currentUser.isSuperAdmin ? 'bg-purple-600' : 'bg-brand-800'}`}>
+                        <button className="flex items-center gap-3 hover:bg-white hover:shadow-sm p-1.5 rounded-lg transition-all border border-transparent hover:border-zinc-200">
+                            <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold text-white shadow-md ring-2 ring-white ${currentUser.isSuperAdmin ? 'bg-purple-600' : 'bg-indigo-600'}`}>
                                 {currentUser.avatar}
                             </div>
                             <div className="text-left hidden md:block">
-                                <div className="text-xs font-semibold leading-none">{currentUser.name}</div>
+                                <div className="text-xs font-bold leading-none text-zinc-800">{currentUser.name}</div>
                                 <div className="text-[10px] text-zinc-500 mt-0.5">{currentUser.role}</div>
                             </div>
                             <ChevronDown size={14} className="text-zinc-400" />
                         </button>
-                        {/* Persona Switcher */}
-                        <div className="absolute right-0 mt-2 w-56 bg-white rounded-xl shadow-xl py-1 text-zinc-800 hidden group-hover:block border border-zinc-200 z-50 animate-fade-in">
+                        <div className="absolute right-0 mt-2 w-56 bg-white rounded-xl shadow-xl py-1 text-zinc-800 hidden group-hover:block border border-zinc-100 z-50 animate-enter">
                             <div className="px-3 py-2 text-[10px] font-bold text-zinc-400 uppercase tracking-wider border-b border-zinc-50 mb-1">Switch Persona</div>
                             {users.map(u => (
-                                <button key={u.id} onClick={() => setCurrentUser(u)} className={`w-full px-4 py-2 text-left text-xs flex items-center gap-3 hover:bg-zinc-50 ${currentUser.id === u.id ? 'bg-zinc-50 text-brand-800 font-medium' : 'text-zinc-600'}`}>
+                                <button key={u.id} onClick={() => setCurrentUser(u)} className={`w-full px-4 py-2 text-left text-xs flex items-center gap-3 hover:bg-zinc-50 ${currentUser.id === u.id ? 'bg-zinc-50 text-indigo-600 font-bold' : 'text-zinc-600'}`}>
                                     <div className={`w-5 h-5 rounded-full flex items-center justify-center text-[9px] font-bold text-white ${u.isSuperAdmin ? 'bg-purple-600' : 'bg-zinc-400'}`}>{u.avatar}</div>
                                     <div className="flex flex-col">
                                         <span>{u.name}</span>
                                     </div>
-                                    {currentUser.id === u.id && <CheckCircle size={12} className="ml-auto text-brand-800"/>}
+                                    {currentUser.id === u.id && <CheckCircle size={12} className="ml-auto text-indigo-600"/>}
                                 </button>
                             ))}
                         </div>
@@ -167,7 +166,7 @@ export default function App() {
                 </div>
             </nav>
 
-            <div className="flex-1 overflow-hidden relative max-w-[1600px] mx-auto w-full">
+            <div className="flex-1 overflow-hidden relative max-w-[1600px] mx-auto w-full p-4">
                 {view === 'chat' ? (
                     <ChatInterface 
                         onTicketCreate={handleNewTicket} 
@@ -199,7 +198,7 @@ export default function App() {
     );
 }
 
-// --- SUB COMPONENTS ---
+// --- SUB COMPONENTS (RESTYLED) ---
 
 function ChatInterface({ onTicketCreate, categorizer, currentUser, kbArticles }) {
     const [messages, setMessages] = useState([{ id: 1, sender: 'bot', text: 'How can I assist you today?' }]);
@@ -263,21 +262,28 @@ function ChatInterface({ onTicketCreate, categorizer, currentUser, kbArticles })
     };
 
     return (
-        <div className="h-full flex flex-col justify-center items-center p-4">
-            <div className="w-full max-w-md bg-white rounded-2xl shadow-xl overflow-hidden border border-zinc-200 h-[650px] flex flex-col animate-slide-up">
-                <div className="bg-brand-800 p-4 flex items-center justify-between text-white">
+        <div className="h-full flex flex-col justify-center items-center">
+            <div className="w-full max-w-md bg-white rounded-2xl shadow-2xl overflow-hidden border border-zinc-200 h-[650px] flex flex-col animate-enter ring-1 ring-zinc-900/5">
+                {/* Fixed Chat Header */}
+                <div className="bg-indigo-600 p-4 flex items-center justify-between text-white shadow-md z-10">
                     <div className="flex items-center gap-3">
-                        <div className="w-2.5 h-2.5 rounded-full bg-green-400 shadow-[0_0_10px_rgba(74,222,128,0.5)]"></div>
-                        <span className="font-semibold text-sm">Helpdesk Assistant</span>
+                        <div className="w-8 h-8 rounded-full bg-white/20 flex items-center justify-center backdrop-blur-sm">
+                            <Zap size={16} className="text-yellow-300 fill-current" />
+                        </div>
+                        <div>
+                            <span className="font-bold text-sm block">Helpdesk Assistant</span>
+                            <span className="text-[10px] text-indigo-200 flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-green-400"></span> Online</span>
+                        </div>
                     </div>
                     <MoreHorizontal size={16} className="text-white/60"/>
                 </div>
-                <div className="flex-1 overflow-y-auto p-5 space-y-6 bg-zinc-50/50">
+                
+                <div className="flex-1 overflow-y-auto p-5 space-y-6 bg-zinc-50">
                     {messages.map(msg => (
                         <div key={msg.id} className={`flex ${msg.sender === 'user' ? 'justify-end' : 'justify-start'}`}>
                             {msg.isDeflection ? (
-                                <div className="max-w-[90%] bg-white border border-amber-200/60 rounded-xl shadow-sm overflow-hidden">
-                                    <div className="bg-amber-50/50 px-4 py-2 border-b border-amber-100 flex items-center gap-2">
+                                <div className="max-w-[90%] bg-white border border-amber-200 rounded-xl shadow-sm overflow-hidden">
+                                    <div className="bg-amber-50 px-4 py-2 border-b border-amber-100 flex items-center gap-2">
                                         <Lightbulb size={14} className="text-amber-600" />
                                         <span className="text-[10px] font-bold text-amber-700 uppercase tracking-wide">Suggestion</span>
                                     </div>
@@ -300,7 +306,7 @@ function ChatInterface({ onTicketCreate, categorizer, currentUser, kbArticles })
                                     </div>
                                 </div>
                             ) : (
-                                <div className={`max-w-[80%] rounded-2xl p-3.5 text-sm shadow-sm leading-relaxed ${msg.sender === 'user' ? 'bg-brand-800 text-white rounded-br-none' : 'bg-white border border-zinc-200 text-zinc-700 rounded-bl-none'}`}>
+                                <div className={`max-w-[80%] rounded-2xl p-3.5 text-sm shadow-sm leading-relaxed ${msg.sender === 'user' ? 'bg-indigo-600 text-white rounded-br-none' : 'bg-white border border-zinc-200 text-zinc-700 rounded-bl-none'}`}>
                                     {msg.text}
                                 </div>
                             )}
@@ -310,9 +316,9 @@ function ChatInterface({ onTicketCreate, categorizer, currentUser, kbArticles })
                     <div ref={chatEndRef}></div>
                 </div>
                 {conversationStep !== 'PRIORITY' && (
-                    <form onSubmit={(e) => handleSend(e)} className="p-3 bg-white border-t border-zinc-100 flex gap-2">
-                        <input type="text" value={input} onChange={(e) => setInput(e.target.value)} placeholder={conversationStep === 'LOCATION' ? "Enter room..." : "Describe the issue..."} className="flex-1 bg-zinc-50 border border-zinc-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-800/10 focus:border-brand-800 transition-all" />
-                        <button type="submit" className="bg-brand-800 text-white p-2.5 rounded-xl hover:bg-brand-900 transition-colors shadow-sm"><Send size={18} /></button>
+                    <form onSubmit={(e) => handleSend(e)} className="p-3 bg-white border-t border-zinc-200 flex gap-2">
+                        <input type="text" value={input} onChange={(e) => setInput(e.target.value)} placeholder={conversationStep === 'LOCATION' ? "Enter room..." : "Describe the issue..."} className="flex-1 bg-zinc-50 border border-zinc-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-600/20 focus:border-indigo-600 transition-all" />
+                        <button type="submit" className="bg-indigo-600 text-white p-2.5 rounded-xl hover:bg-indigo-700 transition-colors shadow-sm"><Send size={18} /></button>
                     </form>
                 )}
             </div>
@@ -330,87 +336,91 @@ function AdminDashboard({ tickets, onUpdateTicket, currentUser, users, onAddUser
     const isOverdue = (timestamp, status) => status !== 'Resolved' && (Date.now() - timestamp) / (1000 * 60 * 60) > 24;
 
     return (
-        <div className="h-full flex flex-col">
-            <div className="bg-white border-b border-zinc-200 px-8 py-0 flex items-center justify-between sticky top-[60px] z-40 shadow-sm">
-                <div className="flex gap-8">
+        <div className="h-full flex flex-col bg-white rounded-2xl border border-zinc-200 shadow-sm overflow-hidden">
+            <div className="bg-white border-b border-zinc-200 px-6 py-2 flex items-center justify-between sticky top-0 z-40">
+                <div className="flex gap-1">
                     {['tickets', 'users', 'kb', 'depts'].map(tab => {
                         if (tab === 'users' && !currentUser.isAdmin) return null;
                         if (tab === 'kb' && !currentUser.isAdmin) return null;
                         if (tab === 'depts' && !currentUser.isSuperAdmin) return null;
                         return (
-                            <button key={tab} onClick={() => setActiveTab(tab)} className={`py-4 text-xs font-medium border-b-2 transition-all ${activeTab === tab ? 'border-brand-800 text-brand-800' : 'border-transparent text-zinc-500 hover:text-zinc-800'}`}>
+                            <button key={tab} onClick={() => setActiveTab(tab)} className={`px-4 py-3 text-xs font-bold transition-all border-b-2 ${activeTab === tab ? 'border-indigo-600 text-indigo-600' : 'border-transparent text-zinc-500 hover:text-zinc-800'}`}>
                                 {tab === 'tickets' ? 'Dashboard' : tab === 'users' ? 'Directory' : tab === 'kb' ? 'Knowledge' : 'Settings'}
                             </button>
                         );
                     })}
                 </div>
                 {currentUser.isSuperAdmin && (
-                    <button onClick={() => setShowLogicModal(true)} className="text-xs flex items-center gap-1.5 text-zinc-600 hover:text-brand-800 transition-colors font-medium">
+                    <button onClick={() => setShowLogicModal(true)} className="text-xs flex items-center gap-1.5 text-zinc-500 hover:text-indigo-600 transition-colors font-medium border border-zinc-200 rounded-lg px-3 py-1.5 hover:bg-zinc-50">
                         <Settings size={14} /> Logic Config
                     </button>
                 )}
             </div>
 
-            <div className="flex-1 overflow-hidden p-8">
+            <div className="flex-1 overflow-hidden">
                 {activeTab === 'users' ? <UserDirectory users={users} currentUser={currentUser} onAddUser={onAddUser} onUpdateUser={onUpdateUser} departments={departments} schools={schools} /> :
                  activeTab === 'depts' ? <DepartmentManager departments={departments} onAdd={onAddDepartment} onRemove={onRemoveDepartment} /> :
                  activeTab === 'kb' ? <KnowledgeBaseManager articles={kbArticles} onAdd={onAddKbArticle} onRemove={onRemoveKbArticle} /> :
                  (
-                    <div className="h-full flex gap-8">
-                        <div className="w-[380px] flex flex-col gap-4">
-                            <div className="flex items-center justify-between mb-2">
-                                <h3 className="font-semibold text-zinc-900 text-sm flex items-center gap-2">
-                                    <Layers size={16} className="text-zinc-400"/> Ticket Queue
-                                </h3>
-                                <span className="text-[10px] font-bold bg-zinc-100 text-zinc-500 px-2 py-0.5 rounded-full">{visibleTickets.length}</span>
-                            </div>
-
-                            <div className="grid grid-cols-2 gap-2">
-                                <select value={filters.status} onChange={e => setFilters({...filters, status: e.target.value})} className="input-base text-xs">
-                                    <option value="ACTIVE">Open</option><option value="RESOLVED">Closed</option><option value="ALL">All</option>
-                                </select>
-                                <select value={filters.category} onChange={e => setFilters({...filters, category: e.target.value})} className="input-base text-xs">
-                                    <option value="ALL_CATS">Category</option>{Object.keys(keywords).map(c => <option key={c} value={c}>{c}</option>)}
-                                </select>
-                                <select value={filters.school} onChange={e => setFilters({...filters, school: e.target.value})} className="input-base text-xs col-span-2">
-                                    <option value="ALL_SCHOOLS">Location</option>
-                                    {((currentUser.accessSchools || []).includes('ALL') ? schools : (currentUser.accessSchools || [])).map(s => <option key={s} value={s}>{s}</option>)}
-                                </select>
-                            </div>
-
-                            <div className="panel flex-1 overflow-hidden flex flex-col bg-white">
-                                <div className="overflow-y-auto flex-1 divide-y divide-zinc-50">
-                                    {visibleTickets.length === 0 ? (
-                                        <div className="p-12 text-center text-zinc-400 flex flex-col items-center">
-                                            <EyeOff size={32} className="mb-3 opacity-20"/>
-                                            <span className="text-xs">No tickets found</span>
-                                        </div>
-                                    ) : (
-                                        visibleTickets.map(ticket => (
-                                            <div key={ticket.id} onClick={() => setSelectedTicket(ticket)} className={`p-4 cursor-pointer transition-all hover:bg-zinc-50/50 group ${selectedTicket?.id === ticket.id ? 'bg-brand-50/50 border-l-2 border-brand-800' : 'border-l-2 border-transparent'}`}>
-                                                <div className="flex justify-between items-start mb-1.5">
-                                                    <div className="flex items-center gap-2">
-                                                        <span className={`w-2 h-2 rounded-full ${ticket.priority === 'High' ? 'bg-red-500' : ticket.priority === 'Medium' ? 'bg-amber-400' : 'bg-emerald-400'}`}></span>
-                                                        <span className="text-[10px] font-bold text-zinc-400">#{ticket.id}</span>
-                                                    </div>
-                                                    <span className="text-[10px] text-zinc-400">{new Date(ticket.timestamp).toLocaleDateString()}</span>
-                                                </div>
-                                                <h4 className={`text-sm font-medium mb-1 line-clamp-1 ${ticket.isSensitive ? 'text-red-700' : 'text-zinc-800'}`}>{ticket.isSensitive ? 'Confidential Ticket' : ticket.subject}</h4>
-                                                <div className="flex justify-between items-center">
-                                                    <span className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-zinc-100 text-zinc-500 border border-zinc-200">{ticket.category}</span>
-                                                    {isOverdue(ticket.timestamp, ticket.status) && <AlertTriangle size={12} className="text-red-500" />}
-                                                </div>
-                                            </div>
-                                        ))
-                                    )}
+                    <div className="h-full flex">
+                        <div className="w-[400px] flex flex-col border-r border-zinc-200 bg-zinc-50/50">
+                            <div className="p-4 border-b border-zinc-200">
+                                <div className="flex items-center justify-between mb-3">
+                                    <h3 className="font-bold text-zinc-800 text-xs uppercase tracking-wider flex items-center gap-2">
+                                        <Layers size={14}/> Queue
+                                    </h3>
+                                    <span className="text-[10px] font-bold bg-zinc-200 text-zinc-600 px-2 py-0.5 rounded-full">{visibleTickets.length}</span>
+                                </div>
+                                <div className="grid grid-cols-2 gap-2">
+                                    <select value={filters.status} onChange={e => setFilters({...filters, status: e.target.value})} className="w-full px-3 py-2 text-xs border border-zinc-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-indigo-600/20">
+                                        <option value="ACTIVE">Open</option><option value="RESOLVED">Closed</option><option value="ALL">All</option>
+                                    </select>
+                                    <select value={filters.category} onChange={e => setFilters({...filters, category: e.target.value})} className="w-full px-3 py-2 text-xs border border-zinc-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-indigo-600/20">
+                                        <option value="ALL_CATS">Category</option>{Object.keys(keywords).map(c => <option key={c} value={c}>{c}</option>)}
+                                    </select>
+                                    <select value={filters.school} onChange={e => setFilters({...filters, school: e.target.value})} className="w-full px-3 py-2 text-xs border border-zinc-200 rounded-lg bg-white col-span-2 focus:outline-none focus:ring-2 focus:ring-indigo-600/20">
+                                        <option value="ALL_SCHOOLS">All Locations</option>
+                                        {((currentUser.accessSchools || []).includes('ALL') ? schools : (currentUser.accessSchools || [])).map(s => <option key={s} value={s}>{s}</option>)}
+                                    </select>
                                 </div>
                             </div>
+
+                            <div className="overflow-y-auto flex-1 p-2 space-y-2">
+                                {visibleTickets.length === 0 ? (
+                                    <div className="p-12 text-center text-zinc-400 flex flex-col items-center">
+                                        <EyeOff size={32} className="mb-3 opacity-20"/>
+                                        <span className="text-xs">No tickets found</span>
+                                    </div>
+                                ) : (
+                                    visibleTickets.map(ticket => (
+                                        <div key={ticket.id} onClick={() => setSelectedTicket(ticket)} className={`p-4 rounded-xl cursor-pointer transition-all border shadow-sm group ${selectedTicket?.id === ticket.id ? 'bg-white border-indigo-600 ring-1 ring-indigo-600 shadow-md z-10' : 'bg-white border-zinc-200 hover:border-indigo-300'}`}>
+                                            <div className="flex justify-between items-start mb-2">
+                                                <div className="flex items-center gap-2">
+                                                    <span className={`w-2 h-2 rounded-full ${ticket.priority === 'High' ? 'bg-red-500' : ticket.priority === 'Medium' ? 'bg-amber-400' : 'bg-emerald-400'}`}></span>
+                                                    <span className="text-[10px] font-bold text-zinc-400 font-mono">#{ticket.id}</span>
+                                                </div>
+                                                <span className="text-[10px] text-zinc-400">{getTimeAgo(ticket.timestamp)}</span>
+                                            </div>
+                                            <h4 className={`text-sm font-bold mb-1 line-clamp-1 leading-tight ${ticket.isSensitive ? 'text-red-700' : 'text-zinc-800'}`}>{ticket.isSensitive ? 'Confidential Ticket' : ticket.subject}</h4>
+                                            <div className="flex justify-between items-center mt-2">
+                                                <div className="flex items-center gap-1.5">
+                                                    <span className="text-[10px] font-semibold px-2 py-0.5 rounded bg-zinc-100 text-zinc-600 border border-zinc-200">{ticket.category}</span>
+                                                    <span className="text-[10px] px-1.5 py-0.5 text-zinc-400 flex items-center gap-1"><School size={10}/> {ticket.school}</span>
+                                                </div>
+                                                {isOverdue(ticket.timestamp, ticket.status) && <AlertTriangle size={12} className="text-red-500" />}
+                                            </div>
+                                        </div>
+                                    ))
+                                )}
+                            </div>
                         </div>
-                        <div className="flex-1 panel overflow-hidden bg-white relative">
+                        <div className="flex-1 bg-white relative">
                             {selectedTicket ? <TicketDetailView ticket={selectedTicket} onUpdateTicket={onUpdateTicket} currentUser={currentUser} /> : (
-                                <div className="h-full flex flex-col items-center justify-center text-zinc-300">
-                                    <Command size={48} className="mb-4 opacity-20" />
-                                    <p className="text-sm font-medium">Select a ticket from the queue</p>
+                                <div className="h-full flex flex-col items-center justify-center text-zinc-300 bg-zinc-50/30">
+                                    <div className="w-16 h-16 bg-zinc-100 rounded-2xl flex items-center justify-center mb-4">
+                                        <Command size={32} className="opacity-20" />
+                                    </div>
+                                    <p className="text-sm font-medium text-zinc-400">Select a ticket from the queue</p>
                                 </div>
                             )}
                         </div>
@@ -421,6 +431,8 @@ function AdminDashboard({ tickets, onUpdateTicket, currentUser, users, onAddUser
         </div>
     );
 }
+
+// --- DETAIL VIEW & MODALS (Refined) ---
 
 function TicketDetailView({ ticket, onUpdateTicket, currentUser }) {
     const [resolveNote, setResolveNote] = useState('');
@@ -438,61 +450,76 @@ function TicketDetailView({ ticket, onUpdateTicket, currentUser }) {
 
     if (ticket.isSensitive && !currentUser.isSuperAdmin) return <div className="h-full flex flex-col items-center justify-center text-red-800"><Lock size={32} className="mb-3"/><h2 className="font-bold">Restricted Access</h2></div>;
 
+    const ticketDate = new Date(ticket.timestamp);
+
     return (
         <div className="h-full flex flex-col relative">
             {isResolving && (
-                <div className="absolute inset-0 bg-white/90 backdrop-blur-sm z-50 flex items-center justify-center p-8 animate-fade-in">
-                    <div className="w-full max-w-md">
+                <div className="absolute inset-0 bg-white/90 backdrop-blur-sm z-50 flex items-center justify-center p-8 animate-enter">
+                    <div className="w-full max-w-md bg-white border border-zinc-200 shadow-2xl rounded-2xl p-6">
                         <h3 className="font-bold text-lg mb-4 text-zinc-900">Resolve Ticket #{ticket.id}</h3>
-                        <textarea className="input-base h-32 mb-4 resize-none" placeholder="Resolution details..." value={resolveNote} onChange={e => setResolveNote(e.target.value)} autoFocus/>
+                        <textarea className="w-full px-3 py-2 text-sm border border-zinc-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-600 h-32 mb-4 resize-none" placeholder="Resolution details..." value={resolveNote} onChange={e => setResolveNote(e.target.value)} autoFocus/>
                         <div className="flex gap-3">
-                            <button onClick={() => setIsResolving(false)} className="btn-secondary px-4 py-2 rounded-lg text-sm">Cancel</button>
-                            <button onClick={() => { onUpdateTicket({ ...ticket, status: 'Resolved', updates: [...ticket.updates, { id: Date.now(), type: 'system', user: 'System', text: `Resolved: ${resolveNote}`, timestamp: Date.now() }] }); setIsResolving(false); }} className="btn-primary px-4 py-2 rounded-lg text-sm bg-green-600 hover:bg-green-700">Confirm Resolution</button>
+                            <button onClick={() => setIsResolving(false)} className="flex-1 px-4 py-2 rounded-lg text-sm bg-white border border-zinc-200 hover:bg-zinc-50 font-medium">Cancel</button>
+                            <button onClick={() => { onUpdateTicket({ ...ticket, status: 'Resolved', updates: [...ticket.updates, { id: Date.now(), type: 'system', user: 'System', text: `Resolved: ${resolveNote}`, timestamp: Date.now() }] }); setIsResolving(false); }} className="flex-1 px-4 py-2 rounded-lg text-sm bg-green-600 text-white hover:bg-green-700 font-bold shadow-sm">Confirm Resolution</button>
                         </div>
                     </div>
                 </div>
             )}
 
-            <div className="p-6 border-b border-zinc-100 flex justify-between items-start bg-white">
+            {/* Sticky Header */}
+            <div className="p-6 border-b border-zinc-100 flex justify-between items-start bg-white z-10 shadow-sm">
                 <div>
                     <div className="flex items-center gap-3 mb-2">
-                        <span className={`px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider rounded border ${ticket.status === 'Resolved' ? 'bg-zinc-100 text-zinc-500 border-zinc-200' : 'bg-blue-50 text-blue-600 border-blue-100'}`}>{ticket.status}</span>
+                        <span className={`px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider rounded-md border ${ticket.status === 'Resolved' ? 'bg-zinc-100 text-zinc-500 border-zinc-200' : 'bg-blue-50 text-blue-600 border-blue-100'}`}>{ticket.status}</span>
                         <span className="text-[10px] text-zinc-400 font-mono">#{ticket.id}</span>
+                        <span className="text-[10px] text-zinc-400 flex items-center gap-1"><Clock size={10}/> {ticketDate.toLocaleDateString()}</span>
                     </div>
                     <h2 className="text-xl font-bold text-zinc-900 leading-tight">{ticket.subject}</h2>
                 </div>
                 {currentUser.isAdmin && ticket.status !== 'Resolved' && (
                     <div className="flex gap-2">
-                        {!ticket.assignedTo && <button onClick={() => onUpdateTicket({ ...ticket, assignedTo: currentUser.name, updates: [...ticket.updates, { id: Date.now(), type: 'system', user: 'System', text: `Assigned to ${currentUser.name}`, timestamp: Date.now() }] })} className="btn-secondary px-3 py-1.5 rounded-lg text-xs font-medium">Assign to Me</button>}
-                        <button onClick={() => setIsResolving(true)} className="btn-primary px-3 py-1.5 rounded-lg text-xs font-medium flex items-center gap-2"><CheckCircle size={14}/> Resolve</button>
+                        {!ticket.assignedTo && <button onClick={() => onUpdateTicket({ ...ticket, assignedTo: currentUser.name, updates: [...ticket.updates, { id: Date.now(), type: 'system', user: 'System', text: `Assigned to ${currentUser.name}`, timestamp: Date.now() }] })} className="px-3 py-1.5 rounded-lg text-xs font-medium bg-white border border-zinc-200 hover:bg-zinc-50 text-zinc-700 transition-colors">Assign to Me</button>}
+                        <button onClick={() => setIsResolving(true)} className="px-3 py-1.5 rounded-lg text-xs font-bold bg-green-600 text-white hover:bg-green-700 flex items-center gap-2 shadow-sm transition-colors"><CheckCircle size={14}/> Resolve</button>
                     </div>
                 )}
             </div>
 
-            <div className="flex-1 overflow-y-auto p-6 bg-zinc-50/30" ref={chatRef}>
+            {/* Scrollable Content */}
+            <div className="flex-1 overflow-y-auto p-8 bg-zinc-50/30" ref={chatRef}>
+                {/* Context Card */}
                 <div className="flex gap-4 mb-8">
-                    <div className="w-10 h-10 rounded-full bg-zinc-200 flex items-center justify-center font-bold text-zinc-600 text-xs shadow-inner">{ticket.user.charAt(0)}</div>
-                    <div className="flex-1">
-                        <div className="flex items-baseline gap-2 mb-1"><span className="font-semibold text-sm">{ticket.user}</span><span className="text-xs text-zinc-400">opened this ticket</span></div>
-                        <div className="bg-white p-4 rounded-xl border border-zinc-200 shadow-sm text-sm text-zinc-800 leading-relaxed">{ticket.subject}</div>
-                        <div className="mt-2 flex gap-4 text-xs text-zinc-500">
-                            <span className="flex items-center gap-1"><MapPin size={12}/> {ticket.location}</span>
-                            <span className="flex items-center gap-1"><Layers size={12}/> {ticket.category}</span>
+                    <div className="w-10 h-10 rounded-full bg-zinc-200 flex items-center justify-center font-bold text-zinc-600 text-xs shadow-inner shrink-0">{ticket.user.charAt(0)}</div>
+                    <div className="flex-1 max-w-3xl">
+                        <div className="flex items-baseline gap-2 mb-1"><span className="font-bold text-sm text-zinc-900">{ticket.user}</span><span className="text-xs text-zinc-400">opened this ticket</span></div>
+                        <div className="bg-white p-5 rounded-xl border border-zinc-200 shadow-sm text-sm text-zinc-800 leading-relaxed relative">
+                            {/* Little triangle arrow */}
+                            <div className="absolute top-4 -left-[6px] w-3 h-3 bg-white border-l border-t border-zinc-200 transform -rotate-45"></div>
+                            {ticket.subject}
+                        </div>
+                        <div className="mt-3 flex gap-4 text-xs text-zinc-500 pl-1">
+                            <span className="flex items-center gap-1.5"><MapPin size={12} className="text-red-500"/> {ticket.location}</span>
+                            <span className="flex items-center gap-1.5"><Layers size={12} className="text-indigo-500"/> {ticket.category}</span>
+                            <span className="flex items-center gap-1.5"><Monitor size={12} className="text-zinc-400"/> {ticket.context}</span>
                         </div>
                     </div>
                 </div>
 
-                <div className="space-y-6 relative before:absolute before:left-5 before:top-0 before:bottom-0 before:w-px before:bg-zinc-200 before:-z-10">
+                {/* Timeline */}
+                <div className="space-y-6 relative max-w-3xl">
+                    {/* Vertical Line */}
+                    <div className="absolute left-5 top-0 bottom-0 w-px bg-zinc-200 -z-10"></div>
+                    
                     {ticket.updates.map(u => (
                         <div key={u.id} className={`flex gap-4 ${u.type === 'system' ? 'justify-center pl-0' : ''}`}>
                             {u.type === 'system' ? (
-                                <div className="bg-zinc-100 border border-zinc-200 rounded-full px-3 py-1 text-[10px] font-medium text-zinc-500 flex items-center gap-2 z-10"><Activity size={10}/> {u.text}</div>
+                                <div className="bg-zinc-100 border border-zinc-200 rounded-full px-3 py-1 text-[10px] font-bold text-zinc-500 flex items-center gap-2 z-10 shadow-sm"><Activity size={10}/> {u.text}</div>
                             ) : (
                                 <>
-                                    <div className={`w-10 h-10 rounded-full flex items-center justify-center font-bold text-xs shadow-sm z-10 border-2 border-white ${u.isAdmin ? 'bg-brand-800 text-white' : 'bg-zinc-200 text-zinc-600'}`}>{u.user.charAt(0)}</div>
+                                    <div className={`w-10 h-10 rounded-full flex items-center justify-center font-bold text-xs shadow-sm z-10 border-4 border-zinc-50 shrink-0 ${u.isAdmin ? 'bg-indigo-600 text-white' : 'bg-zinc-200 text-zinc-600'}`}>{u.user.charAt(0)}</div>
                                     <div className="flex-1">
-                                        <div className="flex items-baseline gap-2 mb-1"><span className="font-semibold text-sm">{u.user}</span><span className="text-xs text-zinc-400">{new Date(u.timestamp).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}</span></div>
-                                        <div className={`p-3 rounded-xl border text-sm shadow-sm leading-relaxed ${u.isAdmin ? 'bg-brand-50 border-brand-100 text-brand-900' : 'bg-white border-zinc-200'}`}>{u.text}</div>
+                                        <div className="flex items-baseline gap-2 mb-1"><span className="font-bold text-sm text-zinc-800">{u.user}</span><span className="text-xs text-zinc-400">{new Date(u.timestamp).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}</span></div>
+                                        <div className={`p-3.5 rounded-xl border text-sm shadow-sm leading-relaxed ${u.isAdmin ? 'bg-indigo-50/50 border-indigo-100 text-zinc-800' : 'bg-white border-zinc-200'}`}>{u.text}</div>
                                     </div>
                                 </>
                             )}
@@ -501,11 +528,12 @@ function TicketDetailView({ ticket, onUpdateTicket, currentUser }) {
                 </div>
             </div>
 
+            {/* Sticky Footer Input */}
             {ticket.status !== 'Resolved' && (
-                <div className="p-4 bg-white border-t border-zinc-100">
-                    <form onSubmit={handlePost} className="relative">
-                        <input type="text" className="w-full pl-4 pr-12 py-3 bg-zinc-50 border border-zinc-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-brand-800/10 focus:border-brand-800 transition-all text-sm" placeholder="Reply..." value={newComment} onChange={e => setNewComment(e.target.value)} />
-                        <button type="submit" className="absolute right-2 top-2 p-1.5 bg-brand-800 text-white rounded-lg hover:bg-brand-900 transition-colors shadow-sm"><Send size={14}/></button>
+                <div className="p-4 bg-white border-t border-zinc-200 z-10">
+                    <form onSubmit={handlePost} className="relative max-w-4xl mx-auto">
+                        <input type="text" className="w-full pl-4 pr-12 py-3 bg-zinc-50 border border-zinc-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-600/20 focus:border-indigo-600 transition-all text-sm" placeholder="Type your reply..." value={newComment} onChange={e => setNewComment(e.target.value)} />
+                        <button type="submit" className="absolute right-2 top-2 p-1.5 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors shadow-sm"><Send size={16}/></button>
                     </form>
                 </div>
             )}
@@ -518,38 +546,43 @@ function UserDirectory({ users, currentUser, onAddUser, onUpdateUser, department
     const [isAdding, setIsAdding] = useState(false);
     
     return (
-        <div className="h-full flex flex-col max-w-5xl mx-auto">
-            <div className="flex justify-between items-center mb-6">
-                <div><h2 className="text-xl font-bold text-zinc-900">Directory</h2><p className="text-sm text-zinc-500">Manage access & roles</p></div>
-                {currentUser.isSuperAdmin && <button onClick={() => setIsAdding(true)} className="btn-primary px-4 py-2 rounded-lg text-sm flex items-center gap-2"><UserPlus size={16}/> Add User</button>}
+        <div className="h-full flex flex-col p-8 overflow-y-auto">
+            <div className="max-w-6xl mx-auto w-full">
+                <div className="flex justify-between items-center mb-6">
+                    <div><h2 className="text-2xl font-bold text-zinc-900 tracking-tight">Staff Directory</h2><p className="text-sm text-zinc-500 mt-1">Manage user access & roles</p></div>
+                    {currentUser.isSuperAdmin && <button onClick={() => setIsAdding(true)} className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 shadow-sm transition-all"><UserPlus size={16}/> Add User</button>}
+                </div>
+                
+                <div className="bg-white rounded-xl shadow-sm border border-zinc-200 overflow-hidden">
+                    <table className="w-full text-left text-sm">
+                        <thead className="bg-zinc-50/80 text-xs uppercase text-zinc-500 font-bold border-b border-zinc-200">
+                            <tr><th className="px-6 py-4">Identity</th><th className="px-6 py-4">Role & Dept</th><th className="px-6 py-4">Location Access</th><th className="px-6 py-4 text-right">Actions</th></tr>
+                        </thead>
+                        <tbody className="divide-y divide-zinc-100">
+                            {users.map(u => (
+                                <tr key={u.id} className="hover:bg-zinc-50/50 transition-colors group">
+                                    <td className="px-6 py-4">
+                                        <div className="flex items-center gap-3">
+                                            <div className={`w-9 h-9 rounded-full flex items-center justify-center text-xs font-bold text-white shadow-sm ${u.isSuperAdmin ? 'bg-purple-600' : 'bg-zinc-400'}`}>{u.avatar}</div>
+                                            <div><div className="font-bold text-zinc-900">{u.name}</div><div className="text-xs text-zinc-400 font-mono">ID: {u.id}</div></div>
+                                        </div>
+                                    </td>
+                                    <td className="px-6 py-4"><div className="font-medium text-zinc-700">{u.role}</div><div className="text-xs text-zinc-400">{u.dept} Department</div></td>
+                                    <td className="px-6 py-4">
+                                        <div className="flex flex-wrap gap-1">
+                                            {u.accessSchools?.includes('ALL') ? <span className="px-2 py-1 bg-purple-50 text-purple-700 text-[10px] font-bold rounded border border-purple-100 flex items-center gap-1"><Globe size={10}/> GLOBAL ACCESS</span> : u.accessSchools?.map(s => <span key={s} className="px-2 py-1 bg-zinc-100 text-zinc-600 text-[10px] font-bold rounded border border-zinc-200">{s}</span>)}
+                                        </div>
+                                    </td>
+                                    <td className="px-6 py-4 text-right">
+                                        {currentUser.isSuperAdmin && <button onClick={() => setEditingUser(u)} className="text-zinc-400 hover:text-indigo-600 p-2 hover:bg-indigo-50 rounded transition-all"><Edit3 size={16}/></button>}
+                                    </td>
+                                </tr>
+                            ))}
+                        </tbody>
+                    </table>
+                </div>
+                {(editingUser || isAdding) && <UserEditModal user={editingUser} isAdding={isAdding} departments={departments} schools={schools} onClose={() => {setEditingUser(null); setIsAdding(false)}} onSave={(u) => { isAdding ? onAddUser(u) : onUpdateUser(u); setEditingUser(null); setIsAdding(false); }} />}
             </div>
-            <div className="panel overflow-hidden bg-white">
-                <table className="w-full text-left text-sm">
-                    <thead className="bg-zinc-50 text-xs uppercase text-zinc-500 font-semibold border-b border-zinc-100">
-                        <tr><th className="px-6 py-3">Name</th><th className="px-6 py-3">Role</th><th className="px-6 py-3">Access</th><th className="px-6 py-3 text-right">Action</th></tr>
-                    </thead>
-                    <tbody className="divide-y divide-zinc-50">
-                        {users.map(u => (
-                            <tr key={u.id} className="hover:bg-zinc-50/50 transition-colors group">
-                                <td className="px-6 py-3 font-medium text-zinc-900 flex items-center gap-3">
-                                    <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold text-white ${u.isSuperAdmin ? 'bg-purple-600' : 'bg-zinc-400'}`}>{u.avatar}</div>
-                                    {u.name}
-                                </td>
-                                <td className="px-6 py-3 text-zinc-500">{u.role} <span className="text-zinc-300">•</span> {u.dept}</td>
-                                <td className="px-6 py-3">
-                                    <div className="flex gap-1">
-                                        {u.accessSchools?.includes('ALL') ? <span className="px-2 py-0.5 bg-purple-50 text-purple-700 text-[10px] font-bold rounded border border-purple-100">GLOBAL</span> : <span className="px-2 py-0.5 bg-zinc-100 text-zinc-600 text-[10px] font-bold rounded border border-zinc-200">{u.school}</span>}
-                                    </div>
-                                </td>
-                                <td className="px-6 py-3 text-right">
-                                    {currentUser.isSuperAdmin && <button onClick={() => setEditingUser(u)} className="text-zinc-400 hover:text-brand-800"><Edit3 size={16}/></button>}
-                                </td>
-                            </tr>
-                        ))}
-                    </tbody>
-                </table>
-            </div>
-            {(editingUser || isAdding) && <UserEditModal user={editingUser} isAdding={isAdding} departments={departments} schools={schools} onClose={() => {setEditingUser(null); setIsAdding(false)}} onSave={(u) => { isAdding ? onAddUser(u) : onUpdateUser(u); setEditingUser(null); setIsAdding(false); }} />}
         </div>
     );
 }
@@ -567,33 +600,33 @@ function UserEditModal({ user, isAdding, onClose, onSave, departments, schools }
     };
 
     return (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/20 backdrop-blur-sm p-4">
-            <div className="bg-white w-full max-w-lg rounded-2xl shadow-2xl p-6 animate-slide-up border border-zinc-200">
-                <div className="flex justify-between items-center mb-6">
-                    <h3 className="text-lg font-bold text-zinc-900">{isAdding ? 'New User' : 'Edit Profile'}</h3>
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/30 backdrop-blur-sm p-4 animate-enter">
+            <div className="bg-white w-full max-w-lg rounded-2xl shadow-2xl p-0 border border-zinc-200 overflow-hidden">
+                <div className="px-6 py-4 border-b border-zinc-100 flex justify-between items-center bg-zinc-50/50">
+                    <h3 className="font-bold text-zinc-900">{isAdding ? 'Onboard New User' : 'Edit Profile'}</h3>
                     <button onClick={onClose}><X size={20} className="text-zinc-400 hover:text-zinc-600"/></button>
                 </div>
-                <div className="space-y-4">
+                <div className="p-6 space-y-5 max-h-[70vh] overflow-y-auto">
                     <div className="grid grid-cols-2 gap-4">
-                        <div className="col-span-2"><label className="text-xs font-bold text-zinc-500 uppercase mb-1 block">Name</label><input type="text" className="input-base" value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} /></div>
-                        <div><label className="text-xs font-bold text-zinc-500 uppercase mb-1 block">Role</label><input type="text" className="input-base" value={formData.role} onChange={e => setFormData({...formData, role: e.target.value})} /></div>
-                        <div><label className="text-xs font-bold text-zinc-500 uppercase mb-1 block">Dept</label><select className="input-base" value={formData.dept} onChange={e => setFormData({...formData, dept: e.target.value})}>{departments.map(d => <option key={d} value={d}>{d}</option>)}</select></div>
+                        <div className="col-span-2"><label className="text-xs font-bold text-zinc-500 uppercase mb-1 block">Full Name</label><input type="text" className="w-full px-3 py-2 text-sm border border-zinc-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-600/20" value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} /></div>
+                        <div><label className="text-xs font-bold text-zinc-500 uppercase mb-1 block">Role Title</label><input type="text" className="w-full px-3 py-2 text-sm border border-zinc-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-600/20" value={formData.role} onChange={e => setFormData({...formData, role: e.target.value})} /></div>
+                        <div><label className="text-xs font-bold text-zinc-500 uppercase mb-1 block">Department</label><select className="w-full px-3 py-2 text-sm border border-zinc-200 rounded-lg bg-white" value={formData.dept} onChange={e => setFormData({...formData, dept: e.target.value})}>{departments.map(d => <option key={d} value={d}>{d}</option>)}</select></div>
                     </div>
-                    <div>
-                        <label className="text-xs font-bold text-zinc-500 uppercase mb-2 block">Access Matrix</label>
+                    <div className="bg-indigo-50/50 p-4 rounded-xl border border-indigo-100">
+                        <label className="text-xs font-bold text-indigo-900 uppercase mb-2 block flex items-center gap-2"><MapPin size={14}/> Location Access</label>
                         <div className="grid grid-cols-2 gap-2">
-                            <button onClick={() => toggleSchoolAccess('ALL')} className={`p-2 rounded border text-xs font-medium transition-all ${formData.accessSchools?.includes('ALL') ? 'bg-purple-600 text-white border-purple-600' : 'bg-white text-zinc-600 border-zinc-200'}`}>Global Access</button>
-                            {schools.map(s => <button key={s} onClick={() => toggleSchoolAccess(s)} disabled={formData.accessSchools?.includes('ALL') || s === formData.school} className={`p-2 rounded border text-xs font-medium transition-all ${s === formData.school ? 'bg-zinc-100 text-zinc-400 cursor-not-allowed' : (formData.accessSchools?.includes(s) ? 'bg-brand-800 text-white border-brand-800' : 'bg-white text-zinc-600 border-zinc-200')}`}>{s}</button>)}
+                            <button onClick={() => toggleSchoolAccess('ALL')} className={`p-2 rounded-lg text-xs font-bold border transition-all flex items-center justify-between ${formData.accessSchools?.includes('ALL') ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-zinc-500 border-zinc-200 hover:border-indigo-300'}`}>Global Access {formData.accessSchools?.includes('ALL') && <CheckCircle size={14}/>}</button>
+                            {schools.map(s => <button key={s} onClick={() => toggleSchoolAccess(s)} disabled={formData.accessSchools?.includes('ALL') || s === formData.school} className={`p-2 rounded-lg text-xs font-bold border transition-all text-left truncate ${s === formData.school ? 'bg-zinc-100 text-zinc-400 border-zinc-200' : (formData.accessSchools?.includes(s) ? 'bg-white border-indigo-600 ring-1 ring-indigo-600 text-indigo-700' : 'bg-white text-zinc-500 border-zinc-200 hover:border-indigo-300')}`}>{s}</button>)}
                         </div>
                     </div>
                     <div className="flex items-center gap-3 p-3 bg-zinc-50 rounded-lg border border-zinc-200">
-                        <input type="checkbox" checked={formData.isAdmin} onChange={e => setFormData({...formData, isAdmin: e.target.checked})} className="rounded text-brand-800 focus:ring-brand-800" />
+                        <input type="checkbox" checked={formData.isAdmin} onChange={e => setFormData({...formData, isAdmin: e.target.checked})} className="rounded text-indigo-600 focus:ring-indigo-600 w-4 h-4" />
                         <span className="text-sm font-medium text-zinc-700">Grant Admin Privileges</span>
                     </div>
                 </div>
-                <div className="mt-6 flex justify-end gap-3 pt-4 border-t border-zinc-100">
-                    <button onClick={onClose} className="btn-secondary px-4 py-2 rounded-lg text-sm">Cancel</button>
-                    <button onClick={() => onSave(formData)} className="btn-primary px-4 py-2 rounded-lg text-sm">Save Changes</button>
+                <div className="px-6 py-4 bg-zinc-50 border-t border-zinc-200 flex justify-end gap-3">
+                    <button onClick={onClose} className="px-4 py-2 text-zinc-600 hover:bg-zinc-200 rounded-lg text-sm font-medium transition-colors">Cancel</button>
+                    <button onClick={() => onSave(formData)} className="px-6 py-2 bg-indigo-600 text-white rounded-lg text-sm font-bold hover:bg-indigo-700 shadow-sm transition-colors">Save Changes</button>
                 </div>
             </div>
         </div>
@@ -603,21 +636,19 @@ function UserEditModal({ user, isAdding, onClose, onSave, departments, schools }
 function DepartmentManager({ departments, onAdd, onRemove }) {
     const [newDept, setNewDept] = useState('');
     return (
-        <div className="max-w-3xl mx-auto mt-8">
-            <div className="bg-white rounded-2xl shadow-sm border border-zinc-200 overflow-hidden">
-                <div className="p-6 border-b border-zinc-100 bg-zinc-50/50 flex justify-between items-center">
-                    <div><h2 className="text-lg font-bold text-zinc-900">Departments</h2><p className="text-xs text-zinc-500">Organizational structure</p></div>
-                </div>
-                <div className="p-6">
+        <div className="h-full p-8 flex flex-col items-center">
+            <div className="w-full max-w-2xl">
+                <h2 className="text-2xl font-bold text-zinc-900 mb-6">Departments</h2>
+                <div className="bg-white p-6 rounded-xl shadow-sm border border-zinc-200">
                     <form onSubmit={(e) => { e.preventDefault(); if(newDept.trim()) { onAdd(newDept.trim()); setNewDept(''); } }} className="flex gap-2 mb-6">
-                        <input type="text" className="input-base" placeholder="New Department Name..." value={newDept} onChange={e => setNewDept(e.target.value)} />
-                        <button type="submit" className="btn-primary px-4 py-2 rounded-lg flex items-center gap-2"><Plus size={16}/> Add</button>
+                        <input type="text" className="flex-1 px-4 py-2 border border-zinc-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-600/20" placeholder="New Department Name..." value={newDept} onChange={e => setNewDept(e.target.value)} />
+                        <button type="submit" className="bg-indigo-600 text-white px-4 py-2 rounded-lg font-bold hover:bg-indigo-700 flex items-center gap-2"><Plus size={18}/> Add</button>
                     </form>
-                    <div className="grid grid-cols-3 gap-3">
+                    <div className="grid grid-cols-2 gap-3">
                         {departments.map(d => (
-                            <div key={d} className="flex justify-between items-center p-3 bg-zinc-50 border border-zinc-200 rounded-lg group">
+                            <div key={d} className="flex justify-between items-center p-3 bg-zinc-50 border border-zinc-200 rounded-lg group hover:border-indigo-200 transition-colors">
                                 <span className="font-medium text-sm text-zinc-700">{d}</span>
-                                <button onClick={() => onRemove(d)} className="text-zinc-400 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity"><Trash2 size={14}/></button>
+                                <button onClick={() => onRemove(d)} className="text-zinc-400 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity p-1"><Trash2 size={16}/></button>
                             </div>
                         ))}
                     </div>
@@ -638,32 +669,35 @@ function KnowledgeBaseManager({ articles, onAdd, onRemove }) {
     };
 
     return (
-        <div className="max-w-5xl mx-auto h-full flex flex-col">
-            <div className="flex justify-between items-center mb-6">
-                <div><h2 className="text-xl font-bold text-zinc-900">Knowledge Base</h2><p className="text-sm text-zinc-500">Deflection articles</p></div>
-                <button onClick={() => setIsAdding(true)} className="btn-primary px-4 py-2 rounded-lg text-sm flex items-center gap-2"><Plus size={16}/> Add Article</button>
-            </div>
-            
-            {isAdding && (
-                <div className="bg-white p-6 rounded-xl border border-zinc-200 shadow-sm mb-6 animate-slide-up">
-                    <form onSubmit={handleSubmit} className="space-y-4">
-                        <div><label className="text-xs font-bold text-zinc-500 uppercase mb-1 block">Title</label><input type="text" className="input-base" value={form.title} onChange={e => setForm({...form, title: e.target.value})} /></div>
-                        <div><label className="text-xs font-bold text-zinc-500 uppercase mb-1 block">Solution</label><textarea className="input-base h-24" value={form.content} onChange={e => setForm({...form, content: e.target.value})} /></div>
-                        <div><label className="text-xs font-bold text-zinc-500 uppercase mb-1 block">Triggers</label><input type="text" className="input-base" value={form.triggers} onChange={e => setForm({...form, triggers: e.target.value})} placeholder="wifi, slow, connect"/></div>
-                        <div className="flex justify-end gap-2"><button type="button" onClick={() => setIsAdding(false)} className="btn-secondary px-4 py-2 rounded-lg text-sm">Cancel</button><button type="submit" className="btn-primary px-4 py-2 rounded-lg text-sm">Save</button></div>
-                    </form>
+        <div className="h-full p-8 overflow-y-auto">
+            <div className="max-w-5xl mx-auto">
+                <div className="flex justify-between items-center mb-6">
+                    <div><h2 className="text-2xl font-bold text-zinc-900">Knowledge Base</h2><p className="text-sm text-zinc-500">Automated deflection answers</p></div>
+                    <button onClick={() => setIsAdding(true)} className="bg-indigo-600 text-white px-4 py-2 rounded-lg text-sm font-bold hover:bg-indigo-700 flex items-center gap-2 shadow-sm"><Plus size={16}/> Add Article</button>
                 </div>
-            )}
-
-            <div className="grid grid-cols-2 gap-4">
-                {articles.map(a => (
-                    <div key={a.id} className="bg-white p-5 rounded-xl border border-zinc-200 shadow-sm hover:shadow-md transition-shadow relative group">
-                        <button onClick={() => onRemove(a.id)} className="absolute top-4 right-4 text-zinc-300 hover:text-red-500 opacity-0 group-hover:opacity-100"><Trash2 size={16}/></button>
-                        <h3 className="font-bold text-zinc-900 mb-2">{a.title}</h3>
-                        <p className="text-sm text-zinc-600 line-clamp-3 mb-4">{a.content}</p>
-                        <div className="flex gap-2 flex-wrap">{a.triggers.map(t => <span key={t} className="text-[10px] bg-zinc-100 text-zinc-600 px-2 py-1 rounded border border-zinc-200">{t}</span>)}</div>
+                
+                {isAdding && (
+                    <div className="bg-white p-6 rounded-xl border border-indigo-100 shadow-lg mb-8 animate-enter ring-1 ring-indigo-500/10">
+                        <h3 className="font-bold text-indigo-900 mb-4 flex items-center gap-2"><Lightbulb size={18}/> New Article</h3>
+                        <form onSubmit={handleSubmit} className="space-y-4">
+                            <div><label className="text-xs font-bold text-zinc-500 uppercase mb-1 block">Title</label><input type="text" className="w-full px-3 py-2 border border-zinc-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-600/20" value={form.title} onChange={e => setForm({...form, title: e.target.value})} placeholder="e.g. How to restart printer"/></div>
+                            <div><label className="text-xs font-bold text-zinc-500 uppercase mb-1 block">Solution</label><textarea className="w-full px-3 py-2 border border-zinc-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-600/20 h-24" value={form.content} onChange={e => setForm({...form, content: e.target.value})} placeholder="Step 1..."/></div>
+                            <div><label className="text-xs font-bold text-zinc-500 uppercase mb-1 block">Triggers</label><input type="text" className="w-full px-3 py-2 border border-zinc-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-600/20" value={form.triggers} onChange={e => setForm({...form, triggers: e.target.value})} placeholder="printer, jam, error (comma separated)"/></div>
+                            <div className="flex justify-end gap-2 pt-2"><button type="button" onClick={() => setIsAdding(false)} className="px-4 py-2 text-zinc-600 hover:bg-zinc-100 rounded-lg text-sm font-medium">Cancel</button><button type="submit" className="px-6 py-2 bg-indigo-600 text-white rounded-lg text-sm font-bold hover:bg-indigo-700">Save Article</button></div>
+                        </form>
                     </div>
-                ))}
+                )}
+
+                <div className="grid grid-cols-2 gap-4">
+                    {articles.map(a => (
+                        <div key={a.id} className="bg-white p-6 rounded-xl border border-zinc-200 shadow-sm hover:shadow-md transition-all hover:-translate-y-1 relative group">
+                            <button onClick={() => onRemove(a.id)} className="absolute top-4 right-4 text-zinc-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity p-2"><Trash2 size={16}/></button>
+                            <h3 className="font-bold text-zinc-900 mb-2 text-lg">{a.title}</h3>
+                            <p className="text-sm text-zinc-600 line-clamp-3 mb-4 leading-relaxed">{a.content}</p>
+                            <div className="flex gap-2 flex-wrap">{a.triggers.map(t => <span key={t} className="text-[10px] bg-zinc-100 text-zinc-600 px-2 py-1 rounded border border-zinc-200 font-medium">{t}</span>)}</div>
+                        </div>
+                    ))}
+                </div>
             </div>
         </div>
     );
@@ -694,51 +728,57 @@ function LogicConfigModal({ keywords, setKeywords, departments, onClose }) {
         const updatedKeywords = { [newCatName]: { owner: newCatOwner, sensitive: newCatSensitive, score: 0, keywords: [] }, ...keywords };
         setKeywords(updatedKeywords); setIsCreating(false); setNewCatName('');
     };
+    const handleDeleteCategory = (catName) => {
+        if (confirm(`Delete ${catName}?`)) { const n = {...keywords}; delete n[catName]; setKeywords(n); }
+    };
 
     return (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/20 backdrop-blur-sm p-4">
-            <div className="bg-white w-full max-w-4xl max-h-[85vh] rounded-2xl shadow-2xl flex flex-col animate-slide-up border border-zinc-200">
-                <div className="p-6 border-b border-zinc-100 flex justify-between items-center">
-                    <div><h3 className="text-lg font-bold text-zinc-900 flex items-center gap-2"><Settings size={18} /> Routing Logic</h3><p className="text-xs text-zinc-500">Configure automated ticket distribution</p></div>
-                    <button onClick={onClose}><X size={20} className="text-zinc-400 hover:text-zinc-600"/></button>
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/30 backdrop-blur-sm p-4 animate-enter">
+            <div className="bg-white w-full max-w-4xl max-h-[85vh] rounded-2xl shadow-2xl flex flex-col border border-zinc-200 overflow-hidden">
+                <div className="p-6 border-b border-zinc-100 flex justify-between items-center bg-zinc-50/80">
+                    <div><h3 className="text-xl font-bold text-zinc-900 flex items-center gap-2"><Settings size={20} className="text-indigo-600" /> Routing Logic</h3><p className="text-sm text-zinc-500">Auto-assign tickets based on keywords</p></div>
+                    <button onClick={onClose}><X size={24} className="text-zinc-400 hover:text-zinc-600"/></button>
                 </div>
-                <div className="p-6 overflow-y-auto bg-zinc-50/50 flex-1 space-y-6">
-                    <div className="bg-white p-4 rounded-xl border border-zinc-200 shadow-sm">
+                <div className="p-8 overflow-y-auto bg-white flex-1 space-y-8">
+                    {/* Add Category */}
+                    <div className="bg-indigo-50/50 p-6 rounded-2xl border border-indigo-100">
                         {isCreating ? (
                             <div className="flex gap-4 items-end">
-                                <div className="flex-1"><label className="text-xs font-bold text-zinc-500 uppercase mb-1 block">Category</label><input type="text" className="input-base" value={newCatName} onChange={e => setNewCatName(e.target.value)} /></div>
-                                <div><label className="text-xs font-bold text-zinc-500 uppercase mb-1 block">Dept</label><select className="input-base" value={newCatOwner} onChange={e => setNewCatOwner(e.target.value)}>{departments.map(d => <option key={d} value={d}>{d}</option>)}</select></div>
-                                <button onClick={handleCreateCategory} className="btn-primary px-4 py-2 rounded-lg text-sm h-[38px]">Save</button>
-                                <button onClick={() => setIsCreating(false)} className="btn-secondary px-4 py-2 rounded-lg text-sm h-[38px]">Cancel</button>
+                                <div className="flex-1"><label className="text-xs font-bold text-indigo-900 uppercase mb-1 block">Category Name</label><input type="text" className="w-full px-3 py-2 border border-indigo-200 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:outline-none" value={newCatName} onChange={e => setNewCatName(e.target.value)} placeholder="e.g. Finance"/></div>
+                                <div className="w-48"><label className="text-xs font-bold text-indigo-900 uppercase mb-1 block">Route To</label><select className="w-full px-3 py-2 border border-indigo-200 rounded-lg bg-white" value={newCatOwner} onChange={e => setNewCatOwner(e.target.value)}>{departments.map(d => <option key={d} value={d}>{d}</option>)}</select></div>
+                                <button onClick={handleCreateCategory} className="px-6 py-2 bg-indigo-600 text-white rounded-lg font-bold shadow-sm hover:bg-indigo-700">Save</button>
+                                <button onClick={() => setIsCreating(false)} className="px-4 py-2 text-indigo-600 font-medium hover:bg-indigo-100 rounded-lg">Cancel</button>
                             </div>
                         ) : (
-                            <button onClick={() => setIsCreating(true)} className="w-full py-3 border-2 border-dashed border-zinc-300 rounded-xl text-zinc-500 hover:border-brand-800 hover:text-brand-800 hover:bg-brand-50 transition-all text-sm font-medium flex items-center justify-center gap-2">
-                                <Plus size={16} /> Add New Routing Rule
+                            <button onClick={() => setIsCreating(true)} className="w-full py-4 border-2 border-dashed border-indigo-200 rounded-xl text-indigo-400 hover:border-indigo-500 hover:text-indigo-600 hover:bg-indigo-50 transition-all text-sm font-bold flex items-center justify-center gap-2">
+                                <Plus size={20} /> Add New Routing Rule
                             </button>
                         )}
                     </div>
 
-                    <div className="space-y-4">
+                    <div className="grid gap-6">
                         {Object.entries(keywords).map(([cat, data]) => (
-                            <div key={cat} className="bg-white border border-zinc-200 rounded-xl p-5 shadow-sm">
-                                <div className="flex justify-between items-start mb-4">
-                                    <div className="flex items-center gap-3">
-                                        <div className="bg-zinc-100 p-2 rounded-lg"><Layers size={16} className="text-zinc-500"/></div>
-                                        <div><h4 className="text-sm font-bold text-zinc-900">{cat}</h4><span className="text-xs text-zinc-500">Routed to: {data.owner}</span></div>
+                            <div key={cat} className="bg-white border border-zinc-200 rounded-2xl p-6 shadow-sm hover:border-indigo-300 transition-colors">
+                                <div className="flex justify-between items-start mb-6">
+                                    <div className="flex items-center gap-4">
+                                        <div className="bg-zinc-100 p-3 rounded-xl"><Layers size={20} className="text-zinc-600"/></div>
+                                        <div><h4 className="text-lg font-bold text-zinc-900">{cat}</h4><span className="text-xs font-medium text-zinc-500 bg-zinc-100 px-2 py-1 rounded">Routed to: {data.owner}</span></div>
                                     </div>
-                                    <div className="flex items-center gap-2">
-                                        <span className={`text-[10px] font-bold px-2 py-1 rounded border ${data.sensitive ? 'bg-red-50 text-red-600 border-red-100' : 'bg-zinc-50 text-zinc-500 border-zinc-100'}`}>{data.sensitive ? 'CONFIDENTIAL' : 'PUBLIC'}</span>
-                                        <button onClick={() => {const n = {...keywords}; delete n[cat]; setKeywords(n);}} className="text-zinc-300 hover:text-red-500"><Trash2 size={16}/></button>
+                                    <div className="flex items-center gap-3">
+                                        <button onClick={() => handleDeleteCategory(cat)} className="text-zinc-300 hover:text-red-500 p-2 hover:bg-red-50 rounded-lg transition-colors"><Trash2 size={18}/></button>
                                     </div>
                                 </div>
-                                <div className="flex flex-wrap gap-2">
-                                    {data.keywords.map(kw => (
-                                        <span key={kw} className="text-xs bg-zinc-50 text-zinc-600 px-3 py-1 rounded-full border border-zinc-200 flex items-center gap-1">
-                                            {kw} <button onClick={() => handleRemoveKeyword(cat, kw)} className="hover:text-red-500"><X size={10}/></button>
-                                        </span>
-                                    ))}
-                                    <input type="text" placeholder="+ keyword" className="text-xs bg-transparent border-b border-dashed border-zinc-300 focus:border-brand-800 focus:outline-none w-20 px-1" 
-                                        value={newKeywordInputs[cat] || ''} onChange={e => setNewKeywordInputs({...newKeywordInputs, [cat]: e.target.value})} onKeyDown={e => handleAddKeyword(cat, e)} />
+                                <div>
+                                    <label className="text-xs font-bold text-zinc-400 uppercase mb-3 block">Trigger Keywords</label>
+                                    <div className="flex flex-wrap gap-2">
+                                        {data.keywords.map(kw => (
+                                            <span key={kw} className="text-xs bg-zinc-50 text-zinc-700 px-3 py-1.5 rounded-lg border border-zinc-200 flex items-center gap-2 font-medium">
+                                                {kw} <button onClick={() => handleRemoveKeyword(cat, kw)} className="text-zinc-400 hover:text-red-500"><X size={12}/></button>
+                                            </span>
+                                        ))}
+                                        <input type="text" placeholder="+ add keyword" className="text-xs bg-transparent border-b border-dashed border-zinc-300 focus:border-indigo-600 focus:outline-none w-24 px-1 py-1" 
+                                            value={newKeywordInputs[cat] || ''} onChange={e => setNewKeywordInputs({...newKeywordInputs, [cat]: e.target.value})} onKeyDown={e => handleAddKeyword(cat, e)} />
+                                    </div>
                                 </div>
                             </div>
                         ))}
