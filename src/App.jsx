@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
+import { supabase } from './supabaseClient'; // IMPORT THE DB CONNECTION
 import { 
   MessageSquare, LayoutDashboard, Monitor, Wifi, AlertCircle, CheckCircle, 
   Clock, Search, Laptop, User, Users, Building, Send, Briefcase, Filter, 
@@ -20,20 +21,20 @@ const TicketEngine = {
             if (filters.school && filters.school !== 'ALL_SCHOOLS' && t.school !== filters.school) return false;
 
             // 2. Super Admin (God Mode)
-            if (currentUser.isSuperAdmin) return true;
+            if (currentUser.is_super_admin) return true;
 
             // 3. Own Ticket Fallback
-            if (t.user === currentUser.name) return true;
+            if (t.requester_email === currentUser.email) return true;
 
             // 4. Matrix Access
             const categoryConfig = keywords[t.category];
             const ticketOwnerDept = categoryConfig ? categoryConfig.owner : 'Unassigned';
-            const userScopes = currentUser.accessScopes || [];
-            const hasDeptAccess = (currentUser.dept === ticketOwnerDept) || userScopes.includes(ticketOwnerDept);
+            const userScopes = currentUser.access_scopes || []; // Note: Database uses snake_case
+            const hasDeptAccess = (currentUser.department === ticketOwnerDept) || userScopes.includes(ticketOwnerDept);
 
             if (!hasDeptAccess) return false;
 
-            const userSchools = currentUser.accessSchools || [];
+            const userSchools = currentUser.access_schools || [];
             if (userSchools.includes('ALL')) return true;
             return userSchools.includes(t.school);
         });
@@ -63,24 +64,9 @@ const TicketEngine = {
     }
 };
 
-// --- MOCK DATA ---
+// --- CONSTANTS ---
 const initialSchools = ['St. Marys', 'King Edwards', 'North High', 'South High'];
-const initialDirectoryUsers = [
-    { id: 'u0', name: 'The CTO', role: 'Super Admin', dept: 'Executive', school: 'HQ', isAdmin: true, isSuperAdmin: true, avatar: 'BOSS', accessScopes: [], accessSchools: ['ALL'] },
-    { id: 'u1', name: 'John Doe', role: 'Support Engineer', dept: 'IT', school: 'HQ', isAdmin: true, isSuperAdmin: false, avatar: 'JD', accessScopes: [], accessSchools: ['ALL'] },
-    { id: 'u4', name: 'Paulo Birch', role: 'Site Manager', dept: 'Site', school: 'St. Marys', isAdmin: true, isSuperAdmin: false, avatar: 'PB', accessScopes: [], accessSchools: ['St. Marys', 'North High'] },
-    { id: 'u6', name: 'Sarah Jenkins', role: 'Teacher', dept: 'Teaching', school: 'St. Marys', isAdmin: false, isSuperAdmin: false, avatar: 'SJ', accessScopes: [], accessSchools: ['St. Marys'] },
-    { id: 'u7', name: 'Mike Ross', role: 'Teacher', dept: 'Teaching', school: 'King Edwards', isAdmin: false, isSuperAdmin: false, avatar: 'MR', accessScopes: [], accessSchools: ['King Edwards'] },
-    { id: 'u8', name: 'Harry Site', role: 'Site Staff', dept: 'Site', school: 'King Edwards', isAdmin: true, isSuperAdmin: false, avatar: 'HS', accessScopes: [], accessSchools: ['King Edwards'] },
-];
-const now = Date.now();
-const mins = 60 * 1000;
-const hours = 60 * mins;
-const initialTickets = [
-    { id: 901, user: "Mike Ross", role: "Teacher", school: "King Edwards", subject: "Printer jam in Staff Room", category: "Facilities", isSensitive: false, status: "Open", timestamp: now - (10 * mins), priority: "Low", context: "Printer Area B", location: "Staff Room", assignedTo: null, updates: [ { id: 1, type: 'comment', user: 'Mike Ross', text: 'I tried opening tray 2 but it is stuck.', timestamp: now - (9 * mins) } ] },
-    { id: 902, user: "Mike Ross", role: "Teacher", school: "King Edwards", subject: "VPN keeps disconnecting", category: "IT - Network", isSensitive: false, status: "In Progress", timestamp: now - (2 * hours), priority: "High", context: "Asset: MacBook Pro M2", location: "Remote", assignedTo: 'John Doe', updates: [ { id: 1, type: 'system', user: 'System', text: 'Ticket created', timestamp: now - (2 * hours) } ] },
-    { id: 903, user: "Sarah Jenkins", role: "Teacher", school: "St. Marys", subject: "Classroom 3B lights flickering", category: "Facilities", isSensitive: false, status: "Vendor Pending", timestamp: now - (26 * hours), priority: "Medium", context: "Electrician Called", location: "Room 3B", assignedTo: 'Paulo Birch', updates: [] },
-];
+const initialDepartments = ['IT', 'Site', 'Teaching', 'Admin', 'HR'];
 const initialKeywords = {
     'IT - AV': { owner: 'IT', sensitive: false, score: 0, keywords: ['iwb', 'screen', 'projector', 'display', 'hdmi', 'cable', 'audio', 'sound'] },
     'IT - Network': { owner: 'IT', sensitive: false, score: 0, keywords: ['wifi', 'internet', 'connect', 'slow', 'offline', 'network', 'vpn'] },
@@ -89,33 +75,110 @@ const initialKeywords = {
 const initialKnowledgeBase = [
     { id: 'kb1', triggers: ['wifi', 'internet', 'slow', 'connect'], title: 'Troubleshooting Slow Wifi', content: '1. Toggle your wifi adapter off/on.\n2. Restart your router.' },
 ];
-const initialDepartments = ['IT', 'Site', 'Teaching', 'Admin', 'HR'];
 
 // --- APP COMPONENT ---
 export default function App() {
     const [view, setView] = useState('chat');
-    const [tickets, setTickets] = useState(initialTickets);
+    const [tickets, setTickets] = useState([]); // Start Empty, fetch from DB
     const [notifications, setNotifications] = useState(0);
-    const [users, setUsers] = useState(initialDirectoryUsers);
+    const [users, setUsers] = useState([]);
+    const [currentUser, setCurrentUser] = useState(null);
     const [keywords, setKeywords] = useState(initialKeywords);
     const [departments, setDepartments] = useState(initialDepartments);
     const [kbArticles, setKbArticles] = useState(initialKnowledgeBase); 
-    const [currentUser, setCurrentUser] = useState(users[0]);
+    const [loading, setLoading] = useState(true);
 
+    // 1. Fetch Data from Supabase on Load
     useEffect(() => {
-        const updatedUser = users.find(u => u.id === currentUser.id);
-        if (updatedUser) setCurrentUser(updatedUser);
-    }, [users, currentUser.id]);
+        const fetchData = async () => {
+            setLoading(true);
+            
+            // Fetch Users
+            const { data: userData, error: userError } = await supabase.from('users').select('*').order('full_name');
+            if (userData) {
+                setUsers(userData);
+                // Default to the first user found (usually CTO from seed)
+                if (!currentUser) setCurrentUser(userData[0]);
+            }
 
-    // Handlers
-    const handleNewTicket = (ticket) => { setTickets([ticket, ...tickets]); setNotifications(prev => prev + 1); };
-    const updateTicket = (updatedTicket) => { setTickets(tickets.map(t => t.id === updatedTicket.id ? updatedTicket : t)); };
-    const handleAddUser = (newUser) => { const userWithAccess = { ...newUser, id: `u${Date.now()}`, accessSchools: newUser.accessSchools && newUser.accessSchools.length > 0 ? newUser.accessSchools : [newUser.school] }; setUsers([...users, userWithAccess]); };
-    const handleUpdateUser = (updatedUser) => { setUsers(users.map(u => u.id === updatedUser.id ? updatedUser : u)); };
-    const handleAddDepartment = (newDept) => { if (departments.includes(newDept)) return alert("Department already exists"); setDepartments([...departments, newDept]); };
-    const handleRemoveDepartment = (deptToRemove) => { if (confirm(`Delete ${deptToRemove}?`)) { setDepartments(departments.filter(d => d !== deptToRemove)); } };
-    const handleAddKbArticle = (article) => { setKbArticles([...kbArticles, { ...article, id: `kb${Date.now()}` }]); };
-    const handleRemoveKbArticle = (id) => { if (confirm('Delete this knowledge base article?')) { setKbArticles(kbArticles.filter(kb => kb.id !== id)); } };
+            // Fetch Tickets
+            const { data: ticketData, error: ticketError } = await supabase.from('tickets').select('*').order('created_at', { ascending: false });
+            if (ticketData) setTickets(ticketData);
+
+            // Fetch Updates (Chat History) - Ideally we join this, but for now we'll fetch on demand or simply separate
+            // For this prototype, we will fetch updates inside the DetailView to save bandwidth
+
+            setLoading(false);
+        };
+
+        fetchData();
+
+        // Realtime Subscription
+        const channel = supabase.channel('schema-db-changes')
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'tickets' }, (payload) => {
+                console.log('Change received!', payload);
+                fetchData(); // Simple re-fetch strategy for now
+                if(payload.eventType === 'INSERT') setNotifications(prev => prev + 1);
+            })
+            .subscribe();
+
+        return () => supabase.removeChannel(channel);
+    }, []);
+
+    // 2. Handlers (Updated for Database)
+    
+    const handleNewTicket = async (ticket) => {
+        // Optimistic UI Update
+        setTickets(prev => [ticket, ...prev]); 
+        
+        // Database Insert
+        const { error } = await supabase.from('tickets').insert([{
+            subject: ticket.subject,
+            category: ticket.category,
+            priority: ticket.priority,
+            status: ticket.status,
+            school: ticket.school,
+            location: ticket.location,
+            context_data: ticket.context,
+            is_sensitive: ticket.isSensitive,
+            requester_email: currentUser.email, // Use real email from DB user
+            assigned_to: ticket.assignedTo
+        }]);
+        
+        if (error) console.error('Error creating ticket:', error);
+    };
+
+    const updateTicket = async (updatedTicket) => {
+        // Optimistic UI
+        setTickets(prev => prev.map(t => t.id === updatedTicket.id ? updatedTicket : t));
+
+        // DB Update
+        await supabase.from('tickets').update({
+            status: updatedTicket.status,
+            assigned_to: updatedTicket.assignedTo
+            // Note: We aren't saving 'updates' array to the ticket row anymore, 
+            // we should save to ticket_updates table. 
+            // See TicketDetailView for that logic.
+        }).eq('id', updatedTicket.id);
+    };
+
+    const handleAddUser = async (newUser) => {
+        const { data, error } = await supabase.from('users').insert([{
+            full_name: newUser.name,
+            email: `${newUser.name.replace(/\s/g, '').toLowerCase()}@school.edu`, // Mock email generation
+            role: newUser.role,
+            department: newUser.dept,
+            school: newUser.school,
+            is_super_admin: newUser.isSuperAdmin,
+            access_schools: newUser.accessSchools,
+            access_scopes: newUser.accessScopes,
+            avatar_code: newUser.name.substring(0,2).toUpperCase()
+        }]).select();
+
+        if (data) setUsers([...users, data[0]]);
+    };
+
+    if (loading) return <div className="h-screen flex items-center justify-center bg-zinc-50 text-zinc-400">Loading System...</div>;
 
     return (
         <div className="min-h-screen flex flex-col font-sans text-zinc-900 bg-zinc-50">
@@ -141,7 +204,7 @@ export default function App() {
                                 <LayoutDashboard size={14} />
                                 {notifications > 0 && <span className="absolute -top-1 -right-1 bg-red-500 text-white text-[9px] font-bold w-3 h-3 flex items-center justify-center rounded-full animate-pulse">{notifications}</span>}
                             </div>
-                            {currentUser.isAdmin ? 'Admin Panel' : 'My Dashboard'}
+                            {currentUser.is_super_admin || currentUser.role === 'Super Admin' ? 'Admin Panel' : 'My Dashboard'}
                         </button>
                     </div>
 
@@ -149,22 +212,22 @@ export default function App() {
 
                     <div className="relative group">
                         <button className="flex items-center gap-3 hover:bg-white/50 p-1.5 rounded-lg transition-all border border-transparent hover:border-zinc-200">
-                            <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold text-white shadow-md ring-2 ring-white ${currentUser.isSuperAdmin ? 'bg-purple-600' : 'bg-zinc-800'}`}>
-                                {currentUser.avatar}
+                            <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold text-white shadow-md ring-2 ring-white ${currentUser.is_super_admin ? 'bg-purple-600' : 'bg-zinc-800'}`}>
+                                {currentUser.avatar_code}
                             </div>
                             <div className="text-left hidden md:block">
-                                <div className="text-xs font-bold leading-none text-zinc-800">{currentUser.name}</div>
+                                <div className="text-xs font-bold leading-none text-zinc-800">{currentUser.full_name}</div>
                                 <div className="text-[10px] text-zinc-500 mt-0.5">{currentUser.role}</div>
                             </div>
                             <ChevronDown size={14} className="text-zinc-400" />
                         </button>
                         <div className="absolute right-0 mt-2 w-56 bg-white rounded-xl shadow-xl py-1 text-zinc-800 hidden group-hover:block border border-zinc-100 z-50">
-                            <div className="px-3 py-2 text-[10px] font-bold text-zinc-400 uppercase tracking-wider border-b border-zinc-50 mb-1">Switch Persona</div>
+                            <div className="px-3 py-2 text-[10px] font-bold text-zinc-400 uppercase tracking-wider border-b border-zinc-50 mb-1">Switch Persona (Dev)</div>
                             {users.map(u => (
                                 <button key={u.id} onClick={() => setCurrentUser(u)} className={`w-full px-4 py-2 text-left text-xs flex items-center gap-3 hover:bg-zinc-50 ${currentUser.id === u.id ? 'bg-zinc-50 text-zinc-900 font-bold' : 'text-zinc-600'}`}>
-                                    <div className={`w-5 h-5 rounded-full flex items-center justify-center text-[9px] font-bold text-white ${u.isSuperAdmin ? 'bg-purple-600' : 'bg-zinc-400'}`}>{u.avatar}</div>
+                                    <div className={`w-5 h-5 rounded-full flex items-center justify-center text-[9px] font-bold text-white ${u.is_super_admin ? 'bg-purple-600' : 'bg-zinc-400'}`}>{u.avatar_code}</div>
                                     <div className="flex flex-col">
-                                        <span>{u.name}</span>
+                                        <span>{u.full_name}</span>
                                     </div>
                                     {currentUser.id === u.id && <CheckCircle size={12} className="ml-auto text-zinc-900"/>}
                                 </button>
@@ -189,15 +252,14 @@ export default function App() {
                         currentUser={currentUser}
                         users={users}
                         onAddUser={handleAddUser}
-                        onUpdateUser={handleUpdateUser}
                         keywords={keywords}
-                        setKeywords={setKeywords}
+                        setKeywords={() => {}}
                         departments={departments}
-                        onAddDepartment={handleAddDepartment}
-                        onRemoveDepartment={handleRemoveDepartment}
+                        onAddDepartment={() => {}}
+                        onRemoveDepartment={() => {}}
                         kbArticles={kbArticles}
-                        onAddKbArticle={handleAddKbArticle}
-                        onRemoveKbArticle={handleRemoveKbArticle}
+                        onAddKbArticle={() => {}}
+                        onRemoveKbArticle={() => {}}
                         schools={initialSchools}
                     />
                 )}
@@ -252,14 +314,17 @@ function ChatInterface({ onTicketCreate, categorizer, currentUser, kbArticles })
         setMessages(prev => [...prev, { id: Date.now(), sender: 'user', text: priority }]);
         setIsTyping(true);
         setTimeout(() => {
-            const ticketId = Math.floor(Math.random() * 1000) + 1000;
+            // Optimistic ID, DB will generate real one, but that's ok for chat display
+            const ticketId = "PENDING..."; 
             onTicketCreate({
-                id: ticketId, user: currentUser.name, role: currentUser.role, school: currentUser.school,
+                // id: will be gen by DB
+                user: currentUser.full_name,
+                school: currentUser.school,
                 subject: draftTicket.subject, category: draftTicket.category, isSensitive: draftTicket.isSensitive, owner: draftTicket.owner, 
                 status: "Open", created: "Just now", timestamp: Date.now(), priority: priority, context: draftTicket.isSensitive ? "CONFIDENTIAL" : "Mobile Request",
-                location: draftTicket.location, assignedTo: null, updates: []
+                location: draftTicket.location, assignedTo: null
             });
-            setMessages(prev => [...prev, { id: Date.now(), sender: 'bot', text: `Ticket #${ticketId} created. Routed to ${draftTicket.owner}.` }]);
+            setMessages(prev => [...prev, { id: Date.now(), sender: 'bot', text: `Ticket created. Routed to ${draftTicket.owner}.` }]);
             setConversationStep('ISSUE'); setDraftTicket(null); setIsTyping(false);
         }, 1000);
     };
@@ -271,9 +336,7 @@ function ChatInterface({ onTicketCreate, categorizer, currentUser, kbArticles })
 
     return (
         <div className="h-full flex flex-col justify-center items-center">
-            {/* FIXED: Increased Width (max-w-5xl) and Height (h-[80vh]) for Command Center feel */}
             <div className="w-full max-w-5xl bg-white rounded-2xl shadow-2xl overflow-hidden border border-zinc-200 h-[80vh] flex flex-col ring-1 ring-zinc-900/5">
-                {/* Fixed Chat Header */}
                 <div className="bg-zinc-900 p-4 flex items-center justify-between text-white shadow-md z-10">
                     <div className="flex items-center gap-3">
                         <div className="w-8 h-8 rounded-full bg-white/20 flex items-center justify-center backdrop-blur-sm">
@@ -337,16 +400,15 @@ function ChatInterface({ onTicketCreate, categorizer, currentUser, kbArticles })
     );
 }
 
-function AdminDashboard({ tickets, onUpdateTicket, currentUser, users, onAddUser, onUpdateUser, keywords, setKeywords, departments, onAddDepartment, onRemoveDepartment, kbArticles, onAddKbArticle, onRemoveKbArticle, schools }) {
+function AdminDashboard({ tickets, onUpdateTicket, currentUser, users, onAddUser, keywords, setKeywords, departments, onAddDepartment, onRemoveDepartment, kbArticles, onAddKbArticle, onRemoveKbArticle, schools }) {
     const [activeTab, setActiveTab] = useState('tickets');
     const [selectedTicket, setSelectedTicket] = useState(null);
-    const [showLogicModal, setShowLogicModal] = useState(false);
     const [filters, setFilters] = useState({ status: 'ACTIVE', category: 'ALL_CATS', school: 'ALL_SCHOOLS' });
 
     const visibleTickets = useMemo(() => TicketEngine.getVisibleTickets(tickets, currentUser, filters, keywords), [tickets, currentUser, filters, keywords]);
-    const isOverdue = (timestamp, status) => status !== 'Resolved' && (Date.now() - timestamp) / (1000 * 60 * 60) > 24;
+    const isOverdue = (timestamp, status) => status !== 'Resolved' && (Date.now() - new Date(timestamp).getTime()) / (1000 * 60 * 60) > 24;
     const getTimeAgo = (timestamp) => {
-        const diff = Date.now() - timestamp;
+        const diff = Date.now() - new Date(timestamp).getTime();
         const hours = Math.floor(diff / (1000 * 60 * 60));
         if (hours < 1) return `${Math.floor(diff / (1000 * 60))} mins ago`;
         if (hours < 24) return `${hours} hrs ago`;
@@ -357,28 +419,19 @@ function AdminDashboard({ tickets, onUpdateTicket, currentUser, users, onAddUser
         <div className="h-full flex flex-col bg-white rounded-2xl border border-zinc-200 shadow-sm overflow-hidden">
             <div className="bg-white border-b border-zinc-200 px-6 py-2 flex items-center justify-between sticky top-0 z-40">
                 <div className="flex gap-1">
-                    {['tickets', 'users', 'kb', 'depts'].map(tab => {
-                        if (tab === 'users' && !currentUser.isAdmin) return null;
-                        if (tab === 'kb' && !currentUser.isAdmin) return null;
-                        if (tab === 'depts' && !currentUser.isSuperAdmin) return null;
+                    {['tickets', 'users'].map(tab => {
+                        if (tab === 'users' && !currentUser.is_super_admin) return null;
                         return (
                             <button key={tab} onClick={() => setActiveTab(tab)} className={`px-4 py-3 text-xs font-bold transition-all border-b-2 ${activeTab === tab ? 'border-zinc-900 text-zinc-900' : 'border-transparent text-zinc-500 hover:text-zinc-800'}`}>
-                                {tab === 'tickets' ? 'Dashboard' : tab === 'users' ? 'Directory' : tab === 'kb' ? 'Knowledge' : 'Settings'}
+                                {tab === 'tickets' ? 'Dashboard' : 'Directory'}
                             </button>
                         );
                     })}
                 </div>
-                {currentUser.isSuperAdmin && (
-                    <button onClick={() => setShowLogicModal(true)} className="text-xs flex items-center gap-1.5 text-zinc-500 hover:text-zinc-900 transition-colors font-medium border border-zinc-200 rounded-lg px-3 py-1.5 hover:bg-zinc-50">
-                        <Settings size={14} /> Logic Config
-                    </button>
-                )}
             </div>
 
             <div className="flex-1 overflow-hidden">
-                {activeTab === 'users' ? <UserDirectory users={users} currentUser={currentUser} onAddUser={onAddUser} onUpdateUser={onUpdateUser} departments={departments} schools={schools} /> :
-                 activeTab === 'depts' ? <DepartmentManager departments={departments} onAdd={onAddDepartment} onRemove={onRemoveDepartment} /> :
-                 activeTab === 'kb' ? <KnowledgeBaseManager articles={kbArticles} onAdd={onAddKbArticle} onRemove={onRemoveKbArticle} /> :
+                {activeTab === 'users' ? <UserDirectory users={users} currentUser={currentUser} onAddUser={onAddUser} departments={departments} schools={schools} /> :
                  (
                     <div className="h-full flex">
                         <div className="w-[400px] flex flex-col border-r border-zinc-200 bg-zinc-50/50">
@@ -395,10 +448,6 @@ function AdminDashboard({ tickets, onUpdateTicket, currentUser, users, onAddUser
                                     </select>
                                     <select value={filters.category} onChange={e => setFilters({...filters, category: e.target.value})} className="w-full px-3 py-2 text-xs border border-zinc-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-zinc-900/10">
                                         <option value="ALL_CATS">Category</option>{Object.keys(keywords).map(c => <option key={c} value={c}>{c}</option>)}
-                                    </select>
-                                    <select value={filters.school} onChange={e => setFilters({...filters, school: e.target.value})} className="w-full px-3 py-2 text-xs border border-zinc-200 rounded-lg bg-white col-span-2 focus:outline-none focus:ring-2 focus:ring-zinc-900/10">
-                                        <option value="ALL_SCHOOLS">All Locations</option>
-                                        {((currentUser.accessSchools || []).includes('ALL') ? schools : (currentUser.accessSchools || [])).map(s => <option key={s} value={s}>{s}</option>)}
                                     </select>
                                 </div>
                             </div>
@@ -417,15 +466,15 @@ function AdminDashboard({ tickets, onUpdateTicket, currentUser, users, onAddUser
                                                     <span className={`w-2 h-2 rounded-full ${ticket.priority === 'High' ? 'bg-red-500' : ticket.priority === 'Medium' ? 'bg-amber-400' : 'bg-emerald-400'}`}></span>
                                                     <span className="text-[10px] font-bold text-zinc-400 font-mono">#{ticket.id}</span>
                                                 </div>
-                                                <span className="text-[10px] text-zinc-400">{getTimeAgo(ticket.timestamp)}</span>
+                                                <span className="text-[10px] text-zinc-400">{getTimeAgo(ticket.created_at)}</span>
                                             </div>
-                                            <h4 className={`text-sm font-bold mb-1 line-clamp-1 leading-tight ${ticket.isSensitive ? 'text-red-700' : 'text-zinc-800'}`}>{ticket.isSensitive ? 'Confidential Ticket' : ticket.subject}</h4>
+                                            <h4 className={`text-sm font-bold mb-1 line-clamp-1 leading-tight ${ticket.is_sensitive ? 'text-red-700' : 'text-zinc-800'}`}>{ticket.is_sensitive ? 'Confidential Ticket' : ticket.subject}</h4>
                                             <div className="flex justify-between items-center mt-2">
                                                 <div className="flex items-center gap-1.5">
                                                     <span className="text-[10px] font-semibold px-2 py-0.5 rounded bg-zinc-100 text-zinc-600 border border-zinc-200">{ticket.category}</span>
                                                     <span className="text-[10px] px-1.5 py-0.5 text-zinc-400 flex items-center gap-1"><School size={10}/> {ticket.school}</span>
                                                 </div>
-                                                {isOverdue(ticket.timestamp, ticket.status) && <AlertTriangle size={12} className="text-red-500" />}
+                                                {isOverdue(ticket.created_at, ticket.status) && <AlertTriangle size={12} className="text-red-500" />}
                                             </div>
                                         </div>
                                     ))
@@ -445,30 +494,54 @@ function AdminDashboard({ tickets, onUpdateTicket, currentUser, users, onAddUser
                     </div>
                 )}
             </div>
-            {showLogicModal && <LogicConfigModal keywords={keywords} setKeywords={setKeywords} departments={departments} onClose={() => setShowLogicModal(false)} />}
         </div>
     );
 }
 
-// --- DETAIL VIEW & MODALS (Refined) ---
-
+// --- TICKET DETAIL VIEW (UPDATED FOR DB) ---
 function TicketDetailView({ ticket, onUpdateTicket, currentUser }) {
     const [resolveNote, setResolveNote] = useState('');
     const [newComment, setNewComment] = useState('');
     const [isResolving, setIsResolving] = useState(false);
+    const [updates, setUpdates] = useState([]);
     const chatRef = useRef(null);
 
-    useEffect(() => { if(chatRef.current) chatRef.current.scrollTop = chatRef.current.scrollHeight; }, [ticket.updates]);
+    // Fetch comments on ticket selection
+    useEffect(() => {
+        const fetchUpdates = async () => {
+            const { data } = await supabase.from('ticket_updates').select('*').eq('ticket_id', ticket.id).order('created_at');
+            if (data) setUpdates(data);
+        };
+        fetchUpdates();
+    }, [ticket.id]);
 
-    const handlePost = (e) => {
+    const handlePost = async (e) => {
         e.preventDefault(); if(!newComment.trim()) return;
-        onUpdateTicket({ ...ticket, updates: [...ticket.updates, { id: Date.now(), type: 'comment', user: currentUser.name, text: newComment, timestamp: Date.now(), isAdmin: currentUser.isAdmin }] });
+        
+        // Optimistic
+        const fakeUpdate = { id: Date.now(), user_name: currentUser.full_name, text: newComment, created_at: new Date().toISOString(), is_admin: currentUser.is_super_admin, type: 'COMMENT' };
+        setUpdates([...updates, fakeUpdate]);
         setNewComment('');
+
+        // DB Insert
+        await supabase.from('ticket_updates').insert([{
+            ticket_id: ticket.id,
+            user_name: currentUser.full_name,
+            text: newComment,
+            type: 'COMMENT',
+            is_admin: currentUser.is_super_admin
+        }]);
     };
 
-    if (ticket.isSensitive && !currentUser.isSuperAdmin) return <div className="h-full flex flex-col items-center justify-center text-red-800"><Lock size={32} className="mb-3"/><h2 className="font-bold">Restricted Access</h2></div>;
+    const handleResolve = async () => {
+        onUpdateTicket({ ...ticket, status: 'Resolved' });
+        setIsResolving(false);
+        await supabase.from('ticket_updates').insert([{ ticket_id: ticket.id, user_name: 'System', text: `Resolved: ${resolveNote}`, type: 'SYSTEM' }]);
+    };
 
-    const ticketDate = new Date(ticket.timestamp);
+    if (ticket.is_sensitive && !currentUser.is_super_admin) return <div className="h-full flex flex-col items-center justify-center text-red-800"><Lock size={32} className="mb-3"/><h2 className="font-bold">Restricted Access</h2></div>;
+
+    const ticketDate = new Date(ticket.created_at);
 
     return (
         <div className="h-full flex flex-col relative">
@@ -479,13 +552,12 @@ function TicketDetailView({ ticket, onUpdateTicket, currentUser }) {
                         <textarea className="w-full px-3 py-2 text-sm border border-zinc-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-zinc-900 h-32 mb-4 resize-none" placeholder="Resolution details..." value={resolveNote} onChange={e => setResolveNote(e.target.value)} autoFocus/>
                         <div className="flex gap-3">
                             <button onClick={() => setIsResolving(false)} className="flex-1 px-4 py-2 rounded-lg text-sm bg-white border border-zinc-200 hover:bg-zinc-50 font-medium">Cancel</button>
-                            <button onClick={() => { onUpdateTicket({ ...ticket, status: 'Resolved', updates: [...ticket.updates, { id: Date.now(), type: 'system', user: 'System', text: `Resolved: ${resolveNote}`, timestamp: Date.now() }] }); setIsResolving(false); }} className="flex-1 px-4 py-2 rounded-lg text-sm bg-green-600 text-white hover:bg-green-700 font-bold shadow-sm">Confirm Resolution</button>
+                            <button onClick={handleResolve} className="flex-1 px-4 py-2 rounded-lg text-sm bg-green-600 text-white hover:bg-green-700 font-bold shadow-sm">Confirm Resolution</button>
                         </div>
                     </div>
                 </div>
             )}
 
-            {/* Sticky Header */}
             <div className="p-6 border-b border-zinc-100 flex justify-between items-start bg-white z-10 shadow-sm">
                 <div>
                     <div className="flex items-center gap-3 mb-2">
@@ -495,49 +567,40 @@ function TicketDetailView({ ticket, onUpdateTicket, currentUser }) {
                     </div>
                     <h2 className="text-xl font-bold text-zinc-900 leading-tight">{ticket.subject}</h2>
                 </div>
-                {currentUser.isAdmin && ticket.status !== 'Resolved' && (
+                {currentUser.is_super_admin && ticket.status !== 'Resolved' && (
                     <div className="flex gap-2">
-                        {!ticket.assignedTo && <button onClick={() => onUpdateTicket({ ...ticket, assignedTo: currentUser.name, updates: [...ticket.updates, { id: Date.now(), type: 'system', user: 'System', text: `Assigned to ${currentUser.name}`, timestamp: Date.now() }] })} className="px-3 py-1.5 rounded-lg text-xs font-medium bg-white border border-zinc-200 hover:bg-zinc-50 text-zinc-700 transition-colors">Assign to Me</button>}
+                        {!ticket.assigned_to && <button onClick={() => onUpdateTicket({ ...ticket, assignedTo: currentUser.full_name })} className="px-3 py-1.5 rounded-lg text-xs font-medium bg-white border border-zinc-200 hover:bg-zinc-50 text-zinc-700 transition-colors">Assign to Me</button>}
                         <button onClick={() => setIsResolving(true)} className="px-3 py-1.5 rounded-lg text-xs font-bold bg-green-600 text-white hover:bg-green-700 flex items-center gap-2 shadow-sm transition-colors"><CheckCircle size={14}/> Resolve</button>
                     </div>
                 )}
             </div>
 
-            {/* Scrollable Content */}
             <div className="flex-1 overflow-y-auto p-8 bg-zinc-50/30" ref={chatRef}>
-                {/* Context Card */}
-                <div className="flex gap-4 mb-8">
-                    <div className="w-10 h-10 rounded-full bg-zinc-200 flex items-center justify-center font-bold text-zinc-600 text-xs shadow-inner shrink-0">{ticket.user.charAt(0)}</div>
+                 {/* Ticket Context Data */}
+                 <div className="flex gap-4 mb-8">
+                    <div className="w-10 h-10 rounded-full bg-zinc-200 flex items-center justify-center font-bold text-zinc-600 text-xs shadow-inner shrink-0">?</div>
                     <div className="flex-1 max-w-3xl">
-                        <div className="flex items-baseline gap-2 mb-1"><span className="font-bold text-sm text-zinc-900">{ticket.user}</span><span className="text-xs text-zinc-400">opened this ticket</span></div>
-                        <div className="bg-white p-5 rounded-xl border border-zinc-200 shadow-sm text-sm text-zinc-800 leading-relaxed relative">
-                            {/* Little triangle arrow */}
-                            <div className="absolute top-4 -left-[6px] w-3 h-3 bg-white border-l border-t border-zinc-200 transform -rotate-45"></div>
-                            {ticket.subject}
-                        </div>
+                        <div className="flex items-baseline gap-2 mb-1"><span className="font-bold text-sm text-zinc-900">{ticket.requester_email}</span><span className="text-xs text-zinc-400">opened this ticket</span></div>
                         <div className="mt-3 flex gap-4 text-xs text-zinc-500 pl-1">
                             <span className="flex items-center gap-1.5"><MapPin size={12} className="text-red-500"/> {ticket.location}</span>
                             <span className="flex items-center gap-1.5"><Layers size={12} className="text-indigo-500"/> {ticket.category}</span>
-                            <span className="flex items-center gap-1.5"><Monitor size={12} className="text-zinc-400"/> {ticket.context}</span>
+                            <span className="flex items-center gap-1.5"><Monitor size={12} className="text-zinc-400"/> {ticket.context_data}</span>
                         </div>
                     </div>
                 </div>
 
-                {/* Timeline */}
                 <div className="space-y-6 relative max-w-3xl">
-                    {/* Vertical Line */}
                     <div className="absolute left-5 top-0 bottom-0 w-px bg-zinc-200 -z-10"></div>
-                    
-                    {ticket.updates.map(u => (
-                        <div key={u.id} className={`flex gap-4 ${u.type === 'system' ? 'justify-center pl-0' : ''}`}>
-                            {u.type === 'system' ? (
+                    {updates.map(u => (
+                        <div key={u.id} className={`flex gap-4 ${u.type === 'SYSTEM' ? 'justify-center pl-0' : ''}`}>
+                            {u.type === 'SYSTEM' ? (
                                 <div className="bg-zinc-100 border border-zinc-200 rounded-full px-3 py-1 text-[10px] font-bold text-zinc-500 flex items-center gap-2 z-10 shadow-sm"><Activity size={10}/> {u.text}</div>
                             ) : (
                                 <>
-                                    <div className={`w-10 h-10 rounded-full flex items-center justify-center font-bold text-xs shadow-sm z-10 border-4 border-zinc-50 shrink-0 ${u.isAdmin ? 'bg-zinc-900 text-white' : 'bg-zinc-200 text-zinc-600'}`}>{u.user.charAt(0)}</div>
+                                    <div className={`w-10 h-10 rounded-full flex items-center justify-center font-bold text-xs shadow-sm z-10 border-4 border-zinc-50 shrink-0 ${u.is_admin ? 'bg-zinc-900 text-white' : 'bg-zinc-200 text-zinc-600'}`}>{u.user_name?.charAt(0)}</div>
                                     <div className="flex-1">
-                                        <div className="flex items-baseline gap-2 mb-1"><span className="font-bold text-sm text-zinc-800">{u.user}</span><span className="text-xs text-zinc-400">{new Date(u.timestamp).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}</span></div>
-                                        <div className={`p-3.5 rounded-xl border text-sm shadow-sm leading-relaxed ${u.isAdmin ? 'bg-zinc-50 border-zinc-200 text-zinc-800' : 'bg-white border-zinc-200'}`}>{u.text}</div>
+                                        <div className="flex items-baseline gap-2 mb-1"><span className="font-bold text-sm text-zinc-800">{u.user_name}</span><span className="text-xs text-zinc-400">{new Date(u.created_at).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}</span></div>
+                                        <div className={`p-3.5 rounded-xl border text-sm shadow-sm leading-relaxed ${u.is_admin ? 'bg-zinc-50 border-zinc-200 text-zinc-800' : 'bg-white border-zinc-200'}`}>{u.text}</div>
                                     </div>
                                 </>
                             )}
@@ -546,7 +609,6 @@ function TicketDetailView({ ticket, onUpdateTicket, currentUser }) {
                 </div>
             </div>
 
-            {/* Sticky Footer Input */}
             {ticket.status !== 'Resolved' && (
                 <div className="p-4 bg-white border-t border-zinc-200 z-10">
                     <form onSubmit={handlePost} className="relative max-w-4xl mx-auto">
@@ -559,7 +621,7 @@ function TicketDetailView({ ticket, onUpdateTicket, currentUser }) {
     );
 }
 
-function UserDirectory({ users, currentUser, onAddUser, onUpdateUser, departments, schools }) {
+function UserDirectory({ users, currentUser, onAddUser, departments, schools }) {
     const [editingUser, setEditingUser] = useState(null);
     const [isAdding, setIsAdding] = useState(false);
     
@@ -568,9 +630,8 @@ function UserDirectory({ users, currentUser, onAddUser, onUpdateUser, department
             <div className="max-w-6xl mx-auto w-full">
                 <div className="flex justify-between items-center mb-6">
                     <div><h2 className="text-2xl font-bold text-zinc-900 tracking-tight">Staff Directory</h2><p className="text-sm text-zinc-500 mt-1">Manage user access & roles</p></div>
-                    {currentUser.isSuperAdmin && <button onClick={() => setIsAdding(true)} className="bg-zinc-900 hover:bg-zinc-800 text-white px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 shadow-sm transition-all"><UserPlus size={16}/> Add User</button>}
+                    {currentUser.is_super_admin && <button onClick={() => setIsAdding(true)} className="bg-zinc-900 hover:bg-zinc-800 text-white px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 shadow-sm transition-all"><UserPlus size={16}/> Add User</button>}
                 </div>
-                
                 <div className="bg-white rounded-xl shadow-sm border border-zinc-200 overflow-hidden">
                     <table className="w-full text-left text-sm">
                         <thead className="bg-zinc-50/80 text-xs uppercase text-zinc-500 font-bold border-b border-zinc-200">
@@ -581,33 +642,32 @@ function UserDirectory({ users, currentUser, onAddUser, onUpdateUser, department
                                 <tr key={u.id} className="hover:bg-zinc-50/50 transition-colors group">
                                     <td className="px-6 py-4">
                                         <div className="flex items-center gap-3">
-                                            <div className={`w-9 h-9 rounded-full flex items-center justify-center text-xs font-bold text-white shadow-sm ${u.isSuperAdmin ? 'bg-purple-600' : 'bg-zinc-400'}`}>{u.avatar}</div>
-                                            <div><div className="font-bold text-zinc-900">{u.name}</div><div className="text-xs text-zinc-400 font-mono">ID: {u.id}</div></div>
+                                            <div className={`w-9 h-9 rounded-full flex items-center justify-center text-xs font-bold text-white shadow-sm ${u.is_super_admin ? 'bg-purple-600' : 'bg-zinc-400'}`}>{u.avatar_code}</div>
+                                            <div><div className="font-bold text-zinc-900">{u.full_name}</div><div className="text-xs text-zinc-400 font-mono">ID: {u.id.substring(0,8)}...</div></div>
                                         </div>
                                     </td>
-                                    <td className="px-6 py-4"><div className="font-medium text-zinc-700">{u.role}</div><div className="text-xs text-zinc-400">{u.dept} Department</div></td>
+                                    <td className="px-6 py-4"><div className="font-medium text-zinc-700">{u.role}</div><div className="text-xs text-zinc-400">{u.department} Department</div></td>
                                     <td className="px-6 py-4">
                                         <div className="flex flex-wrap gap-1">
-                                            {u.accessSchools?.includes('ALL') ? <span className="px-2 py-1 bg-purple-50 text-purple-700 text-[10px] font-bold rounded border border-purple-100 flex items-center gap-1"><Globe size={10}/> GLOBAL ACCESS</span> : u.accessSchools?.map(s => <span key={s} className="px-2 py-1 bg-zinc-100 text-zinc-600 text-[10px] font-bold rounded border border-zinc-200">{s}</span>)}
+                                            {u.access_schools?.includes('ALL') ? <span className="px-2 py-1 bg-purple-50 text-purple-700 text-[10px] font-bold rounded border border-purple-100 flex items-center gap-1"><Globe size={10}/> GLOBAL ACCESS</span> : u.access_schools?.map(s => <span key={s} className="px-2 py-1 bg-zinc-100 text-zinc-600 text-[10px] font-bold rounded border border-zinc-200">{s}</span>)}
                                         </div>
                                     </td>
                                     <td className="px-6 py-4 text-right">
-                                        {currentUser.isSuperAdmin && <button onClick={() => setEditingUser(u)} className="text-zinc-400 hover:text-indigo-600 p-2 hover:bg-indigo-50 rounded transition-all"><Edit3 size={16}/></button>}
+                                        {currentUser.is_super_admin && <button onClick={() => setEditingUser(u)} className="text-zinc-400 hover:text-indigo-600 p-2 hover:bg-indigo-50 rounded transition-all"><Edit3 size={16}/></button>}
                                     </td>
                                 </tr>
                             ))}
                         </tbody>
                     </table>
                 </div>
-                {(editingUser || isAdding) && <UserEditModal user={editingUser} isAdding={isAdding} departments={departments} schools={schools} onClose={() => {setEditingUser(null); setIsAdding(false)}} onSave={(u) => { isAdding ? onAddUser(u) : onUpdateUser(u); setEditingUser(null); setIsAdding(false); }} />}
+                {(editingUser || isAdding) && <UserEditModal user={editingUser} isAdding={isAdding} departments={departments} schools={schools} onClose={() => {setEditingUser(null); setIsAdding(false)}} onSave={(u) => { isAdding ? onAddUser(u) : console.log("Edit logic here"); setEditingUser(null); setIsAdding(false); }} />}
             </div>
         </div>
     );
 }
 
-// FIXED: Reinstated "Additional View Access" and "Super Admin" Logic
 function UserEditModal({ user, isAdding, onClose, onSave, departments, schools }) {
-    const [formData, setFormData] = useState(user ? { ...user, accessSchools: user.accessSchools || [user.school] } : { name: '', role: 'Staff', dept: departments[0], school: schools[0], isAdmin: false, isSuperAdmin: false, avatar: 'NU', accessScopes: [], accessSchools: [schools[0]] });
+    const [formData, setFormData] = useState(user ? { ...user, accessSchools: user.access_schools || [user.school], isSuperAdmin: user.is_super_admin } : { name: '', role: 'Staff', dept: departments[0], school: schools[0], isAdmin: false, isSuperAdmin: false, avatar: 'NU', accessScopes: [], accessSchools: [schools[0]] });
     
     // Toggle Department Scope
     const toggleScope = (dept) => {
@@ -628,13 +688,13 @@ function UserEditModal({ user, isAdding, onClose, onSave, departments, schools }
         }
     };
 
-    // Toggle Super Admin (The "God Mode" Switch)
+    // Toggle Super Admin
     const toggleSuperAdmin = (e) => {
         const isSuper = e.target.checked;
         if (isSuper) {
-            setFormData({ ...formData, isSuperAdmin: true, isAdmin: true, accessSchools: ['ALL'], accessScopes: departments });
+            setFormData({ ...formData, isSuperAdmin: true, isAdmin: true, accessSchools: ['ALL'] });
         } else {
-            setFormData({ ...formData, isSuperAdmin: false, accessSchools: [formData.school], accessScopes: [] });
+            setFormData({ ...formData, isSuperAdmin: false, accessSchools: [formData.school] });
         }
     };
 
@@ -652,9 +712,9 @@ function UserEditModal({ user, isAdding, onClose, onSave, departments, schools }
                 <div className="p-6 flex gap-6 max-h-[70vh] overflow-y-auto">
                     {/* Left Column: Identity */}
                     <div className="flex-1 space-y-4">
-                        <div><label className="text-xs font-bold text-zinc-500 uppercase mb-1 block">Full Name</label><input type="text" className="w-full px-3 py-2 text-sm border border-zinc-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-zinc-900/10" value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} /></div>
+                        <div><label className="text-xs font-bold text-zinc-500 uppercase mb-1 block">Full Name</label><input type="text" className="w-full px-3 py-2 text-sm border border-zinc-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-zinc-900/10" value={formData.name || formData.full_name} onChange={e => setFormData({...formData, name: e.target.value})} /></div>
                         <div><label className="text-xs font-bold text-zinc-500 uppercase mb-1 block">Role Title</label><input type="text" className="w-full px-3 py-2 text-sm border border-zinc-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-zinc-900/10" value={formData.role} onChange={e => setFormData({...formData, role: e.target.value})} /></div>
-                        <div><label className="text-xs font-bold text-zinc-500 uppercase mb-1 block">Department</label><select className="w-full px-3 py-2 text-sm border border-zinc-200 rounded-lg bg-white" value={formData.dept} onChange={e => setFormData({...formData, dept: e.target.value})}>{departments.map(d => <option key={d} value={d}>{d}</option>)}</select></div>
+                        <div><label className="text-xs font-bold text-zinc-500 uppercase mb-1 block">Department</label><select className="w-full px-3 py-2 text-sm border border-zinc-200 rounded-lg bg-white" value={formData.dept || formData.department} onChange={e => setFormData({...formData, dept: e.target.value})}>{departments.map(d => <option key={d} value={d}>{d}</option>)}</select></div>
                         <div className="pt-2">
                             <label className="text-xs font-bold text-zinc-500 uppercase mb-1 block">Primary Campus</label>
                             <select className="w-full px-3 py-2 text-sm border border-zinc-200 rounded-lg bg-white" value={formData.school} onChange={e => {
@@ -688,7 +748,7 @@ function UserEditModal({ user, isAdding, onClose, onSave, departments, schools }
                             <label className="text-xs font-bold text-zinc-500 uppercase mb-2 block">Additional View Access (Dept)</label>
                             <p className="text-[10px] text-zinc-400 mb-2">Allow viewing tickets from other departments.</p>
                             <div className="flex flex-wrap gap-2">
-                                {departments.filter(d => d !== formData.dept).map(dept => (
+                                {departments.filter(d => d !== (formData.dept || formData.department)).map(dept => (
                                     <button key={dept} onClick={() => toggleScope(dept)}
                                         className={`px-2 py-1 text-[10px] rounded border transition-all ${
                                             (formData.accessScopes || []).includes(dept) 
@@ -715,162 +775,6 @@ function UserEditModal({ user, isAdding, onClose, onSave, departments, schools }
                 <div className="px-6 py-4 bg-zinc-50 border-t border-zinc-200 flex justify-end gap-3">
                     <button onClick={onClose} className="px-4 py-2 text-zinc-600 hover:bg-zinc-200 rounded-lg text-sm font-medium transition-colors">Cancel</button>
                     <button onClick={() => onSave(formData)} className="px-6 py-2 bg-zinc-900 text-white rounded-lg text-sm font-bold hover:bg-zinc-700 shadow-sm transition-colors">Save Changes</button>
-                </div>
-            </div>
-        </div>
-    );
-}
-
-function DepartmentManager({ departments, onAdd, onRemove }) {
-    const [newDept, setNewDept] = useState('');
-    return (
-        <div className="h-full p-8 flex flex-col items-center">
-            <div className="w-full max-w-2xl">
-                <h2 className="text-2xl font-bold text-zinc-900 mb-6">Departments</h2>
-                <div className="bg-white p-6 rounded-xl shadow-sm border border-zinc-200">
-                    <form onSubmit={(e) => { e.preventDefault(); if(newDept.trim()) { onAdd(newDept.trim()); setNewDept(''); } }} className="flex gap-2 mb-6">
-                        <input type="text" className="flex-1 px-4 py-2 border border-zinc-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-zinc-900/10" placeholder="New Department Name..." value={newDept} onChange={e => setNewDept(e.target.value)} />
-                        <button type="submit" className="bg-zinc-900 text-white px-4 py-2 rounded-lg font-bold hover:bg-zinc-700 flex items-center gap-2"><Plus size={18}/> Add</button>
-                    </form>
-                    <div className="grid grid-cols-2 gap-3">
-                        {departments.map(d => (
-                            <div key={d} className="flex justify-between items-center p-3 bg-zinc-50 border border-zinc-200 rounded-lg group hover:border-zinc-300 transition-colors">
-                                <span className="font-medium text-sm text-zinc-700">{d}</span>
-                                <button onClick={() => onRemove(d)} className="text-zinc-400 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity p-1"><Trash2 size={16}/></button>
-                            </div>
-                        ))}
-                    </div>
-                </div>
-            </div>
-        </div>
-    );
-}
-
-function KnowledgeBaseManager({ articles, onAdd, onRemove }) {
-    const [isAdding, setIsAdding] = useState(false);
-    const [form, setForm] = useState({ title: '', content: '', triggers: '' });
-
-    const handleSubmit = (e) => {
-        e.preventDefault();
-        onAdd({ title: form.title, content: form.content, triggers: form.triggers.split(',').map(t=>t.trim()) });
-        setIsAdding(false); setForm({ title: '', content: '', triggers: '' });
-    };
-
-    return (
-        <div className="h-full p-8 overflow-y-auto">
-            <div className="max-w-5xl mx-auto">
-                <div className="flex justify-between items-center mb-6">
-                    <div><h2 className="text-2xl font-bold text-zinc-900">Knowledge Base</h2><p className="text-sm text-zinc-500">Automated deflection answers</p></div>
-                    <button onClick={() => setIsAdding(true)} className="bg-zinc-900 text-white px-4 py-2 rounded-lg text-sm font-bold hover:bg-zinc-700 flex items-center gap-2 shadow-sm"><Plus size={16}/> Add Article</button>
-                </div>
-                
-                {isAdding && (
-                    <div className="bg-white p-6 rounded-xl border border-zinc-200 shadow-lg mb-8 animate-enter ring-1 ring-zinc-500/10">
-                        <h3 className="font-bold text-zinc-900 mb-4 flex items-center gap-2"><Lightbulb size={18}/> New Article</h3>
-                        <form onSubmit={handleSubmit} className="space-y-4">
-                            <div><label className="text-xs font-bold text-zinc-500 uppercase mb-1 block">Title</label><input type="text" className="w-full px-3 py-2 border border-zinc-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-zinc-900/10" value={form.title} onChange={e => setForm({...form, title: e.target.value})} placeholder="e.g. How to restart printer"/></div>
-                            <div><label className="text-xs font-bold text-zinc-500 uppercase mb-1 block">Solution</label><textarea className="w-full px-3 py-2 border border-zinc-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-zinc-900/10 h-24" value={form.content} onChange={e => setForm({...form, content: e.target.value})} placeholder="Step 1..."/></div>
-                            <div><label className="text-xs font-bold text-zinc-500 uppercase mb-1 block">Triggers</label><input type="text" className="w-full px-3 py-2 border border-zinc-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-zinc-900/10" value={form.triggers} onChange={e => setForm({...form, triggers: e.target.value})} placeholder="printer, jam, error (comma separated)"/></div>
-                            <div className="flex justify-end gap-2 pt-2"><button type="button" onClick={() => setIsAdding(false)} className="px-4 py-2 text-zinc-600 hover:bg-zinc-100 rounded-lg text-sm font-medium">Cancel</button><button type="submit" className="px-6 py-2 bg-zinc-900 text-white rounded-lg text-sm font-bold hover:bg-zinc-700">Save Article</button></div>
-                        </form>
-                    </div>
-                )}
-
-                <div className="grid grid-cols-2 gap-4">
-                    {articles.map(a => (
-                        <div key={a.id} className="bg-white p-6 rounded-xl border border-zinc-200 shadow-sm hover:shadow-md transition-all hover:-translate-y-1 relative group">
-                            <button onClick={() => onRemove(a.id)} className="absolute top-4 right-4 text-zinc-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity p-2"><Trash2 size={16}/></button>
-                            <h3 className="font-bold text-zinc-900 mb-2 text-lg">{a.title}</h3>
-                            <p className="text-sm text-zinc-600 line-clamp-3 mb-4 leading-relaxed">{a.content}</p>
-                            <div className="flex gap-2 flex-wrap">{a.triggers.map(t => <span key={t} className="text-[10px] bg-zinc-100 text-zinc-600 px-2 py-1 rounded border border-zinc-200 font-medium">{t}</span>)}</div>
-                        </div>
-                    ))}
-                </div>
-            </div>
-        </div>
-    );
-}
-
-function LogicConfigModal({ keywords, setKeywords, departments, onClose }) {
-    const [newKeywordInputs, setNewKeywordInputs] = useState({});
-    const [isCreating, setIsCreating] = useState(false);
-    const [newCatName, setNewCatName] = useState('');
-    const [newCatOwner, setNewCatOwner] = useState(departments[0] || 'IT');
-    const [newCatSensitive, setNewCatSensitive] = useState(false);
-
-    const handleAddKeyword = (cat, e) => {
-        if (e.key === 'Enter' && e.target.value.trim()) {
-            const word = e.target.value.trim().toLowerCase();
-            const newKeywords = { ...keywords };
-            if (!newKeywords[cat].keywords.includes(word)) { newKeywords[cat].keywords.push(word); setKeywords(newKeywords); }
-            setNewKeywordInputs({ ...newKeywordInputs, [cat]: '' });
-        }
-    };
-    const handleRemoveKeyword = (cat, word) => {
-        const newKeywords = { ...keywords };
-        newKeywords[cat].keywords = newKeywords[cat].keywords.filter(w => w !== word);
-        setKeywords(newKeywords);
-    };
-    const handleCreateCategory = () => {
-        if (!newCatName.trim()) return alert("Please enter a category name.");
-        const updatedKeywords = { [newCatName]: { owner: newCatOwner, sensitive: newCatSensitive, score: 0, keywords: [] }, ...keywords };
-        setKeywords(updatedKeywords); setIsCreating(false); setNewCatName('');
-    };
-    const handleDeleteCategory = (catName) => {
-        if (confirm(`Delete ${catName}?`)) { const n = {...keywords}; delete n[catName]; setKeywords(n); }
-    };
-
-    return (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/30 backdrop-blur-sm p-4 animate-enter">
-            <div className="bg-white w-full max-w-4xl max-h-[85vh] rounded-2xl shadow-2xl flex flex-col border border-zinc-200 overflow-hidden">
-                <div className="p-6 border-b border-zinc-100 flex justify-between items-center bg-zinc-50/80">
-                    <div><h3 className="text-xl font-bold text-zinc-900 flex items-center gap-2"><Settings size={20} className="text-zinc-600" /> Routing Logic</h3><p className="text-sm text-zinc-500">Auto-assign tickets based on keywords</p></div>
-                    <button onClick={onClose}><X size={24} className="text-zinc-400 hover:text-zinc-600"/></button>
-                </div>
-                <div className="p-8 overflow-y-auto bg-white flex-1 space-y-8">
-                    {/* Add Category */}
-                    <div className="bg-zinc-50/50 p-6 rounded-2xl border border-zinc-200">
-                        {isCreating ? (
-                            <div className="flex gap-4 items-end">
-                                <div className="flex-1"><label className="text-xs font-bold text-zinc-900 uppercase mb-1 block">Category Name</label><input type="text" className="w-full px-3 py-2 border border-zinc-200 rounded-lg focus:ring-2 focus:ring-zinc-500 focus:outline-none" value={newCatName} onChange={e => setNewCatName(e.target.value)} placeholder="e.g. Finance"/></div>
-                                <div className="w-48"><label className="text-xs font-bold text-zinc-900 uppercase mb-1 block">Route To</label><select className="w-full px-3 py-2 border border-zinc-200 rounded-lg bg-white" value={newCatOwner} onChange={e => setNewCatOwner(e.target.value)}>{departments.map(d => <option key={d} value={d}>{d}</option>)}</select></div>
-                                <button onClick={handleCreateCategory} className="px-6 py-2 bg-zinc-900 text-white rounded-lg font-bold shadow-sm hover:bg-zinc-700">Save</button>
-                                <button onClick={() => setIsCreating(false)} className="px-4 py-2 text-zinc-600 font-medium hover:bg-zinc-100 rounded-lg">Cancel</button>
-                            </div>
-                        ) : (
-                            <button onClick={() => setIsCreating(true)} className="w-full py-4 border-2 border-dashed border-zinc-200 rounded-xl text-zinc-400 hover:border-zinc-500 hover:text-zinc-600 hover:bg-zinc-50 transition-all text-sm font-bold flex items-center justify-center gap-2">
-                                <Plus size={20} /> Add New Routing Rule
-                            </button>
-                        )}
-                    </div>
-
-                    <div className="grid gap-6">
-                        {Object.entries(keywords).map(([cat, data]) => (
-                            <div key={cat} className="bg-white border border-zinc-200 rounded-2xl p-6 shadow-sm hover:border-zinc-300 transition-colors">
-                                <div className="flex justify-between items-start mb-6">
-                                    <div className="flex items-center gap-4">
-                                        <div className="bg-zinc-100 p-3 rounded-xl"><Layers size={20} className="text-zinc-600"/></div>
-                                        <div><h4 className="text-lg font-bold text-zinc-900">{cat}</h4><span className="text-xs font-medium text-zinc-500 bg-zinc-100 px-2 py-1 rounded">Routed to: {data.owner}</span></div>
-                                    </div>
-                                    <div className="flex items-center gap-3">
-                                        <button onClick={() => handleDeleteCategory(cat)} className="text-zinc-300 hover:text-red-500 p-2 hover:bg-red-50 rounded-lg transition-colors"><Trash2 size={18}/></button>
-                                    </div>
-                                </div>
-                                <div>
-                                    <label className="text-xs font-bold text-zinc-400 uppercase mb-3 block">Trigger Keywords</label>
-                                    <div className="flex flex-wrap gap-2">
-                                        {data.keywords.map(kw => (
-                                            <span key={kw} className="text-xs bg-zinc-50 text-zinc-700 px-3 py-1.5 rounded-lg border border-zinc-200 flex items-center gap-2 font-medium">
-                                                {kw} <button onClick={() => handleRemoveKeyword(cat, kw)} className="text-zinc-400 hover:text-red-500"><X size={12}/></button>
-                                            </span>
-                                        ))}
-                                        <input type="text" placeholder="+ add keyword" className="text-xs bg-transparent border-b border-dashed border-zinc-300 focus:border-zinc-600 focus:outline-none w-24 px-1 py-1" 
-                                            value={newKeywordInputs[cat] || ''} onChange={e => setNewKeywordInputs({...newKeywordInputs, [cat]: e.target.value})} onKeyDown={e => handleAddKeyword(cat, e)} />
-                                    </div>
-                                </div>
-                            </div>
-                        ))}
-                    </div>
                 </div>
             </div>
         </div>
