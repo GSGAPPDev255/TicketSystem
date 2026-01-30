@@ -1,5 +1,6 @@
 import { createClient } from '@supabase/supabase-js';
 
+// Credentials from your Dashboard
 const supabaseUrl = 'https://lymvqysstxblkapkxylm.supabase.co';
 const supabaseKey = 'sb_publishable_nDRmNxdsXZw1Cn4m2lapgQ_mz7zUwZ9';
 
