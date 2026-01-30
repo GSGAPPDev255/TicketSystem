@@ -1,35 +1,54 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
-import { supabase } from './supabaseClient'; // IMPORT THE DB CONNECTION
+import { supabase } from './supabaseClient';
 import { 
   MessageSquare, LayoutDashboard, Monitor, Wifi, AlertCircle, CheckCircle, 
   Clock, Search, Laptop, User, Users, Building, Send, Briefcase, Filter, 
   ChevronDown, X, UserCheck, Shield, Settings, ArrowUpCircle, Plus, Lock, 
   Globe, Trash2, EyeOff, AlertTriangle, Edit3, UserPlus, Save, Layers, 
   Calendar, History, Activity, Lightbulb, BookOpen, ThumbsUp, MapPin, School, 
-  MoreHorizontal, Command, LogOut, Zap, Crown
+  MoreHorizontal, Command, LogOut, Zap, Crown, ArrowRight
 } from 'lucide-react';
+
+// --- LOGIN SCREEN ---
+function LoginScreen({ onLogin, loading, error }) {
+    return (
+        <div className="min-h-screen flex flex-col items-center justify-center p-4">
+            <div className="w-full max-w-md bg-white/80 backdrop-blur-xl border border-white/50 shadow-2xl rounded-3xl p-8 animate-enter text-center">
+                <div className="mx-auto w-16 h-16 bg-indigo-600 rounded-2xl flex items-center justify-center shadow-lg shadow-indigo-600/30 mb-6">
+                    <Briefcase className="w-8 h-8 text-white" />
+                </div>
+                <h1 className="text-2xl font-bold text-zinc-900 mb-2">CorpTicket</h1>
+                <p className="text-zinc-500 text-sm mb-8">Internal Operations & Helpdesk Portal</p>
+                {error && (
+                    <div className="mb-6 p-3 bg-red-50 border border-red-100 rounded-xl text-red-600 text-xs font-medium flex items-center gap-2 justify-center">
+                        <AlertTriangle size={14} /> {error}
+                    </div>
+                )}
+                <button onClick={onLogin} disabled={loading} className="w-full py-3.5 px-4 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl shadow-lg shadow-indigo-600/20 transition-all active:scale-95 flex items-center justify-center gap-2 disabled:opacity-70 disabled:cursor-not-allowed">
+                    {loading ? "Connecting..." : <>Sign In with SSO <ArrowRight size={16} /></>}
+                </button>
+                <p className="mt-6 text-[10px] text-zinc-400 uppercase tracking-widest font-medium">Authorized Personnel Only</p>
+            </div>
+        </div>
+    );
+}
 
 // --- BUSINESS LOGIC ENGINE ---
 const TicketEngine = {
     getVisibleTickets: (tickets, currentUser, filters, keywords) => {
         if (!currentUser) return [];
         return tickets.filter(t => {
-            // 1. Global Filters
             if (filters.status === 'ACTIVE' && t.status === 'Resolved') return false;
             if (filters.status === 'RESOLVED' && t.status !== 'Resolved') return false;
             if (filters.category !== 'ALL_CATS' && t.category !== filters.category) return false;
             if (filters.school && filters.school !== 'ALL_SCHOOLS' && t.school !== filters.school) return false;
 
-            // 2. Super Admin (God Mode)
             if (currentUser.is_super_admin) return true;
-
-            // 3. Own Ticket Fallback
             if (t.requester_email === currentUser.email) return true;
 
-            // 4. Matrix Access
             const categoryConfig = keywords[t.category];
             const ticketOwnerDept = categoryConfig ? categoryConfig.owner : 'Unassigned';
-            const userScopes = currentUser.access_scopes || []; 
+            const userScopes = currentUser.access_scopes || [];
             const hasDeptAccess = (currentUser.department === ticketOwnerDept) || userScopes.includes(ticketOwnerDept);
 
             if (!hasDeptAccess) return false;
@@ -39,32 +58,19 @@ const TicketEngine = {
             return userSchools.includes(t.school);
         });
     },
-
     categorise: (text, keywordsMap) => {
         const lowerText = text.toLowerCase();
         let bestCategory = 'General Support';
         let maxScore = 0;
-
         Object.entries(keywordsMap).forEach(([cat, config]) => {
             let score = 0;
-            config.keywords.forEach(word => {
-                if (lowerText.includes(word.toLowerCase())) score += 1;
-            });
-            if (score > maxScore) {
-                maxScore = score;
-                bestCategory = cat;
-            }
+            config.keywords.forEach(word => { if (lowerText.includes(word.toLowerCase())) score += 1; });
+            if (score > maxScore) { maxScore = score; bestCategory = cat; }
         });
-
-        return {
-            category: bestCategory,
-            owner: keywordsMap[bestCategory]?.owner || 'Unassigned',
-            isSensitive: keywordsMap[bestCategory]?.sensitive || false
-        };
+        return { category: bestCategory, owner: keywordsMap[bestCategory]?.owner || 'Unassigned', isSensitive: keywordsMap[bestCategory]?.sensitive || false };
     }
 };
 
-// --- CONSTANTS ---
 const initialSchools = ['St. Marys', 'King Edwards', 'North High', 'South High'];
 const initialDepartments = ['IT', 'Site', 'Teaching', 'Admin', 'HR'];
 const initialKeywords = {
@@ -72,115 +78,82 @@ const initialKeywords = {
     'IT - Network': { owner: 'IT', sensitive: false, score: 0, keywords: ['wifi', 'internet', 'connect', 'slow', 'offline', 'network', 'vpn'] },
     'Facilities': { owner: 'Site', sensitive: false, score: 0, keywords: ['chair', 'desk', 'light', 'bulb', 'cold', 'hot', 'ac', 'leak', 'toilet', 'door', 'clean'] },
 };
-const initialKnowledgeBase = [
-    { id: 'kb1', triggers: ['wifi', 'internet', 'slow', 'connect'], title: 'Troubleshooting Slow Wifi', content: '1. Toggle your wifi adapter off/on.\n2. Restart your router.' },
-];
+const initialKnowledgeBase = [{ id: 'kb1', triggers: ['wifi', 'internet', 'slow', 'connect'], title: 'Troubleshooting Slow Wifi', content: '1. Toggle your wifi adapter off/on.\n2. Restart your router.' }];
 
-// --- APP COMPONENT ---
 export default function App() {
+    const [isAuthenticated, setIsAuthenticated] = useState(false);
+    const [isLoginLoading, setIsLoginLoading] = useState(false);
+    const [loginError, setLoginError] = useState(null);
     const [view, setView] = useState('chat');
-    const [tickets, setTickets] = useState([]); // Start Empty, fetch from DB
+    const [tickets, setTickets] = useState([]);
     const [notifications, setNotifications] = useState(0);
     const [users, setUsers] = useState([]);
     const [currentUser, setCurrentUser] = useState(null);
     const [keywords, setKeywords] = useState(initialKeywords);
     const [departments, setDepartments] = useState(initialDepartments);
-    const [kbArticles, setKbArticles] = useState(initialKnowledgeBase); 
-    const [loading, setLoading] = useState(true);
+    const [kbArticles, setKbArticles] = useState(initialKnowledgeBase);
 
-    // 1. Fetch Data from Supabase on Load
-    useEffect(() => {
-        const fetchData = async () => {
-            setLoading(true);
+    const handleLogin = async () => {
+        setIsLoginLoading(true);
+        setLoginError(null);
+        try {
+            const { data: userData, error: userError } = await supabase.from('users').select('*').order('full_name');
+            if (userError) throw userError;
+            if (!userData || userData.length === 0) throw new Error("No users found. Run SQL seed script.");
+
+            const { data: ticketData, error: ticketError } = await supabase.from('tickets').select('*').order('created_at', { ascending: false });
+            if (ticketError) throw ticketError;
+
+            setUsers(userData);
+            // Auto-select Super Admin for demo, or first user
+            const adminUser = userData.find(u => u.is_super_admin) || userData[0];
+            setCurrentUser(adminUser);
+            setTickets(ticketData || []);
+            setIsAuthenticated(true);
             
-            // Fetch Users
-            const { data: userData } = await supabase.from('users').select('*').order('full_name');
-            if (userData) {
-                setUsers(userData);
-                // Default to the first user found (usually CTO from seed)
-                if (!currentUser) setCurrentUser(userData[0]);
-            }
-
-            // Fetch Tickets
-            const { data: ticketData } = await supabase.from('tickets').select('*').order('created_at', { ascending: false });
-            if (ticketData) setTickets(ticketData);
-
-            setLoading(false);
-        };
-
-        fetchData();
-
-        // Realtime Subscription (The "Electric Motor")
-        const channel = supabase.channel('schema-db-changes')
+            // Realtime
+            const channel = supabase.channel('schema-db-changes')
             .on('postgres_changes', { event: '*', schema: 'public', table: 'tickets' }, (payload) => {
-                // When DB updates, we refresh. 
-                // In production, we'd append smartly, but fetching all is safer for prototype.
-                fetchData(); 
+                supabase.from('tickets').select('*').order('created_at', { ascending: false }).then(({ data }) => { if(data) setTickets(data) });
                 if(payload.eventType === 'INSERT') setNotifications(prev => prev + 1);
             })
             .subscribe();
+            
+        } catch (err) {
+            console.error(err);
+            setLoginError(err.message);
+        } finally {
+            setIsLoginLoading(false);
+        }
+    };
 
-        return () => supabase.removeChannel(channel);
-    }, []);
-
-    // 2. Handlers (Updated for Database)
-    
     const handleNewTicket = async (ticket) => {
-        // Optimistic UI Update (Shows instantly)
         setTickets(prev => [ticket, ...prev]); 
-        
-        // Database Insert
-        const { error } = await supabase.from('tickets').insert([{
-            subject: ticket.subject,
-            category: ticket.category,
-            priority: ticket.priority,
-            status: ticket.status,
-            school: ticket.school,
-            location: ticket.location,
-            context_data: ticket.context,
-            is_sensitive: ticket.isSensitive,
-            requester_email: currentUser.email, // Use real email from DB user
-            assigned_to: ticket.assignedTo
+        await supabase.from('tickets').insert([{
+            subject: ticket.subject, category: ticket.category, priority: ticket.priority, status: ticket.status, school: ticket.school, location: ticket.location, context_data: ticket.context, is_sensitive: ticket.isSensitive, requester_email: currentUser.email, assigned_to: ticket.assignedTo
         }]);
-        
-        if (error) console.error('Error creating ticket:', error);
     };
 
     const updateTicket = async (updatedTicket) => {
-        // Optimistic UI
         setTickets(prev => prev.map(t => t.id === updatedTicket.id ? updatedTicket : t));
-
-        // DB Update
-        await supabase.from('tickets').update({
-            status: updatedTicket.status,
-            assigned_to: updatedTicket.assignedTo
-        }).eq('id', updatedTicket.id);
+        await supabase.from('tickets').update({ status: updatedTicket.status, assigned_to: updatedTicket.assignedTo }).eq('id', updatedTicket.id);
     };
 
     const handleAddUser = async (newUser) => {
-        const { data, error } = await supabase.from('users').insert([{
-            full_name: newUser.name,
-            email: `${newUser.name.replace(/\s/g, '').toLowerCase()}@school.edu`, // Mock email generation
-            role: newUser.role,
-            department: newUser.dept,
-            school: newUser.school,
-            is_super_admin: newUser.isSuperAdmin,
-            access_schools: newUser.accessSchools,
-            access_scopes: newUser.accessScopes,
-            avatar_code: newUser.name.substring(0,2).toUpperCase()
+        const { data } = await supabase.from('users').insert([{
+            full_name: newUser.name, email: `${newUser.name.replace(/\s/g, '').toLowerCase()}@school.edu`, role: newUser.role, department: newUser.dept, school: newUser.school, is_super_admin: newUser.isSuperAdmin, access_schools: newUser.accessSchools, access_scopes: newUser.accessScopes, avatar_code: newUser.name.substring(0,2).toUpperCase()
         }]).select();
-
         if (data) setUsers([...users, data[0]]);
     };
 
-    if (loading) return <div className="h-screen flex items-center justify-center bg-zinc-50 text-zinc-400 animate-pulse">Initializing System...</div>;
+    if (!isAuthenticated) return <LoginScreen onLogin={handleLogin} loading={isLoginLoading} error={loginError} />;
+    if (!currentUser) return <div className="h-screen flex items-center justify-center">Loading Profile...</div>;
 
     return (
         <div className="min-h-screen flex flex-col font-sans text-zinc-900 bg-zinc-50">
-            {/* MODERN GLASS HEADER */}
             <nav className="sticky top-0 z-50 bg-white/70 backdrop-blur-xl border-b border-zinc-200/50 px-6 py-4 flex justify-between items-center shadow-sm">
                 <div className="flex items-center gap-3">
-                    <div className="bg-zinc-900 text-white p-1.5 rounded-lg shadow-lg">
+                    <div className="bg-indigo-600 text-white p-1.5 rounded-lg shadow-lg">
                         <Briefcase className="w-5 h-5" />
                     </div>
                     <div>
@@ -188,7 +161,6 @@ export default function App() {
                         <span className="text-[10px] font-semibold text-zinc-400 tracking-wider">INTERNAL OPS</span>
                     </div>
                 </div>
-                
                 <div className="flex items-center gap-4">
                     <div className="flex bg-zinc-100/50 p-1 rounded-lg border border-zinc-200">
                         <button onClick={() => setView('chat')} className={`px-4 py-1.5 rounded-md flex items-center gap-2 text-xs font-semibold transition-all ${view === 'chat' ? 'bg-white text-zinc-900 shadow-sm border border-zinc-200' : 'text-zinc-500 hover:text-zinc-700'}`}>
@@ -202,12 +174,10 @@ export default function App() {
                             {currentUser.is_super_admin || currentUser.role === 'Super Admin' ? 'Admin Panel' : 'My Dashboard'}
                         </button>
                     </div>
-
                     <div className="h-6 w-px bg-zinc-200 mx-2"></div>
-
                     <div className="relative group">
                         <button className="flex items-center gap-3 hover:bg-white/50 p-1.5 rounded-lg transition-all border border-transparent hover:border-zinc-200">
-                            <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold text-white shadow-md ring-2 ring-white ${currentUser.is_super_admin ? 'bg-purple-600' : 'bg-zinc-800'}`}>
+                            <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold text-white shadow-md ring-2 ring-white ${currentUser.is_super_admin ? 'bg-purple-600' : 'bg-indigo-600'}`}>
                                 {currentUser.avatar_code}
                             </div>
                             <div className="text-left hidden md:block">
@@ -217,7 +187,7 @@ export default function App() {
                             <ChevronDown size={14} className="text-zinc-400" />
                         </button>
                         <div className="absolute right-0 mt-2 w-56 bg-white rounded-xl shadow-xl py-1 text-zinc-800 hidden group-hover:block border border-zinc-100 z-50">
-                            <div className="px-3 py-2 text-[10px] font-bold text-zinc-400 uppercase tracking-wider border-b border-zinc-50 mb-1">Switch Persona (Dev)</div>
+                            <div className="px-3 py-2 text-[10px] font-bold text-zinc-400 uppercase tracking-wider border-b border-zinc-50 mb-1">Switch Persona</div>
                             {users.map(u => (
                                 <button key={u.id} onClick={() => setCurrentUser(u)} className={`w-full px-4 py-2 text-left text-xs flex items-center gap-3 hover:bg-zinc-50 ${currentUser.id === u.id ? 'bg-zinc-50 text-zinc-900 font-bold' : 'text-zinc-600'}`}>
                                     <div className={`w-5 h-5 rounded-full flex items-center justify-center text-[9px] font-bold text-white ${u.is_super_admin ? 'bg-purple-600' : 'bg-zinc-400'}`}>{u.avatar_code}</div>
@@ -227,6 +197,11 @@ export default function App() {
                                     {currentUser.id === u.id && <CheckCircle size={12} className="ml-auto text-zinc-900"/>}
                                 </button>
                             ))}
+                            <div className="border-t border-zinc-50 mt-1 pt-1">
+                                <button onClick={() => setIsAuthenticated(false)} className="w-full px-4 py-2 text-left text-xs flex items-center gap-3 text-red-600 hover:bg-red-50">
+                                    <LogOut size={14} /> Sign Out
+                                </button>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -234,29 +209,9 @@ export default function App() {
 
             <div className="flex-1 overflow-hidden relative max-w-[1600px] mx-auto w-full p-6 h-[calc(100vh-80px)]">
                 {view === 'chat' ? (
-                    <ChatInterface 
-                        onTicketCreate={handleNewTicket} 
-                        categorizer={(text) => TicketEngine.categorise(text, keywords)} 
-                        currentUser={currentUser}
-                        kbArticles={kbArticles}
-                    />
+                    <ChatInterface onTicketCreate={handleNewTicket} categorizer={(text) => TicketEngine.categorise(text, keywords)} currentUser={currentUser} kbArticles={kbArticles} />
                 ) : (
-                    <AdminDashboard 
-                        tickets={tickets} 
-                        onUpdateTicket={updateTicket} 
-                        currentUser={currentUser}
-                        users={users}
-                        onAddUser={handleAddUser}
-                        keywords={keywords}
-                        setKeywords={() => {}}
-                        departments={departments}
-                        onAddDepartment={() => {}}
-                        onRemoveDepartment={() => {}}
-                        kbArticles={kbArticles}
-                        onAddKbArticle={() => {}}
-                        onRemoveKbArticle={() => {}}
-                        schools={initialSchools}
-                    />
+                    <AdminDashboard tickets={tickets} onUpdateTicket={updateTicket} currentUser={currentUser} users={users} onAddUser={handleAddUser} keywords={keywords} setKeywords={() => {}} departments={departments} onAddDepartment={() => {}} onRemoveDepartment={() => {}} kbArticles={kbArticles} onAddKbArticle={() => {}} onRemoveKbArticle={() => {}} schools={initialSchools} />
                 )}
             </div>
         </div>
@@ -309,10 +264,7 @@ function ChatInterface({ onTicketCreate, categorizer, currentUser, kbArticles })
         setMessages(prev => [...prev, { id: Date.now(), sender: 'user', text: priority }]);
         setIsTyping(true);
         setTimeout(() => {
-            // Optimistic ID, DB will generate real one, but that's ok for chat display
-            const ticketId = "PENDING..."; 
             onTicketCreate({
-                // id: will be gen by DB
                 user: currentUser.full_name,
                 school: currentUser.school,
                 subject: draftTicket.subject, category: draftTicket.category, isSensitive: draftTicket.isSensitive, owner: draftTicket.owner, 
@@ -331,9 +283,7 @@ function ChatInterface({ onTicketCreate, categorizer, currentUser, kbArticles })
 
     return (
         <div className="h-full flex flex-col justify-center items-center">
-            {/* FIXED: Increased Width (max-w-5xl) and Height (h-[80vh]) for Command Center feel */}
             <div className="w-full max-w-5xl bg-white rounded-2xl shadow-2xl overflow-hidden border border-zinc-200 h-[80vh] flex flex-col ring-1 ring-zinc-900/5">
-                {/* Fixed Chat Header */}
                 <div className="bg-zinc-900 p-4 flex items-center justify-between text-white shadow-md z-10">
                     <div className="flex items-center gap-3">
                         <div className="w-8 h-8 rounded-full bg-white/20 flex items-center justify-center backdrop-blur-sm">
@@ -418,9 +368,9 @@ function AdminDashboard({ tickets, onUpdateTicket, currentUser, users, onAddUser
             <div className="bg-white border-b border-zinc-200 px-6 py-2 flex items-center justify-between sticky top-0 z-40">
                 <div className="flex gap-1">
                     {['tickets', 'users', 'kb', 'depts'].map(tab => {
-                        if (tab === 'users' && !currentUser.isAdmin) return null;
-                        if (tab === 'kb' && !currentUser.isAdmin) return null;
-                        if (tab === 'depts' && !currentUser.isSuperAdmin) return null;
+                        if (tab === 'users' && !currentUser.is_super_admin) return null;
+                        if (tab === 'kb' && !currentUser.is_super_admin) return null;
+                        if (tab === 'depts' && !currentUser.is_super_admin) return null;
                         return (
                             <button key={tab} onClick={() => setActiveTab(tab)} className={`px-4 py-3 text-xs font-bold transition-all border-b-2 ${activeTab === tab ? 'border-zinc-900 text-zinc-900' : 'border-transparent text-zinc-500 hover:text-zinc-800'}`}>
                                 {tab === 'tickets' ? 'Dashboard' : tab === 'users' ? 'Directory' : tab === 'kb' ? 'Knowledge' : 'Settings'}
@@ -428,7 +378,7 @@ function AdminDashboard({ tickets, onUpdateTicket, currentUser, users, onAddUser
                         );
                     })}
                 </div>
-                {currentUser.isSuperAdmin && (
+                {currentUser.is_super_admin && (
                     <button onClick={() => setShowLogicModal(true)} className="text-xs flex items-center gap-1.5 text-zinc-500 hover:text-zinc-900 transition-colors font-medium border border-zinc-200 rounded-lg px-3 py-1.5 hover:bg-zinc-50">
                         <Settings size={14} /> Logic Config
                     </button>
@@ -510,7 +460,6 @@ function AdminDashboard({ tickets, onUpdateTicket, currentUser, users, onAddUser
     );
 }
 
-// --- TICKET DETAIL VIEW (UPDATED FOR DB) ---
 function TicketDetailView({ ticket, onUpdateTicket, currentUser }) {
     const [resolveNote, setResolveNote] = useState('');
     const [newComment, setNewComment] = useState('');
@@ -518,7 +467,6 @@ function TicketDetailView({ ticket, onUpdateTicket, currentUser }) {
     const [updates, setUpdates] = useState([]);
     const chatRef = useRef(null);
 
-    // Fetch comments on ticket selection
     useEffect(() => {
         const fetchUpdates = async () => {
             const { data } = await supabase.from('ticket_updates').select('*').eq('ticket_id', ticket.id).order('created_at');
@@ -530,12 +478,10 @@ function TicketDetailView({ ticket, onUpdateTicket, currentUser }) {
     const handlePost = async (e) => {
         e.preventDefault(); if(!newComment.trim()) return;
         
-        // Optimistic
         const fakeUpdate = { id: Date.now(), user_name: currentUser.full_name, text: newComment, created_at: new Date().toISOString(), is_admin: currentUser.is_super_admin, type: 'COMMENT' };
         setUpdates([...updates, fakeUpdate]);
         setNewComment('');
 
-        // DB Insert
         await supabase.from('ticket_updates').insert([{
             ticket_id: ticket.id,
             user_name: currentUser.full_name,
@@ -588,7 +534,6 @@ function TicketDetailView({ ticket, onUpdateTicket, currentUser }) {
             </div>
 
             <div className="flex-1 overflow-y-auto p-8 bg-zinc-50/30" ref={chatRef}>
-                 {/* Ticket Context Data */}
                  <div className="flex gap-4 mb-8">
                     <div className="w-10 h-10 rounded-full bg-zinc-200 flex items-center justify-center font-bold text-zinc-600 text-xs shadow-inner shrink-0">?</div>
                     <div className="flex-1 max-w-3xl">
@@ -641,39 +586,84 @@ function UserDirectory({ users, currentUser, onAddUser, departments, schools }) 
         <div className="h-full flex flex-col p-8 overflow-y-auto">
             <div className="max-w-6xl mx-auto w-full">
                 <div className="flex justify-between items-center mb-6">
-                    <div><h2 className="text-2xl font-bold text-zinc-900 tracking-tight">Staff Directory</h2><p className="text-sm text-zinc-500 mt-1">Manage user access & roles</p></div>
-                    {currentUser.is_super_admin && <button onClick={() => setIsAdding(true)} className="bg-zinc-900 hover:bg-zinc-800 text-white px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 shadow-sm transition-all"><UserPlus size={16}/> Add User</button>}
+                    <div>
+                        <h2 className="text-2xl font-bold text-zinc-900 tracking-tight">Staff Directory</h2>
+                        <p className="text-sm text-zinc-500 mt-1">Manage user access & roles</p>
+                    </div>
+                    {currentUser.is_super_admin && (
+                        <button onClick={() => setIsAdding(true)} className="bg-zinc-900 hover:bg-zinc-800 text-white px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 shadow-sm transition-all">
+                            <UserPlus size={16}/> Add User
+                        </button>
+                    )}
                 </div>
                 
                 <div className="bg-white rounded-xl shadow-sm border border-zinc-200 overflow-hidden">
                     <table className="w-full text-left text-sm">
                         <thead className="bg-zinc-50/80 text-xs uppercase text-zinc-500 font-bold border-b border-zinc-200">
-                            <tr><th className="px-6 py-4">Identity</th><th className="px-6 py-4">Role & Dept</th><th className="px-6 py-4">Location Access</th><th className="px-6 py-4 text-right">Actions</th></tr>
+                            <tr>
+                                <th className="px-6 py-4">Identity</th>
+                                <th className="px-6 py-4">Role & Dept</th>
+                                <th className="px-6 py-4">Location Access</th>
+                                <th className="px-6 py-4 text-right">Actions</th>
+                            </tr>
                         </thead>
                         <tbody className="divide-y divide-zinc-100">
                             {users.map(u => (
                                 <tr key={u.id} className="hover:bg-zinc-50/50 transition-colors group">
                                     <td className="px-6 py-4">
                                         <div className="flex items-center gap-3">
-                                            <div className={`w-9 h-9 rounded-full flex items-center justify-center text-xs font-bold text-white shadow-sm ${u.is_super_admin ? 'bg-purple-600' : 'bg-zinc-400'}`}>{u.avatar_code}</div>
-                                            <div><div className="font-bold text-zinc-900">{u.full_name}</div><div className="text-xs text-zinc-400 font-mono">ID: {u.id.substring(0,8)}...</div></div>
+                                            <div className={`w-9 h-9 rounded-full flex items-center justify-center text-xs font-bold text-white shadow-sm ${u.is_super_admin ? 'bg-purple-600' : 'bg-zinc-400'}`}>
+                                                {u.avatar_code}
+                                            </div>
+                                            <div>
+                                                <div className="font-bold text-zinc-900">{u.full_name}</div>
+                                                <div className="text-xs text-zinc-400 font-mono">ID: {u.id.substring(0,8)}...</div>
+                                            </div>
                                         </div>
                                     </td>
-                                    <td className="px-6 py-4"><div className="font-medium text-zinc-700">{u.role}</div><div className="text-xs text-zinc-400">{u.department} Department</div></td>
+                                    <td className="px-6 py-4">
+                                        <div className="font-medium text-zinc-700">{u.role}</div>
+                                        <div className="text-xs text-zinc-400">{u.department} Department</div>
+                                    </td>
                                     <td className="px-6 py-4">
                                         <div className="flex flex-wrap gap-1">
-                                            {u.access_schools?.includes('ALL') ? <span className="px-2 py-1 bg-purple-50 text-purple-700 text-[10px] font-bold rounded border border-purple-100 flex items-center gap-1"><Globe size={10}/> GLOBAL ACCESS</span> : u.access_schools?.map(s => <span key={s} className="px-2 py-1 bg-zinc-100 text-zinc-600 text-[10px] font-bold rounded border border-zinc-200">{s}</span>)}
+                                            {u.access_schools?.includes('ALL') ? (
+                                                <span className="px-2 py-1 bg-purple-50 text-purple-700 text-[10px] font-bold rounded border border-purple-100 flex items-center gap-1">
+                                                    <Globe size={10}/> GLOBAL ACCESS
+                                                </span>
+                                            ) : (
+                                                u.access_schools?.map(s => (
+                                                    <span key={s} className="px-2 py-1 bg-zinc-100 text-zinc-600 text-[10px] font-bold rounded border border-zinc-200">{s}</span>
+                                                ))
+                                            )}
                                         </div>
                                     </td>
                                     <td className="px-6 py-4 text-right">
-                                        {currentUser.is_super_admin && <button onClick={() => setEditingUser(u)} className="text-zinc-400 hover:text-indigo-600 p-2 hover:bg-indigo-50 rounded transition-all"><Edit3 size={16}/></button>}
+                                        {currentUser.is_super_admin && (
+                                            <button onClick={() => setEditingUser(u)} className="text-zinc-400 hover:text-indigo-600 p-2 hover:bg-indigo-50 rounded transition-all">
+                                                <Edit3 size={16}/>
+                                            </button>
+                                        )}
                                     </td>
                                 </tr>
                             ))}
                         </tbody>
                     </table>
                 </div>
-                {(editingUser || isAdding) && <UserEditModal user={editingUser} isAdding={isAdding} departments={departments} schools={schools} onClose={() => {setEditingUser(null); setIsAdding(false)}} onSave={(u) => { isAdding ? onAddUser(u) : console.log("Edit logic here"); setEditingUser(null); setIsAdding(false); }} />}
+                {(editingUser || isAdding) && (
+                    <UserEditModal 
+                        user={editingUser} 
+                        isAdding={isAdding} 
+                        departments={departments} 
+                        schools={schools} 
+                        onClose={() => {setEditingUser(null); setIsAdding(false)}} 
+                        onSave={(u) => { 
+                            isAdding ? onAddUser(u) : console.log("Edit logic placeholder"); 
+                            setEditingUser(null); 
+                            setIsAdding(false); 
+                        }} 
+                    />
+                )}
             </div>
         </div>
     );
@@ -725,8 +715,8 @@ function UserEditModal({ user, isAdding, onClose, onSave, departments, schools }
                 <div className="p-6 flex gap-6 max-h-[70vh] overflow-y-auto">
                     {/* Left Column: Identity */}
                     <div className="flex-1 space-y-4">
-                        <div><label className="text-xs font-bold text-zinc-500 uppercase mb-1 block">Full Name</label><input type="text" className="w-full px-3 py-2 text-sm border border-zinc-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-zinc-900/10" value={formData.name || formData.full_name} onChange={e => setFormData({...formData, name: e.target.value})} /></div>
-                        <div><label className="text-xs font-bold text-zinc-500 uppercase mb-1 block">Role Title</label><input type="text" className="w-full px-3 py-2 text-sm border border-zinc-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-zinc-900/10" value={formData.role} onChange={e => setFormData({...formData, role: e.target.value})} /></div>
+                        <div><label className="text-xs font-bold text-zinc-500 uppercase mb-1 block">Full Name</label><input type="text" className="w-full px-3 py-2 text-sm border border-zinc-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-600/10" value={formData.name || formData.full_name} onChange={e => setFormData({...formData, name: e.target.value})} /></div>
+                        <div><label className="text-xs font-bold text-zinc-500 uppercase mb-1 block">Role Title</label><input type="text" className="w-full px-3 py-2 text-sm border border-zinc-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-600/10" value={formData.role} onChange={e => setFormData({...formData, role: e.target.value})} /></div>
                         <div><label className="text-xs font-bold text-zinc-500 uppercase mb-1 block">Department</label><select className="w-full px-3 py-2 text-sm border border-zinc-200 rounded-lg bg-white" value={formData.dept || formData.department} onChange={e => setFormData({...formData, dept: e.target.value})}>{departments.map(d => <option key={d} value={d}>{d}</option>)}</select></div>
                         <div className="pt-2">
                             <label className="text-xs font-bold text-zinc-500 uppercase mb-1 block">Primary Campus</label>
@@ -802,7 +792,7 @@ function DepartmentManager({ departments, onAdd, onRemove }) {
                 <h2 className="text-2xl font-bold text-zinc-900 mb-6">Departments</h2>
                 <div className="bg-white p-6 rounded-xl shadow-sm border border-zinc-200">
                     <form onSubmit={(e) => { e.preventDefault(); if(newDept.trim()) { onAdd(newDept.trim()); setNewDept(''); } }} className="flex gap-2 mb-6">
-                        <input type="text" className="flex-1 px-4 py-2 border border-zinc-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-zinc-900/10" placeholder="New Department Name..." value={newDept} onChange={e => setNewDept(e.target.value)} />
+                        <input type="text" className="flex-1 px-4 py-2 border border-zinc-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-600/10" placeholder="New Department Name..." value={newDept} onChange={e => setNewDept(e.target.value)} />
                         <button type="submit" className="bg-zinc-900 text-white px-4 py-2 rounded-lg font-bold hover:bg-zinc-700 flex items-center gap-2"><Plus size={18}/> Add</button>
                     </form>
                     <div className="grid grid-cols-2 gap-3">
