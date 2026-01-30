@@ -25,7 +25,7 @@ function LoginScreen({ onLogin, loading, error }) {
                     </div>
                 )}
                 <button onClick={onLogin} disabled={loading} className="w-full py-3.5 px-4 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl shadow-lg shadow-indigo-600/20 transition-all active:scale-95 flex items-center justify-center gap-2 disabled:opacity-70 disabled:cursor-not-allowed">
-                    {loading ? "Connecting..." : <>Sign In with SSO <ArrowRight size={16} /></>}
+                    {loading ? "Redirecting to Microsoft..." : <>Sign In with SSO <ArrowRight size={16} /></>}
                 </button>
                 <p className="mt-6 text-[10px] text-zinc-400 uppercase tracking-widest font-medium">Authorized Personnel Only</p>
             </div>
@@ -78,7 +78,8 @@ const initialKeywords = {
     'IT - Network': { owner: 'IT', sensitive: false, score: 0, keywords: ['wifi', 'internet', 'connect', 'slow', 'offline', 'network', 'vpn'] },
     'Facilities': { owner: 'Site', sensitive: false, score: 0, keywords: ['chair', 'desk', 'light', 'bulb', 'cold', 'hot', 'ac', 'leak', 'toilet', 'door', 'clean'] },
 };
-const initialKnowledgeBase = [{ id: 'kb1', triggers: ['wifi', 'internet', 'slow', 'connect'], title: 'Troubleshooting Slow Wifi', content: '1. Toggle your wifi adapter off/on.\n2. Restart your router.' }];
+// Clean KB for fresh start
+const initialKnowledgeBase = [];
 
 export default function App() {
     const [isAuthenticated, setIsAuthenticated] = useState(false);
@@ -93,26 +94,58 @@ export default function App() {
     const [departments, setDepartments] = useState(initialDepartments);
     const [kbArticles, setKbArticles] = useState(initialKnowledgeBase);
 
+    // --- AZURE SSO LOGIN LOGIC ---
     const handleLogin = async () => {
         setIsLoginLoading(true);
         setLoginError(null);
         try {
-            const { data: userData, error: userError } = await supabase.from('users').select('*').order('full_name');
-            if (userError) throw userError;
-            if (!userData || userData.length === 0) throw new Error("No users found. Run SQL seed script.");
+            const { error } = await supabase.auth.signInWithOAuth({
+                provider: 'azure',
+                options: {
+                    scopes: 'email',
+                    redirectTo: window.location.origin
+                }
+            });
+            if (error) throw error;
+        } catch (err) {
+            console.error(err);
+            setLoginError(err.message);
+            setIsLoginLoading(false);
+        }
+    };
 
-            const { data: ticketData, error: ticketError } = await supabase.from('tickets').select('*').order('created_at', { ascending: false });
-            if (ticketError) throw ticketError;
+    // --- AUTH LISTENER & USER MATCHING ---
+    useEffect(() => {
+        // Check active session on load
+        supabase.auth.getSession().then(({ data: { session } }) => {
+            if (session?.user) checkUserAccess(session.user.email);
+        });
 
-            setUsers(userData);
-            // Auto-select Super Admin for demo, or first user
-            const adminUser = userData.find(u => u.is_super_admin) || userData[0];
-            setCurrentUser(adminUser);
+        // Listen for redirect return
+        const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+            if (session?.user) checkUserAccess(session.user.email);
+        });
+
+        return () => subscription.unsubscribe();
+    }, []);
+
+    const checkUserAccess = async (email) => {
+        setIsLoginLoading(true);
+        try {
+            // Find internal user matching Azure email
+            const { data: userData, error } = await supabase.from('users').select('*').ilike('email', email).single();
+            
+            if (error || !userData) throw new Error("Access Denied: Email not authorized.");
+
+            const { data: ticketData } = await supabase.from('tickets').select('*').order('created_at', { ascending: false });
+
+            setUsers([userData]); // Only load current user for now
+            setCurrentUser(userData);
             setTickets(ticketData || []);
             setIsAuthenticated(true);
             
-            // Realtime
-            const channel = supabase.channel('schema-db-changes')
+            // Realtime subscription
+            supabase.channel('schema-db-changes')
             .on('postgres_changes', { event: '*', schema: 'public', table: 'tickets' }, (payload) => {
                 supabase.from('tickets').select('*').order('created_at', { ascending: false }).then(({ data }) => { if(data) setTickets(data) });
                 if(payload.eventType === 'INSERT') setNotifications(prev => prev + 1);
@@ -122,6 +155,9 @@ export default function App() {
         } catch (err) {
             console.error(err);
             setLoginError(err.message);
+            setIsAuthenticated(false);
+            // If failed, sign out of Supabase to clear invalid session
+            await supabase.auth.signOut();
         } finally {
             setIsLoginLoading(false);
         }
@@ -198,7 +234,7 @@ export default function App() {
                                 </button>
                             ))}
                             <div className="border-t border-zinc-50 mt-1 pt-1">
-                                <button onClick={() => setIsAuthenticated(false)} className="w-full px-4 py-2 text-left text-xs flex items-center gap-3 text-red-600 hover:bg-red-50">
+                                <button onClick={() => { setIsAuthenticated(false); supabase.auth.signOut(); }} className="w-full px-4 py-2 text-left text-xs flex items-center gap-3 text-red-600 hover:bg-red-50">
                                     <LogOut size={14} /> Sign Out
                                 </button>
                             </div>
@@ -228,7 +264,11 @@ function ChatInterface({ onTicketCreate, categorizer, currentUser, kbArticles })
     const [draftTicket, setDraftTicket] = useState(null);
     const chatEndRef = useRef(null);
 
-    const checkKnowledgeBase = (text) => kbArticles.find(kb => kb.triggers.some(t => text.toLowerCase().includes(t.toLowerCase())));
+    // Knowledge Base Check
+    const checkKnowledgeBase = (text) => {
+        if (!kbArticles || kbArticles.length === 0) return null;
+        return kbArticles.find(kb => kb.triggers.some(t => text.toLowerCase().includes(t.toLowerCase())));
+    };
 
     const handleSend = (e, forceText = null, skipKb = false) => {
         if (e) e.preventDefault();
