@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useMemo } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { supabase } from './supabaseClient';
 import { 
   MessageSquare, LayoutDashboard, Monitor, Wifi, AlertCircle, CheckCircle, 
@@ -10,7 +10,6 @@ import {
 } from 'lucide-react';
 
 // --- HELPER: PERSIST VIEW STATE ---
-// Keeps you on the same tab after refresh
 const usePersistedState = (key, defaultValue) => {
     const [state, setState] = useState(() => {
         const stored = localStorage.getItem(key);
@@ -45,13 +44,13 @@ function LoginScreen({ onLogin, loading, error }) {
     );
 }
 
-// --- MAIN APPLICATION ---
+// --- MAIN APPLICATION LOGIC ---
 export default function App() {
     const [isAuthenticated, setIsAuthenticated] = useState(false);
     const [isLoginLoading, setIsLoginLoading] = useState(false);
     const [loginError, setLoginError] = useState(null);
     
-    // PERSISTENCE: Remember where the user was
+    // View Persistence
     const [view, setView] = usePersistedState('app_view', 'chat');
     
     const [tickets, setTickets] = useState([]);
@@ -59,22 +58,20 @@ export default function App() {
     const [users, setUsers] = useState([]);
     const [currentUser, setCurrentUser] = useState(null);
     
-    // DYNAMIC SETTINGS (No more mock data)
+    // Dynamic Settings
     const [schools, setSchools] = useState([]);
     const [departments, setDepartments] = useState([]);
-    const [keywords, setKeywords] = useState({}); 
     const [kbArticles, setKbArticles] = useState([]);
 
-    // --- INITIAL DATA FETCH ---
+    // --- DATA FETCHING ---
     const fetchSystemData = async () => {
-        // 1. Fetch Organization Settings (Schools/Depts)
+        // 1. Settings
         const { data: settings } = await supabase.from('organization_settings').select('*');
         if (settings) {
             setSchools(settings.filter(s => s.type === 'SCHOOL').map(s => s.name));
             setDepartments(settings.filter(s => s.type === 'DEPARTMENT').map(s => s.name));
         }
-
-        // 2. Fetch Users & Tickets
+        // 2. Users & Tickets
         const { data: allUsers } = await supabase.from('users').select('*').order('full_name');
         const { data: allTickets } = await supabase.from('tickets').select('*').order('created_at', { ascending: false });
         
@@ -82,7 +79,7 @@ export default function App() {
         setTickets(allTickets || []);
     };
 
-    // --- AUTH & JIT LOGIC ---
+    // --- AUTH & JIT ---
     useEffect(() => {
         supabase.auth.getSession().then(({ data: { session } }) => {
             if (session?.user) handleUserAuth(session.user);
@@ -100,11 +97,9 @@ export default function App() {
             let { data: userData } = await supabase.from('users').select('*').ilike('email', email).single();
             
             if (!userData) {
-                // JIT: Auto-create trusted Azure users
+                // JIT Creation
                 const domain = email.split('@')[1];
-                let assignedSchool = 'HQ'; // Default fallback
-                
-                // Simple domain matching (Expand as needed)
+                let assignedSchool = 'HQ';
                 if (domain.includes('kgps')) assignedSchool = 'KGPS';
 
                 const { data: newUser } = await supabase.from('users').insert([{
@@ -119,7 +114,6 @@ export default function App() {
                 userData = newUser;
             }
 
-            // Load App Data
             await fetchSystemData();
             setCurrentUser(userData);
             setIsAuthenticated(true);
@@ -135,7 +129,7 @@ export default function App() {
     };
 
     const setupRealtimeSubscriptions = () => {
-        const channel = supabase.channel('main-db-changes')
+        supabase.channel('main-db-changes')
             .on('postgres_changes', { event: '*', schema: 'public', table: 'tickets' }, () => {
                 supabase.from('tickets').select('*').order('created_at', { ascending: false }).then(({ data }) => setTickets(data));
                 setNotifications(prev => prev + 1);
@@ -146,13 +140,24 @@ export default function App() {
             .subscribe();
     };
 
-    // --- ACTIONS ---
     const handleLogin = async () => {
         setIsLoginLoading(true);
         await supabase.auth.signInWithOAuth({ provider: 'azure', options: { scopes: 'email', redirectTo: window.location.origin } });
     };
 
+    // --- TICKET LOGIC (Optimistic UI) ---
     const handleNewTicket = async (ticket) => {
+        // Show immediately in local state
+        const optimisticTicket = { 
+            ...ticket, 
+            id: `temp-${Date.now()}`, 
+            created_at: new Date().toISOString(),
+            status: 'Open',
+            requester_email: currentUser.email
+        };
+        setTickets(prev => [optimisticTicket, ...prev]);
+
+        // Persist to DB
         await supabase.from('tickets').insert([{
             subject: ticket.subject, category: ticket.category, priority: ticket.priority, status: ticket.status, 
             school: ticket.school, location: ticket.location, context_data: ticket.context, 
@@ -161,7 +166,6 @@ export default function App() {
     };
 
     const handleUpdateUser = async (updatedUser) => {
-        // FIX: Actually update the database
         const { error } = await supabase.from('users').update({
             role: updatedUser.role,
             department: updatedUser.department,
@@ -170,8 +174,8 @@ export default function App() {
             is_super_admin: updatedUser.is_super_admin
         }).eq('id', updatedUser.id);
         
-        if (error) alert("Failed to update user: " + error.message);
-        else fetchSystemData(); // Refresh local state
+        if (error) alert("Update failed: " + error.message);
+        else fetchSystemData();
     };
 
     const handleAddSetting = async (type, name) => {
@@ -184,12 +188,22 @@ export default function App() {
         fetchSystemData();
     };
 
+    const handleUpdateTicket = async (t) => {
+        // Optimistic local update
+        setTickets(prev => prev.map(tick => tick.id === t.id ? t : tick));
+        // DB Update
+        await supabase.from('tickets').update({ 
+            status: t.status, 
+            assigned_to: t.assigned_to 
+        }).eq('id', t.id);
+    };
+
     if (!isAuthenticated) return <LoginScreen onLogin={handleLogin} loading={isLoginLoading} error={loginError} />;
     if (!currentUser) return <div className="h-screen flex items-center justify-center"><Loader2 className="animate-spin text-indigo-600" size={32}/></div>;
 
     return (
         <div className="min-h-screen flex flex-col font-sans text-zinc-900 bg-zinc-50">
-            {/* NAVBAR: Cleaned up - No more Persona Switcher */}
+            {/* NAVBAR */}
             <nav className="sticky top-0 z-50 bg-white/80 backdrop-blur-md border-b border-zinc-200 px-6 py-4 flex justify-between items-center shadow-sm">
                 <div className="flex items-center gap-3">
                     <div className="bg-indigo-600 text-white p-1.5 rounded-lg">
@@ -233,10 +247,15 @@ export default function App() {
                 {view === 'chat' ? (
                     <ChatInterface 
                         onTicketCreate={handleNewTicket} 
-                        // Mock categorizer for now, replace with AI logic later if needed
-                        categorizer={(text) => ({ category: 'General', owner: 'IT', isSensitive: false })} 
+                        // Simple Keyword Categorizer
+                        categorizer={(text) => {
+                            const t = text.toLowerCase();
+                            if (t.includes('wifi') || t.includes('internet')) return { category: 'IT - Network', owner: 'IT' };
+                            if (t.includes('projector') || t.includes('screen')) return { category: 'IT - AV', owner: 'IT' };
+                            if (t.includes('chair') || t.includes('leak')) return { category: 'Facilities', owner: 'Site' };
+                            return { category: 'General Support', owner: 'IT' };
+                        }} 
                         currentUser={currentUser} 
-                        kbArticles={kbArticles} 
                     />
                 ) : (
                     <AdminDashboard 
@@ -248,10 +267,8 @@ export default function App() {
                         onUpdateUser={handleUpdateUser}
                         onAddSetting={handleAddSetting}
                         onRemoveSetting={handleRemoveSetting}
-                        // Pass update handler for tickets
-                        onUpdateTicket={async (t) => {
-                             await supabase.from('tickets').update({ status: t.status, assigned_to: t.assigned_to }).eq('id', t.id);
-                        }}
+                        onRefresh={fetchSystemData} // Triggers refresh on click
+                        onUpdateTicket={handleUpdateTicket}
                     />
                 )}
             </div>
@@ -259,9 +276,9 @@ export default function App() {
     );
 }
 
-// --- SUB COMPONENTS ---
+// --- SUB COMPONENTS (UI LAYER) ---
 
-// 1. CHAT INTERFACE (The "User" view when creating tickets)
+// 1. CHAT INTERFACE
 function ChatInterface({ onTicketCreate, categorizer, currentUser }) {
     const [messages, setMessages] = useState([{ id: 1, sender: 'bot', text: `Hello ${currentUser.full_name.split(' ')[0]}. What seems to be the problem?` }]);
     const [input, setInput] = useState('');
@@ -285,7 +302,7 @@ function ChatInterface({ onTicketCreate, categorizer, currentUser }) {
             } else if (step === 'DETAILS') {
                 const finalTicket = { ...ticketDraft, location: text, priority: 'Medium', status: 'Open', school: currentUser.school };
                 onTicketCreate(finalTicket);
-                setMessages(prev => [...prev, { id: Date.now(), sender: 'bot', text: "Ticket created! An agent will be with you shortly." }]);
+                setMessages(prev => [...prev, { id: Date.now(), sender: 'bot', text: "Ticket created! Redirecting to dashboard..." }]);
                 setStep('DONE');
             }
         }, 600);
@@ -322,16 +339,20 @@ function ChatInterface({ onTicketCreate, categorizer, currentUser }) {
     );
 }
 
-// 2. ADMIN DASHBOARD (The "Agent" view)
-function AdminDashboard({ tickets, users, currentUser, schools, departments, onUpdateUser, onAddSetting, onRemoveSetting, onUpdateTicket }) {
+// 2. ADMIN DASHBOARD
+function AdminDashboard({ tickets, users, currentUser, schools, departments, onUpdateUser, onAddSetting, onRemoveSetting, onUpdateTicket, onRefresh }) {
     const [selectedTicket, setSelectedTicket] = useState(null);
     const [activeTab, setActiveTab] = useState('queue');
 
-    // SECURITY: Only Super Admins see Directory & Settings
-    const tabs = [{ id: 'queue', label: 'Queue' }];
+    // AUTO-REFRESH on View Load
+    useEffect(() => {
+        if (onRefresh) onRefresh();
+    }, []);
+
+    const tabs = [{ id: 'queue', label: 'Dashboard' }];
     if (currentUser.is_super_admin) {
-        tabs.push({ id: 'directory', label: 'Directory' });
-        tabs.push({ id: 'settings', label: 'Settings' });
+        tabs.push({ id: 'directory', label: 'Users & Privileges' });
+        tabs.push({ id: 'settings', label: 'System Config' });
     }
 
     return (
@@ -344,10 +365,9 @@ function AdminDashboard({ tickets, users, currentUser, schools, departments, onU
                 ))}
             </div>
 
-            <div className="flex-1 overflow-hidden relative">
+            <div className="flex-1 overflow-hidden relative bg-zinc-50/30">
                 {activeTab === 'queue' && (
                     <div className="h-full flex">
-                        {/* Ticket List (Left Sidebar) */}
                         <div className="w-[380px] border-r border-zinc-200 overflow-y-auto bg-white flex flex-col">
                             {tickets.length === 0 ? (
                                 <div className="p-10 text-center text-zinc-400 text-sm">No tickets found.</div>
@@ -356,13 +376,12 @@ function AdminDashboard({ tickets, users, currentUser, schools, departments, onU
                                     <div key={t.id} onClick={() => setSelectedTicket(t)} className={`p-4 border-b border-zinc-100 cursor-pointer hover:bg-zinc-50 transition-all ${selectedTicket?.id === t.id ? 'bg-indigo-50/50 border-l-4 border-l-indigo-600' : 'border-l-4 border-l-transparent'}`}>
                                         <div className="flex justify-between items-start mb-1">
                                             <h4 className={`text-sm font-bold line-clamp-1 ${selectedTicket?.id === t.id ? 'text-indigo-900' : 'text-zinc-800'}`}>{t.subject}</h4>
-                                            {t.status === 'Open' && <span className="w-2 h-2 rounded-full bg-green-500 shrink-0 mt-1.5"></span>}
+                                            <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded uppercase ${t.status === 'Open' ? 'bg-green-100 text-green-700' : t.status === 'Resolved' ? 'bg-zinc-100 text-zinc-500' : 'bg-blue-100 text-blue-700'}`}>{t.status}</span>
                                         </div>
                                         <p className="text-xs text-zinc-500 line-clamp-2 mb-2">{t.context_data || 'No details provided'}</p>
                                         <div className="flex items-center justify-between">
                                             <div className="flex items-center gap-2">
                                                 <span className="text-[10px] bg-zinc-100 text-zinc-600 px-1.5 py-0.5 rounded border border-zinc-200 font-medium">{t.school}</span>
-                                                <span className="text-[10px] bg-zinc-100 text-zinc-600 px-1.5 py-0.5 rounded border border-zinc-200 font-medium">{t.category}</span>
                                             </div>
                                             <span className="text-[10px] text-zinc-400">{new Date(t.created_at).toLocaleDateString()}</span>
                                         </div>
@@ -370,7 +389,6 @@ function AdminDashboard({ tickets, users, currentUser, schools, departments, onU
                                 ))
                             )}
                         </div>
-                        {/* Ticket Detail (Right Main) */}
                         <div className="flex-1 bg-zinc-50/50">
                             {selectedTicket ? (
                                 <TicketDetailView ticket={selectedTicket} currentUser={currentUser} onUpdateTicket={onUpdateTicket} />
@@ -396,13 +414,14 @@ function AdminDashboard({ tickets, users, currentUser, schools, departments, onU
     );
 }
 
-// 3. POLISHED TICKET DETAIL (Modern Chat UI)
+// 3. TICKET DETAIL (Now with Reopen & Resolve Modal)
 function TicketDetailView({ ticket, currentUser, onUpdateTicket }) {
     const [updates, setUpdates] = useState([]);
     const [input, setInput] = useState('');
+    const [showResolveModal, setShowResolveModal] = useState(false);
+    const [resolveNote, setResolveNote] = useState('');
     const messagesEndRef = useRef(null);
 
-    // Realtime fetch logic (Same as before, just kept for completeness)
     useEffect(() => {
         const fetchMessages = async () => {
             const { data } = await supabase.from('ticket_updates').select('*').eq('ticket_id', ticket.id).order('created_at');
@@ -426,35 +445,59 @@ function TicketDetailView({ ticket, currentUser, onUpdateTicket }) {
         setInput('');
     };
 
-    const handleAssignMe = async () => {
-        const updated = { ...ticket, assigned_to: currentUser.full_name, status: 'In Progress' };
-        await onUpdateTicket(updated); // Sync to parent/DB
-        sendMessage(`Ticket assigned to ${currentUser.full_name}`, "SYSTEM");
+    const confirmResolve = async () => {
+        await onUpdateTicket({ ...ticket, status: 'Resolved' });
+        await sendMessage(`Ticket Resolved: ${resolveNote || 'No remarks provided.'}`, "SYSTEM");
+        setShowResolveModal(false);
+        setResolveNote('');
+    };
+
+    const handleReopen = async () => {
+        await onUpdateTicket({ ...ticket, status: 'Open' });
+        await sendMessage("Ticket Reopened", "SYSTEM");
     };
 
     return (
-        <div className="h-full flex flex-col bg-white">
-            {/* Header: Meta Data */}
+        <div className="h-full flex flex-col bg-white relative">
+            {/* RESOLVE MODAL */}
+            {showResolveModal && (
+                <div className="absolute inset-0 bg-white/90 backdrop-blur-sm z-50 flex items-center justify-center p-8 animate-enter">
+                    <div className="w-full max-w-md bg-white border border-zinc-200 shadow-2xl rounded-2xl p-6">
+                        <h3 className="font-bold text-lg mb-2 text-zinc-900">Resolve Ticket</h3>
+                        <p className="text-xs text-zinc-500 mb-4">Add a closing note or solution summary.</p>
+                        <textarea className="w-full px-3 py-2 text-sm border border-zinc-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-600 h-32 mb-4 resize-none" 
+                            placeholder="Solution details..." value={resolveNote} onChange={e => setResolveNote(e.target.value)} autoFocus/>
+                        <div className="flex gap-3">
+                            <button onClick={() => setShowResolveModal(false)} className="flex-1 px-4 py-2 rounded-lg text-sm bg-white border border-zinc-200 hover:bg-zinc-50 font-medium">Cancel</button>
+                            <button onClick={confirmResolve} className="flex-1 px-4 py-2 rounded-lg text-sm bg-zinc-900 text-white hover:bg-black font-bold shadow-sm">Confirm</button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Header */}
             <div className="px-8 py-6 border-b border-zinc-100 flex justify-between items-start bg-white z-10">
                 <div>
-                    <h1 className="text-2xl font-bold text-zinc-900 mb-2">{ticket.subject}</h1>
+                    <h1 className="text-xl font-bold text-zinc-900 mb-2">{ticket.subject}</h1>
                     <div className="flex items-center gap-4 text-xs text-zinc-500 font-medium">
                         <span className="flex items-center gap-1.5"><User size={14} className="text-zinc-400"/> {ticket.requester_email}</span>
                         <span className="w-px h-3 bg-zinc-200"></span>
                         <span className="flex items-center gap-1.5"><MapPin size={14} className="text-zinc-400"/> {ticket.location}</span>
-                        <span className="w-px h-3 bg-zinc-200"></span>
-                        <span className={`px-2 py-0.5 rounded-full ${ticket.priority === 'High' ? 'bg-red-100 text-red-700' : 'bg-blue-50 text-blue-700'}`}>{ticket.priority} Priority</span>
                     </div>
                 </div>
                 <div className="flex gap-2">
-                    {ticket.status !== 'Resolved' && (
+                    {ticket.status === 'Resolved' ? (
+                        <button onClick={handleReopen} className="px-4 py-2 bg-zinc-100 hover:bg-zinc-200 text-zinc-700 text-xs font-bold rounded-lg border border-zinc-200 flex items-center gap-2">
+                            <History size={14}/> Reopen Ticket
+                        </button>
+                    ) : (
                         <>
                             {!ticket.assigned_to && (
-                                <button onClick={handleAssignMe} className="px-4 py-2 bg-white border border-zinc-200 hover:border-zinc-300 text-zinc-700 text-xs font-bold rounded-lg shadow-sm transition-all flex items-center gap-2">
+                                <button onClick={() => { onUpdateTicket({ ...ticket, assigned_to: currentUser.full_name, status: 'In Progress' }); sendMessage(`Ticket assigned to ${currentUser.full_name}`, "SYSTEM"); }} className="px-4 py-2 bg-white border border-zinc-200 hover:border-zinc-300 text-zinc-700 text-xs font-bold rounded-lg shadow-sm transition-all flex items-center gap-2">
                                     <UserPlus size={14}/> Assign Me
                                 </button>
                             )}
-                            <button onClick={() => { onUpdateTicket({ ...ticket, status: 'Resolved' }); sendMessage("Ticket Resolved", "SYSTEM"); }} className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white text-xs font-bold rounded-lg shadow-sm transition-all flex items-center gap-2">
+                            <button onClick={() => setShowResolveModal(true)} className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white text-xs font-bold rounded-lg shadow-sm transition-all flex items-center gap-2">
                                 <CheckCircle size={14}/> Resolve
                             </button>
                         </>
@@ -464,12 +507,11 @@ function TicketDetailView({ ticket, currentUser, onUpdateTicket }) {
 
             {/* Chat Stream */}
             <div className="flex-1 overflow-y-auto p-8 space-y-6 bg-zinc-50">
-                <div className="flex justify-center"><span className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest">Start of Ticket</span></div>
                 {updates.map(u => (
                     <div key={u.id} className={`flex w-full ${u.type === 'SYSTEM' ? 'justify-center my-4' : ''}`}>
                         {u.type === 'SYSTEM' ? (
                             <div className="bg-zinc-200/50 text-zinc-500 px-3 py-1 rounded-full text-[10px] font-bold border border-zinc-200 flex items-center gap-2">
-                                <Activity size={10}/> {u.text} <span className="font-normal opacity-50">• {new Date(u.created_at).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}</span>
+                                <Activity size={10}/> {u.text}
                             </div>
                         ) : (
                             <div className={`flex gap-4 max-w-2xl ${u.is_admin ? 'ml-auto flex-row-reverse' : ''}`}>
@@ -493,23 +535,19 @@ function TicketDetailView({ ticket, currentUser, onUpdateTicket }) {
             </div>
 
             {/* Input Area */}
-            {ticket.status !== 'Resolved' ? (
+            {ticket.status !== 'Resolved' && (
                 <div className="p-4 bg-white border-t border-zinc-200">
                     <form onSubmit={(e) => { e.preventDefault(); sendMessage(input); }} className="max-w-4xl mx-auto relative flex items-center gap-2">
                         <input value={input} onChange={e => setInput(e.target.value)} placeholder="Type an internal note or reply..." className="flex-1 bg-zinc-50 hover:bg-zinc-100 focus:bg-white border border-zinc-200 focus:border-indigo-600 rounded-xl px-4 py-3 text-sm focus:ring-4 focus:ring-indigo-600/10 transition-all outline-none" />
                         <button type="submit" className="p-3 bg-zinc-900 text-white rounded-xl hover:bg-black transition-transform active:scale-95 shadow-sm"><Send size={18}/></button>
                     </form>
                 </div>
-            ) : (
-                <div className="p-4 bg-zinc-50 border-t border-zinc-200 text-center text-xs font-bold text-zinc-400 uppercase tracking-widest">
-                    This ticket is resolved
-                </div>
             )}
         </div>
     );
 }
 
-// 4. USER DIRECTORY & COMPLEX EDIT MODAL (Restored)
+// 4. RUCKUS-STYLE USER DIRECTORY
 function UserDirectory({ users, currentUser, schools, departments, onUpdateUser }) {
     const [editingUser, setEditingUser] = useState(null);
 
@@ -519,24 +557,42 @@ function UserDirectory({ users, currentUser, schools, departments, onUpdateUser 
     };
 
     return (
-        <div className="p-8 h-full overflow-y-auto">
-            <h2 className="text-xl font-bold mb-4 text-zinc-900">User Directory</h2>
-            <div className="bg-white rounded-xl border border-zinc-200 overflow-hidden shadow-sm">
+        <div className="p-8 h-full overflow-y-auto bg-white">
+            <div className="flex justify-between items-center mb-6">
+                <div>
+                    <h2 className="text-2xl font-bold text-zinc-900">Account Management</h2>
+                    <p className="text-sm text-zinc-500 mt-1">Manage delegated admins and staff access</p>
+                </div>
+                <button className="bg-indigo-600 text-white px-4 py-2 rounded-lg text-sm font-bold shadow-sm hover:bg-indigo-700 transition-colors">Add User</button>
+            </div>
+            
+            <div className="border border-zinc-200 rounded-lg overflow-hidden">
                 <table className="w-full text-left text-sm">
-                    <thead className="bg-zinc-50/50 border-b border-zinc-200 text-zinc-500 font-bold uppercase text-xs">
-                        <tr><th className="px-6 py-4">Identity</th><th className="px-6 py-4">Access Level</th><th className="px-6 py-4">Location</th><th className="px-6 py-4 text-right">Action</th></tr>
+                    <thead className="bg-zinc-50 border-b border-zinc-200 text-zinc-500 font-bold text-xs">
+                        <tr>
+                            <th className="px-6 py-3 w-10"><input type="checkbox" className="rounded border-zinc-300"/></th>
+                            <th className="px-6 py-3">Name / Email</th>
+                            <th className="px-6 py-3">Authentication Type</th>
+                            <th className="px-6 py-3">Privilege Group</th>
+                            <th className="px-6 py-3 text-right">Settings</th>
+                        </tr>
                     </thead>
                     <tbody className="divide-y divide-zinc-100">
                         {users.map(u => (
-                            <tr key={u.id} className="hover:bg-zinc-50/50 transition-colors">
+                            <tr key={u.id} className="hover:bg-zinc-50 group transition-colors">
+                                <td className="px-6 py-4"><input type="checkbox" className="rounded border-zinc-300"/></td>
                                 <td className="px-6 py-4">
                                     <div className="font-bold text-zinc-900">{u.full_name}</div>
-                                    <div className="text-xs text-zinc-500">{u.email}</div>
+                                    <div className="text-xs text-zinc-400">{u.email}</div>
                                 </td>
-                                <td className="px-6 py-4"><span className={`inline-block px-2 py-1 rounded text-xs font-bold border ${u.is_super_admin ? 'bg-purple-50 text-purple-700 border-purple-100' : 'bg-zinc-100 text-zinc-600 border-zinc-200'}`}>{u.is_super_admin ? 'Super Admin' : u.role}</span></td>
-                                <td className="px-6 py-4">{u.school}</td>
+                                <td className="px-6 py-4"><span className="text-xs font-mono text-zinc-500 bg-zinc-100 px-2 py-1 rounded">AZURE AD</span></td>
+                                <td className="px-6 py-4">
+                                    <span className={`inline-block px-2 py-1 rounded text-xs font-bold ${u.is_super_admin ? 'bg-orange-50 text-orange-700' : u.role === 'Admin' ? 'bg-blue-50 text-blue-700' : 'bg-zinc-100 text-zinc-600'}`}>
+                                        {u.is_super_admin ? 'Prime Admin' : u.role === 'Admin' ? 'Delegated Admin' : 'Read Only'}
+                                    </span>
+                                </td>
                                 <td className="px-6 py-4 text-right">
-                                    <button onClick={() => setEditingUser(u)} className="text-zinc-400 hover:text-indigo-600 p-2 rounded hover:bg-indigo-50 transition-all"><Edit3 size={16}/></button>
+                                    <button onClick={() => setEditingUser(u)} className="text-zinc-400 hover:text-zinc-900"><Settings size={16}/></button>
                                 </td>
                             </tr>
                         ))}
@@ -557,22 +613,75 @@ function UserDirectory({ users, currentUser, schools, departments, onUpdateUser 
     );
 }
 
-// 5. THE RESTORED "COMPLEX" MODAL
+// 5. SETTINGS MANAGER (Pro Cards)
+function SettingsManager({ schools, departments, onAdd, onRemove }) {
+    const [input, setInput] = useState('');
+    const [type, setType] = useState('SCHOOL');
+
+    return (
+        <div className="p-8 bg-zinc-50 min-h-full">
+            <h2 className="text-2xl font-bold mb-6 text-zinc-900">System Configuration</h2>
+            
+            <div className="grid grid-cols-2 gap-8 max-w-5xl">
+                {/* Input Card */}
+                <div className="col-span-2 bg-white p-6 rounded-xl border border-zinc-200 shadow-sm flex items-end gap-4">
+                    <div className="flex-1">
+                        <label className="text-xs font-bold text-zinc-500 uppercase mb-2 block">Configuration Type</label>
+                        <select value={type} onChange={e => setType(e.target.value)} className="w-full border border-zinc-300 rounded-lg px-3 py-2.5 text-sm font-medium"><option value="SCHOOL">Campus / School</option><option value="DEPARTMENT">Operational Department</option></select>
+                    </div>
+                    <div className="flex-[2]">
+                        <label className="text-xs font-bold text-zinc-500 uppercase mb-2 block">Display Name</label>
+                        <input value={input} onChange={e => setInput(e.target.value)} placeholder="e.g. North High Campus..." className="w-full border border-zinc-300 rounded-lg px-3 py-2.5 text-sm" />
+                    </div>
+                    <button onClick={() => { onAdd(type, input); setInput(''); }} className="bg-zinc-900 text-white px-6 py-2.5 rounded-lg text-sm font-bold shadow-sm hover:bg-black transition-transform active:scale-95">Add Entry</button>
+                </div>
+
+                {/* Schools List */}
+                <div className="bg-white rounded-xl border border-zinc-200 shadow-sm overflow-hidden">
+                    <div className="bg-zinc-50 px-6 py-3 border-b border-zinc-200 flex justify-between items-center">
+                        <h4 className="font-bold text-zinc-700 text-sm flex items-center gap-2"><School size={16}/> Active Campuses</h4>
+                        <span className="text-xs bg-zinc-200 text-zinc-600 px-2 py-0.5 rounded-full font-bold">{schools.length}</span>
+                    </div>
+                    <div className="divide-y divide-zinc-100">
+                        {schools.map(s => (
+                            <div key={s} className="px-6 py-3 flex justify-between items-center hover:bg-zinc-50 group">
+                                <span className="text-sm font-medium text-zinc-800">{s}</span>
+                                <button onClick={() => onRemove(s)} className="text-zinc-300 hover:text-red-600 opacity-0 group-hover:opacity-100 transition-all"><Trash2 size={14}/></button>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+
+                {/* Departments List */}
+                <div className="bg-white rounded-xl border border-zinc-200 shadow-sm overflow-hidden">
+                    <div className="bg-zinc-50 px-6 py-3 border-b border-zinc-200 flex justify-between items-center">
+                        <h4 className="font-bold text-zinc-700 text-sm flex items-center gap-2"><Layers size={16}/> Operational Units</h4>
+                        <span className="text-xs bg-zinc-200 text-zinc-600 px-2 py-0.5 rounded-full font-bold">{departments.length}</span>
+                    </div>
+                    <div className="divide-y divide-zinc-100">
+                        {departments.map(d => (
+                            <div key={d} className="px-6 py-3 flex justify-between items-center hover:bg-zinc-50 group">
+                                <span className="text-sm font-medium text-zinc-800">{d}</span>
+                                <button onClick={() => onRemove(d)} className="text-zinc-300 hover:text-red-600 opacity-0 group-hover:opacity-100 transition-all"><Trash2 size={14}/></button>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            </div>
+        </div>
+    );
+}
+
+// 6. EDIT USER MODAL
 function UserEditModal({ user, schools, departments, onClose, onSave }) {
-    const [formData, setFormData] = useState({ 
-        ...user, 
-        access_schools: user.access_schools || [user.school], 
-        // access_scopes logic can be added here if needed
-    });
+    const [formData, setFormData] = useState({ ...user, access_schools: user.access_schools || [user.school] });
 
     const toggleSchoolAccess = (s) => {
-        if (formData.is_super_admin) return; // Super admin has all access
+        if (formData.is_super_admin) return;
         let current = formData.access_schools || [];
         if (s === 'ALL') {
-             // Toggle Global
              current = current.includes('ALL') ? [formData.school] : ['ALL'];
         } else {
-            // Toggle Specific
             if (current.includes(s)) {
                 if (s !== formData.school) current = current.filter(x => x !== s);
             } else {
@@ -584,78 +693,19 @@ function UserEditModal({ user, schools, departments, onClose, onSave }) {
 
     return (
         <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50 p-4 animate-enter">
-            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl border border-zinc-200 overflow-hidden">
-                <div className="px-6 py-4 border-b border-zinc-100 flex justify-between items-center bg-zinc-50/50">
-                    <h3 className="font-bold text-zinc-900 text-lg">Edit User Profile</h3>
+            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg border border-zinc-200 overflow-hidden">
+                <div className="px-6 py-4 border-b border-zinc-100 flex justify-between items-center bg-zinc-50">
+                    <h3 className="font-bold text-zinc-900">Edit User Privileges</h3>
                     <button onClick={onClose}><X size={20} className="text-zinc-400 hover:text-zinc-600"/></button>
                 </div>
-                
-                <div className="p-6 flex gap-8">
-                    {/* Left Column: Basics */}
-                    <div className="flex-1 space-y-4">
-                        <div><label className="text-xs font-bold text-zinc-500 uppercase mb-1 block">Full Name</label><input disabled className="w-full px-3 py-2 border border-zinc-200 rounded-lg bg-zinc-50 text-zinc-500 cursor-not-allowed" value={formData.full_name} /></div>
-                        <div><label className="text-xs font-bold text-zinc-500 uppercase mb-1 block">Role Title</label><select className="w-full px-3 py-2 border border-zinc-200 rounded-lg bg-white" value={formData.role} onChange={e => setFormData({...formData, role: e.target.value})}><option>Staff</option><option>Admin</option><option>Manager</option></select></div>
-                        <div><label className="text-xs font-bold text-zinc-500 uppercase mb-1 block">Department</label><select className="w-full px-3 py-2 border border-zinc-200 rounded-lg bg-white" value={formData.department} onChange={e => setFormData({...formData, department: e.target.value})}>{departments.map(d => <option key={d}>{d}</option>)}</select></div>
-                        <div><label className="text-xs font-bold text-zinc-500 uppercase mb-1 block">Primary Campus</label><select className="w-full px-3 py-2 border border-zinc-200 rounded-lg bg-white" value={formData.school} onChange={e => setFormData({...formData, school: e.target.value, access_schools: [e.target.value]})}>{schools.map(s => <option key={s}>{s}</option>)}</select></div>
-                    </div>
-
-                    {/* Right Column: Advanced Access */}
-                    <div className="flex-1 space-y-6 border-l border-zinc-100 pl-8">
-                        <div className={`p-4 rounded-xl border transition-all ${formData.is_super_admin ? 'bg-purple-50 border-purple-200' : 'bg-zinc-50 border-zinc-200'}`}>
-                            <label className="flex items-center gap-2 cursor-pointer mb-1">
-                                <input type="checkbox" checked={formData.is_super_admin} onChange={e => setFormData({...formData, is_super_admin: e.target.checked, access_schools: e.target.checked ? ['ALL'] : [formData.school]})} className="rounded text-purple-600 focus:ring-purple-600" />
-                                <span className={`text-sm font-bold ${formData.is_super_admin ? 'text-purple-900' : 'text-zinc-700'}`}>Super Admin</span>
-                            </label>
-                            <p className="text-[10px] text-zinc-500 leading-tight">Full access to all schools, settings, and the entire user directory.</p>
-                        </div>
-
-                        <div className={formData.is_super_admin ? 'opacity-50 pointer-events-none' : ''}>
-                            <label className="text-xs font-bold text-zinc-500 uppercase mb-2 block">Geographic Access</label>
-                            <div className="grid grid-cols-2 gap-2">
-                                <button onClick={() => toggleSchoolAccess('ALL')} className={`p-2 rounded text-[10px] font-bold border transition-all flex justify-between items-center ${formData.access_schools?.includes('ALL') ? 'bg-zinc-800 text-white border-zinc-800' : 'bg-white text-zinc-500 border-zinc-200 hover:border-zinc-400'}`}>
-                                    Global {formData.access_schools?.includes('ALL') && <CheckCircle size={10}/>}
-                                </button>
-                                {schools.map(s => (
-                                    <button key={s} onClick={() => toggleSchoolAccess(s)} disabled={formData.access_schools?.includes('ALL')} className={`p-2 rounded text-[10px] font-bold border transition-all text-left truncate ${s === formData.school ? 'bg-zinc-100 text-zinc-400 cursor-not-allowed' : (formData.access_schools?.includes(s) ? 'bg-zinc-800 text-white border-zinc-800' : 'bg-white text-zinc-500 border-zinc-200 hover:border-zinc-400')}`}>
-                                        {s}
-                                    </button>
-                                ))}
-                            </div>
-                        </div>
-                    </div>
+                <div className="p-6 space-y-4">
+                    <div><label className="text-xs font-bold text-zinc-500 uppercase mb-1 block">Privilege Group</label><select className="w-full px-3 py-2 border border-zinc-200 rounded-lg bg-white" value={formData.is_super_admin ? 'Super Admin' : formData.role} onChange={e => setFormData({...formData, role: e.target.value, is_super_admin: e.target.value === 'Super Admin'})}><option value="Staff">Read Only (Staff)</option><option value="Admin">Delegated Admin</option><option value="Super Admin">Prime Admin</option></select></div>
+                    <div><label className="text-xs font-bold text-zinc-500 uppercase mb-1 block">Primary Campus</label><select className="w-full px-3 py-2 border border-zinc-200 rounded-lg bg-white" value={formData.school} onChange={e => setFormData({...formData, school: e.target.value})}>{schools.map(s => <option key={s}>{s}</option>)}</select></div>
+                    <div><label className="text-xs font-bold text-zinc-500 uppercase mb-1 block">Department</label><select className="w-full px-3 py-2 border border-zinc-200 rounded-lg bg-white" value={formData.department} onChange={e => setFormData({...formData, department: e.target.value})}>{departments.map(d => <option key={d}>{d}</option>)}</select></div>
                 </div>
                 <div className="px-6 py-4 bg-zinc-50 border-t border-zinc-200 flex justify-end gap-3">
-                    <button onClick={onClose} className="px-4 py-2 text-zinc-600 hover:bg-zinc-200 rounded-lg text-sm font-medium transition-colors">Cancel</button>
-                    <button onClick={() => onSave(formData)} className="px-6 py-2 bg-zinc-900 text-white rounded-lg text-sm font-bold hover:bg-zinc-800 shadow-sm transition-colors">Save Changes</button>
-                </div>
-            </div>
-        </div>
-    );
-}
-
-// 6. SETTINGS MANAGER (Simple List)
-function SettingsManager({ schools, departments, onAdd, onRemove }) {
-    const [input, setInput] = useState('');
-    const [type, setType] = useState('SCHOOL');
-
-    return (
-        <div className="p-8">
-            <h2 className="text-xl font-bold mb-6 text-zinc-900">System Settings</h2>
-            <div className="bg-white p-6 rounded-xl border border-zinc-200 max-w-2xl shadow-sm">
-                <div className="flex gap-2 mb-8">
-                    <select value={type} onChange={e => setType(e.target.value)} className="border border-zinc-300 rounded-lg px-3 py-2 text-sm bg-zinc-50 font-bold text-zinc-700"><option value="SCHOOL">School</option><option value="DEPARTMENT">Department</option></select>
-                    <input value={input} onChange={e => setInput(e.target.value)} placeholder="Enter name..." className="flex-1 border border-zinc-300 rounded-lg px-3 py-2 text-sm" />
-                    <button onClick={() => { onAdd(type, input); setInput(''); }} className="bg-zinc-900 text-white px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2"><Plus size={16}/> Add</button>
-                </div>
-                <div className="grid grid-cols-2 gap-8">
-                    <div>
-                        <h4 className="text-xs font-bold text-zinc-400 uppercase mb-3 flex items-center gap-2"><School size={14}/> Schools</h4>
-                        <div className="space-y-2">{schools.map(s => <div key={s} className="flex justify-between items-center p-3 bg-zinc-50 rounded-lg border border-zinc-200 text-sm font-medium text-zinc-700 group">{s} <button onClick={() => onRemove(s)} className="text-zinc-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-all"><Trash2 size={14}/></button></div>)}</div>
-                    </div>
-                    <div>
-                        <h4 className="text-xs font-bold text-zinc-400 uppercase mb-3 flex items-center gap-2"><Layers size={14}/> Departments</h4>
-                        <div className="space-y-2">{departments.map(d => <div key={d} className="flex justify-between items-center p-3 bg-zinc-50 rounded-lg border border-zinc-200 text-sm font-medium text-zinc-700 group">{d} <button onClick={() => onRemove(d)} className="text-zinc-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-all"><Trash2 size={14}/></button></div>)}</div>
-                    </div>
+                    <button onClick={onClose} className="px-4 py-2 text-zinc-600 hover:bg-zinc-200 rounded-lg text-sm font-medium">Cancel</button>
+                    <button onClick={() => onSave(formData)} className="px-6 py-2 bg-indigo-600 text-white rounded-lg text-sm font-bold hover:bg-indigo-700">Save Changes</button>
                 </div>
             </div>
         </div>
