@@ -234,7 +234,12 @@ function ChatInterface({ onTicketCreate, categorizer, currentUser, kbArticles })
         if (e) e.preventDefault();
         const textToSend = forceText || input;
         if (!textToSend.trim()) return;
-        if (!forceText) { setMessages(prev => [...prev, { id: Date.now(), sender: 'user', text: textToSend }]); setInput(''); }
+        
+        if (!forceText) { 
+            setMessages(prev => [...prev, { id: Date.now(), sender: 'user', text: textToSend }]); 
+            setInput(''); 
+        }
+        
         setIsTyping(true);
 
         setTimeout(() => {
@@ -267,18 +272,32 @@ function ChatInterface({ onTicketCreate, categorizer, currentUser, kbArticles })
             onTicketCreate({
                 user: currentUser.full_name,
                 school: currentUser.school,
-                subject: draftTicket.subject, category: draftTicket.category, isSensitive: draftTicket.isSensitive, owner: draftTicket.owner, 
-                status: "Open", created: "Just now", timestamp: Date.now(), priority: priority, context: draftTicket.isSensitive ? "CONFIDENTIAL" : "Mobile Request",
-                location: draftTicket.location, assignedTo: null
+                subject: draftTicket.subject, 
+                category: draftTicket.category, 
+                isSensitive: draftTicket.isSensitive, 
+                owner: draftTicket.owner, 
+                status: "Open", 
+                created: "Just now", 
+                timestamp: Date.now(), 
+                priority: priority, 
+                context: draftTicket.isSensitive ? "CONFIDENTIAL" : "Mobile Request",
+                location: draftTicket.location, 
+                assignedTo: null
             });
             setMessages(prev => [...prev, { id: Date.now(), sender: 'bot', text: `Ticket created. Routed to ${draftTicket.owner}.` }]);
-            setConversationStep('ISSUE'); setDraftTicket(null); setIsTyping(false);
+            setConversationStep('ISSUE'); 
+            setDraftTicket(null); 
+            setIsTyping(false);
         }, 1000);
     };
 
     const handleDeflectionResponse = (success, originalText) => {
-        if (success) setMessages(prev => [...prev, { id: Date.now(), sender: 'user', text: "That worked!" }, { id: Date.now()+1, sender: 'bot', text: "Great!" }]);
-        else { setMessages(prev => [...prev, { id: Date.now(), sender: 'user', text: "Still need help." }]); handleSend(null, originalText, true); }
+        if (success) {
+            setMessages(prev => [...prev, { id: Date.now(), sender: 'user', text: "That worked!" }, { id: Date.now()+1, sender: 'bot', text: "Great!" }]);
+        } else {
+            setMessages(prev => [...prev, { id: Date.now(), sender: 'user', text: "Still need help." }]); 
+            handleSend(null, originalText, true);
+        }
     };
 
     return (
@@ -291,7 +310,9 @@ function ChatInterface({ onTicketCreate, categorizer, currentUser, kbArticles })
                         </div>
                         <div>
                             <span className="font-bold text-sm block">Helpdesk Assistant</span>
-                            <span className="text-[10px] text-zinc-400 flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-green-400"></span> Online</span>
+                            <span className="text-[10px] text-zinc-400 flex items-center gap-1">
+                                <span className="w-1.5 h-1.5 rounded-full bg-green-400"></span> Online
+                            </span>
                         </div>
                     </div>
                     <div className="flex items-center gap-2">
@@ -354,8 +375,14 @@ function AdminDashboard({ tickets, onUpdateTicket, currentUser, users, onAddUser
     const [filters, setFilters] = useState({ status: 'ACTIVE', category: 'ALL_CATS', school: 'ALL_SCHOOLS' });
 
     const visibleTickets = useMemo(() => TicketEngine.getVisibleTickets(tickets, currentUser, filters, keywords), [tickets, currentUser, filters, keywords]);
-    const isOverdue = (timestamp, status) => status !== 'Resolved' && (Date.now() - new Date(timestamp).getTime()) / (1000 * 60 * 60) > 24;
+    
+    const isOverdue = (timestamp, status) => {
+        if (!timestamp) return false;
+        return status !== 'Resolved' && (Date.now() - new Date(timestamp).getTime()) / (1000 * 60 * 60) > 24;
+    };
+    
     const getTimeAgo = (timestamp) => {
+        if (!timestamp) return 'Just now';
         const diff = Date.now() - new Date(timestamp).getTime();
         const hours = Math.floor(diff / (1000 * 60 * 60));
         if (hours < 1) return `${Math.floor(diff / (1000 * 60))} mins ago`;
@@ -379,7 +406,7 @@ function AdminDashboard({ tickets, onUpdateTicket, currentUser, users, onAddUser
                     })}
                 </div>
                 {currentUser.is_super_admin && (
-                    <button onClick={() => setShowLogicModal(true)} className="text-xs flex items-center gap-1.5 text-zinc-500 hover:text-zinc-900 transition-colors font-medium border border-zinc-200 rounded-lg px-3 py-1.5 hover:bg-zinc-50">
+                    <button onClick={() => setShowLogicModal(true)} className="text-xs flex items-center gap-1.5 text-zinc-500 hover:text-indigo-600 transition-colors font-medium border border-zinc-200 rounded-lg px-3 py-1.5 hover:bg-zinc-50">
                         <Settings size={14} /> Logic Config
                     </button>
                 )}
@@ -400,13 +427,13 @@ function AdminDashboard({ tickets, onUpdateTicket, currentUser, users, onAddUser
                                     <span className="text-[10px] font-bold bg-zinc-200 text-zinc-600 px-2 py-0.5 rounded-full">{visibleTickets.length}</span>
                                 </div>
                                 <div className="grid grid-cols-2 gap-2">
-                                    <select value={filters.status} onChange={e => setFilters({...filters, status: e.target.value})} className="w-full px-3 py-2 text-xs border border-zinc-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-zinc-900/10">
+                                    <select value={filters.status} onChange={e => setFilters({...filters, status: e.target.value})} className="w-full px-3 py-2 text-xs border border-zinc-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-indigo-600/20">
                                         <option value="ACTIVE">Open</option><option value="RESOLVED">Closed</option><option value="ALL">All</option>
                                     </select>
-                                    <select value={filters.category} onChange={e => setFilters({...filters, category: e.target.value})} className="w-full px-3 py-2 text-xs border border-zinc-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-zinc-900/10">
+                                    <select value={filters.category} onChange={e => setFilters({...filters, category: e.target.value})} className="w-full px-3 py-2 text-xs border border-zinc-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-indigo-600/20">
                                         <option value="ALL_CATS">Category</option>{Object.keys(keywords).map(c => <option key={c} value={c}>{c}</option>)}
                                     </select>
-                                    <select value={filters.school} onChange={e => setFilters({...filters, school: e.target.value})} className="w-full px-3 py-2 text-xs border border-zinc-200 rounded-lg bg-white col-span-2 focus:outline-none focus:ring-2 focus:ring-zinc-900/10">
+                                    <select value={filters.school} onChange={e => setFilters({...filters, school: e.target.value})} className="w-full px-3 py-2 text-xs border border-zinc-200 rounded-lg bg-white col-span-2 focus:outline-none focus:ring-2 focus:ring-indigo-600/20">
                                         <option value="ALL_SCHOOLS">All Locations</option>
                                         {((currentUser.accessSchools || []).includes('ALL') ? schools : (currentUser.accessSchools || [])).map(s => <option key={s} value={s}>{s}</option>)}
                                     </select>
@@ -476,9 +503,18 @@ function TicketDetailView({ ticket, onUpdateTicket, currentUser }) {
     }, [ticket.id]);
 
     const handlePost = async (e) => {
-        e.preventDefault(); if(!newComment.trim()) return;
+        e.preventDefault(); 
+        if(!newComment.trim()) return;
         
-        const fakeUpdate = { id: Date.now(), user_name: currentUser.full_name, text: newComment, created_at: new Date().toISOString(), is_admin: currentUser.is_super_admin, type: 'COMMENT' };
+        const fakeUpdate = { 
+            id: Date.now(), 
+            user_name: currentUser.full_name, 
+            text: newComment, 
+            created_at: new Date().toISOString(), 
+            is_admin: currentUser.is_super_admin, 
+            type: 'COMMENT' 
+        };
+        
         setUpdates([...updates, fakeUpdate]);
         setNewComment('');
 
@@ -494,10 +530,22 @@ function TicketDetailView({ ticket, onUpdateTicket, currentUser }) {
     const handleResolve = async () => {
         onUpdateTicket({ ...ticket, status: 'Resolved' });
         setIsResolving(false);
-        await supabase.from('ticket_updates').insert([{ ticket_id: ticket.id, user_name: 'System', text: `Resolved: ${resolveNote}`, type: 'SYSTEM' }]);
+        await supabase.from('ticket_updates').insert([{ 
+            ticket_id: ticket.id, 
+            user_name: 'System', 
+            text: `Resolved: ${resolveNote}`, 
+            type: 'SYSTEM' 
+        }]);
     };
 
-    if (ticket.is_sensitive && !currentUser.is_super_admin) return <div className="h-full flex flex-col items-center justify-center text-red-800"><Lock size={32} className="mb-3"/><h2 className="font-bold">Restricted Access</h2></div>;
+    if (ticket.is_sensitive && !currentUser.is_super_admin) {
+        return (
+            <div className="h-full flex flex-col items-center justify-center text-red-800">
+                <Lock size={32} className="mb-3"/>
+                <h2 className="font-bold">Restricted Access</h2>
+            </div>
+        );
+    }
 
     const ticketDate = new Date(ticket.created_at);
 
@@ -507,7 +555,7 @@ function TicketDetailView({ ticket, onUpdateTicket, currentUser }) {
                 <div className="absolute inset-0 bg-white/90 backdrop-blur-sm z-50 flex items-center justify-center p-8 animate-enter">
                     <div className="w-full max-w-md bg-white border border-zinc-200 shadow-2xl rounded-2xl p-6">
                         <h3 className="font-bold text-lg mb-4 text-zinc-900">Resolve Ticket #{ticket.id}</h3>
-                        <textarea className="w-full px-3 py-2 text-sm border border-zinc-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-zinc-900 h-32 mb-4 resize-none" placeholder="Resolution details..." value={resolveNote} onChange={e => setResolveNote(e.target.value)} autoFocus/>
+                        <textarea className="w-full px-3 py-2 text-sm border border-zinc-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-600 h-32 mb-4 resize-none" placeholder="Resolution details..." value={resolveNote} onChange={e => setResolveNote(e.target.value)} autoFocus/>
                         <div className="flex gap-3">
                             <button onClick={() => setIsResolving(false)} className="flex-1 px-4 py-2 rounded-lg text-sm bg-white border border-zinc-200 hover:bg-zinc-50 font-medium">Cancel</button>
                             <button onClick={handleResolve} className="flex-1 px-4 py-2 rounded-lg text-sm bg-green-600 text-white hover:bg-green-700 font-bold shadow-sm">Confirm Resolution</button>
@@ -569,8 +617,8 @@ function TicketDetailView({ ticket, onUpdateTicket, currentUser }) {
             {ticket.status !== 'Resolved' && (
                 <div className="p-4 bg-white border-t border-zinc-200 z-10">
                     <form onSubmit={handlePost} className="relative max-w-4xl mx-auto">
-                        <input type="text" className="w-full pl-4 pr-12 py-3 bg-zinc-50 border border-zinc-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-zinc-900/10 focus:border-zinc-900 transition-all text-sm" placeholder="Type your reply..." value={newComment} onChange={e => setNewComment(e.target.value)} />
-                        <button type="submit" className="absolute right-2 top-2 p-1.5 bg-zinc-900 text-white rounded-lg hover:bg-zinc-700 transition-colors shadow-sm"><Send size={16}/></button>
+                        <input type="text" className="w-full pl-4 pr-12 py-3 bg-zinc-50 border border-zinc-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-600/20 focus:border-indigo-600 transition-all text-sm" placeholder="Type your reply..." value={newComment} onChange={e => setNewComment(e.target.value)} />
+                        <button type="submit" className="absolute right-2 top-2 p-1.5 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors shadow-sm"><Send size={16}/></button>
                     </form>
                 </div>
             )}
@@ -591,7 +639,7 @@ function UserDirectory({ users, currentUser, onAddUser, departments, schools }) 
                         <p className="text-sm text-zinc-500 mt-1">Manage user access & roles</p>
                     </div>
                     {currentUser.is_super_admin && (
-                        <button onClick={() => setIsAdding(true)} className="bg-zinc-900 hover:bg-zinc-800 text-white px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 shadow-sm transition-all">
+                        <button onClick={() => setIsAdding(true)} className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 shadow-sm transition-all">
                             <UserPlus size={16}/> Add User
                         </button>
                     )}
@@ -672,16 +720,14 @@ function UserDirectory({ users, currentUser, onAddUser, departments, schools }) 
 function UserEditModal({ user, isAdding, onClose, onSave, departments, schools }) {
     const [formData, setFormData] = useState(user ? { ...user, accessSchools: user.access_schools || [user.school], isSuperAdmin: user.is_super_admin } : { name: '', role: 'Staff', dept: departments[0], school: schools[0], isAdmin: false, isSuperAdmin: false, avatar: 'NU', accessScopes: [], accessSchools: [schools[0]] });
     
-    // Toggle Department Scope
     const toggleScope = (dept) => {
         const current = formData.accessScopes || [];
         if (current.includes(dept)) setFormData({ ...formData, accessScopes: current.filter(d => d !== dept) });
         else setFormData({ ...formData, accessScopes: [...current, dept] });
     };
 
-    // Toggle School Access
     const toggleSchoolAccess = (s) => {
-        if (formData.isSuperAdmin) return; // Locked for Super Admin
+        if (formData.isSuperAdmin) return;
         const current = formData.accessSchools || [];
         if (s === 'ALL') setFormData({ ...formData, accessSchools: current.includes('ALL') ? [formData.school] : ['ALL'] });
         else {
@@ -691,7 +737,6 @@ function UserEditModal({ user, isAdding, onClose, onSave, departments, schools }
         }
     };
 
-    // Toggle Super Admin
     const toggleSuperAdmin = (e) => {
         const isSuper = e.target.checked;
         if (isSuper) {
@@ -713,7 +758,6 @@ function UserEditModal({ user, isAdding, onClose, onSave, departments, schools }
                 </div>
                 
                 <div className="p-6 flex gap-6 max-h-[70vh] overflow-y-auto">
-                    {/* Left Column: Identity */}
                     <div className="flex-1 space-y-4">
                         <div><label className="text-xs font-bold text-zinc-500 uppercase mb-1 block">Full Name</label><input type="text" className="w-full px-3 py-2 text-sm border border-zinc-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-600/10" value={formData.name || formData.full_name} onChange={e => setFormData({...formData, name: e.target.value})} /></div>
                         <div><label className="text-xs font-bold text-zinc-500 uppercase mb-1 block">Role Title</label><input type="text" className="w-full px-3 py-2 text-sm border border-zinc-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-600/10" value={formData.role} onChange={e => setFormData({...formData, role: e.target.value})} /></div>
@@ -732,9 +776,7 @@ function UserEditModal({ user, isAdding, onClose, onSave, departments, schools }
                         </div>
                     </div>
 
-                    {/* Right Column: Permissions Matrix */}
                     <div className="flex-1 space-y-5 border-l border-zinc-100 pl-6">
-                        {/* Role Toggle */}
                         <div className={`p-4 rounded-xl border transition-all ${formData.isSuperAdmin ? 'bg-purple-50 border-purple-200' : 'bg-zinc-50 border-zinc-200'}`}>
                             <div className="flex items-center justify-between mb-2">
                                 <label className="flex items-center gap-2 cursor-pointer">
@@ -746,7 +788,6 @@ function UserEditModal({ user, isAdding, onClose, onSave, departments, schools }
                             <p className="text-[10px] text-zinc-500 leading-tight">Super Admins automatically inherit global access to all schools and departments.</p>
                         </div>
 
-                        {/* Departmental Overrides (Reinstated) */}
                         <div className={formData.isSuperAdmin ? 'opacity-50 pointer-events-none' : ''}>
                             <label className="text-xs font-bold text-zinc-500 uppercase mb-2 block">Additional View Access (Dept)</label>
                             <p className="text-[10px] text-zinc-400 mb-2">Allow viewing tickets from other departments.</p>
@@ -765,7 +806,6 @@ function UserEditModal({ user, isAdding, onClose, onSave, departments, schools }
                             </div>
                         </div>
 
-                        {/* School Access */}
                         <div className={formData.isSuperAdmin ? 'opacity-50 pointer-events-none' : ''}>
                             <label className="text-xs font-bold text-zinc-500 uppercase mb-2 block">Geographic Access</label>
                             <div className="grid grid-cols-2 gap-2">
@@ -831,9 +871,9 @@ function KnowledgeBaseManager({ articles, onAdd, onRemove }) {
                     <div className="bg-white p-6 rounded-xl border border-zinc-200 shadow-lg mb-8 animate-enter ring-1 ring-zinc-500/10">
                         <h3 className="font-bold text-zinc-900 mb-4 flex items-center gap-2"><Lightbulb size={18}/> New Article</h3>
                         <form onSubmit={handleSubmit} className="space-y-4">
-                            <div><label className="text-xs font-bold text-zinc-500 uppercase mb-1 block">Title</label><input type="text" className="w-full px-3 py-2 border border-zinc-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-zinc-900/10" value={form.title} onChange={e => setForm({...form, title: e.target.value})} placeholder="e.g. How to restart printer"/></div>
-                            <div><label className="text-xs font-bold text-zinc-500 uppercase mb-1 block">Solution</label><textarea className="w-full px-3 py-2 border border-zinc-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-zinc-900/10 h-24" value={form.content} onChange={e => setForm({...form, content: e.target.value})} placeholder="Step 1..."/></div>
-                            <div><label className="text-xs font-bold text-zinc-500 uppercase mb-1 block">Triggers</label><input type="text" className="w-full px-3 py-2 border border-zinc-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-zinc-900/10" value={form.triggers} onChange={e => setForm({...form, triggers: e.target.value})} placeholder="printer, jam, error (comma separated)"/></div>
+                            <div><label className="text-xs font-bold text-zinc-500 uppercase mb-1 block">Title</label><input type="text" className="w-full px-3 py-2 border border-zinc-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-600/10" value={form.title} onChange={e => setForm({...form, title: e.target.value})} placeholder="e.g. How to restart printer"/></div>
+                            <div><label className="text-xs font-bold text-zinc-500 uppercase mb-1 block">Solution</label><textarea className="w-full px-3 py-2 border border-zinc-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-600/10 h-24" value={form.content} onChange={e => setForm({...form, content: e.target.value})} placeholder="Step 1..."/></div>
+                            <div><label className="text-xs font-bold text-zinc-500 uppercase mb-1 block">Triggers</label><input type="text" className="w-full px-3 py-2 border border-zinc-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-600/10" value={form.triggers} onChange={e => setForm({...form, triggers: e.target.value})} placeholder="printer, jam, error (comma separated)"/></div>
                             <div className="flex justify-end gap-2 pt-2"><button type="button" onClick={() => setIsAdding(false)} className="px-4 py-2 text-zinc-600 hover:bg-zinc-100 rounded-lg text-sm font-medium">Cancel</button><button type="submit" className="px-6 py-2 bg-zinc-900 text-white rounded-lg text-sm font-bold hover:bg-zinc-700">Save Article</button></div>
                         </form>
                     </div>
