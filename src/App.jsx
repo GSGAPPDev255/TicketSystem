@@ -784,3 +784,275 @@ function LogicConfigModal({ keywords, setKeywords, departments, onClose }) {
         </div>
     );
 }
+
+// --- MISSING UI COMPONENTS ---
+
+function ChatInterface({ onTicketCreate, categorizer, currentUser, kbArticles }) {
+    const [messages, setMessages] = useState([{ id: 1, sender: 'bot', text: 'How can I assist you today?' }]);
+    const [input, setInput] = useState('');
+    const [isTyping, setIsTyping] = useState(false);
+    const [conversationStep, setConversationStep] = useState('ISSUE');
+    const [draftTicket, setDraftTicket] = useState(null);
+    const chatEndRef = useRef(null);
+
+    const checkKnowledgeBase = (text) => {
+        if (!kbArticles || kbArticles.length === 0) return null;
+        return kbArticles.find(kb => kb.triggers.some(t => text.toLowerCase().includes(t.toLowerCase())));
+    };
+
+    const handleSend = (e, forceText = null, skipKb = false) => {
+        if (e) e.preventDefault();
+        const textToSend = forceText || input;
+        if (!textToSend.trim()) return;
+        
+        if (!forceText) { 
+            setMessages(prev => [...prev, { id: Date.now(), sender: 'user', text: textToSend }]); 
+            setInput(''); 
+        }
+        
+        setIsTyping(true);
+
+        setTimeout(() => {
+            if (conversationStep === 'ISSUE') {
+                if (!skipKb) {
+                    const kbMatch = checkKnowledgeBase(textToSend);
+                    if (kbMatch) {
+                        setMessages(prev => [...prev, { id: Date.now(), sender: 'bot', text: `I found a solution article:`, isDeflection: true, kbData: kbMatch, originalText: textToSend }]);
+                        setIsTyping(false); return;
+                    }
+                }
+                const result = categorizer(textToSend);
+                setDraftTicket({ subject: textToSend, category: result.category, owner: result.owner, isSensitive: result.isSensitive });
+                setConversationStep('LOCATION');
+                setMessages(prev => [...prev, { id: Date.now(), sender: 'bot', text: `I've categorized this as **${result.category}**. What is the location?` }]);
+                setIsTyping(false);
+            } else if (conversationStep === 'LOCATION') {
+                setDraftTicket(prev => ({ ...prev, location: textToSend }));
+                setConversationStep('PRIORITY');
+                setMessages(prev => [...prev, { id: Date.now(), sender: 'bot', text: `Got it. What is the priority level?`, isPrioritySelect: true }]);
+                setIsTyping(false);
+            }
+        }, 800);
+    };
+
+    const handlePrioritySelect = (priority) => {
+        setMessages(prev => [...prev, { id: Date.now(), sender: 'user', text: priority }]);
+        setIsTyping(true);
+        setTimeout(() => {
+            onTicketCreate({
+                user: currentUser.full_name,
+                school: currentUser.school,
+                subject: draftTicket.subject, 
+                category: draftTicket.category, 
+                isSensitive: draftTicket.isSensitive, 
+                owner: draftTicket.owner, 
+                status: "Open", 
+                created: "Just now", 
+                timestamp: Date.now(), 
+                priority: priority, 
+                context: draftTicket.isSensitive ? "CONFIDENTIAL" : "Mobile Request",
+                location: draftTicket.location, 
+                assignedTo: null
+            });
+            setMessages(prev => [...prev, { id: Date.now(), sender: 'bot', text: `Ticket created. Routed to ${draftTicket.owner}.` }]);
+            setConversationStep('ISSUE'); 
+            setDraftTicket(null); 
+            setIsTyping(false);
+        }, 1000);
+    };
+
+    const handleDeflectionResponse = (success, originalText) => {
+        if (success) {
+            setMessages(prev => [...prev, { id: Date.now(), sender: 'user', text: "That worked!" }, { id: Date.now()+1, sender: 'bot', text: "Great!" }]);
+        } else {
+            setMessages(prev => [...prev, { id: Date.now(), sender: 'user', text: "Still need help." }]); 
+            handleSend(null, originalText, true);
+        }
+    };
+
+    return (
+        <div className="h-full flex flex-col justify-center items-center">
+            <div className="w-full max-w-5xl bg-white rounded-2xl shadow-2xl overflow-hidden border border-zinc-200 h-[80vh] flex flex-col ring-1 ring-zinc-900/5">
+                <div className="bg-zinc-900 p-4 flex items-center justify-between text-white shadow-md z-10">
+                    <div className="flex items-center gap-3">
+                        <div className="w-8 h-8 rounded-full bg-white/20 flex items-center justify-center backdrop-blur-sm">
+                            <Zap size={16} className="text-yellow-300 fill-current" />
+                        </div>
+                        <div>
+                            <span className="font-bold text-sm block">Helpdesk Assistant</span>
+                            <span className="text-[10px] text-zinc-400 flex items-center gap-1">
+                                <span className="w-1.5 h-1.5 rounded-full bg-green-400"></span> Online
+                            </span>
+                        </div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                        <span className="text-[10px] bg-white/10 px-2 py-1 rounded text-zinc-300">AI Powered</span>
+                    </div>
+                </div>
+                
+                <div className="flex-1 overflow-y-auto p-8 space-y-6 bg-zinc-50">
+                    {messages.map(msg => (
+                        <div key={msg.id} className={`flex ${msg.sender === 'user' ? 'justify-end' : 'justify-start'}`}>
+                            {msg.isDeflection ? (
+                                <div className="max-w-[70%] bg-white border border-amber-200 rounded-xl shadow-sm overflow-hidden">
+                                    <div className="bg-amber-50 px-4 py-2 border-b border-amber-100 flex items-center gap-2">
+                                        <Lightbulb size={14} className="text-amber-600" />
+                                        <span className="text-[10px] font-bold text-amber-700 uppercase tracking-wide">Suggestion</span>
+                                    </div>
+                                    <div className="p-4">
+                                        <h4 className="font-semibold text-zinc-900 text-sm mb-2">{msg.kbData.title}</h4>
+                                        <p className="text-xs text-zinc-600 whitespace-pre-wrap mb-4 leading-relaxed">{msg.kbData.content}</p>
+                                        <div className="flex gap-2">
+                                            <button onClick={() => handleDeflectionResponse(true, msg.originalText)} className="flex-1 bg-zinc-900 text-white text-xs py-2 rounded-lg font-medium hover:bg-zinc-800 transition-colors">Solved</button>
+                                            <button onClick={() => handleDeflectionResponse(false, msg.originalText)} className="flex-1 bg-white border border-zinc-200 text-zinc-600 text-xs py-2 rounded-lg font-medium hover:bg-zinc-50 transition-colors">Not Solved</button>
+                                        </div>
+                                    </div>
+                                </div>
+                            ) : msg.isPrioritySelect ? (
+                                <div className="max-w-[60%] space-y-2">
+                                    <div className="bg-white border border-zinc-200 text-zinc-700 p-4 rounded-2xl rounded-bl-none shadow-sm text-sm leading-relaxed">{msg.text}</div>
+                                    <div className="flex gap-2">
+                                        {['Low', 'Medium', 'High'].map(p => (
+                                            <button key={p} onClick={() => handlePrioritySelect(p)} className="flex-1 px-3 py-3 text-xs font-medium border border-zinc-200 bg-white hover:bg-zinc-50 rounded-lg transition-all shadow-sm">{p}</button>
+                                        ))}
+                                    </div>
+                                </div>
+                            ) : (
+                                <div className={`max-w-[60%] rounded-2xl p-4 text-sm shadow-sm leading-relaxed ${msg.sender === 'user' ? 'bg-zinc-900 text-white rounded-br-none' : 'bg-white border border-zinc-200 text-zinc-700 rounded-bl-none'}`}>
+                                    {msg.text}
+                                </div>
+                            )}
+                        </div>
+                    ))}
+                    {isTyping && <div className="text-xs text-zinc-400 ml-4 animate-pulse">Assistant is typing...</div>}
+                    <div ref={chatEndRef}></div>
+                </div>
+                {conversationStep !== 'PRIORITY' && (
+                    <form onSubmit={(e) => handleSend(e)} className="p-4 bg-white border-t border-zinc-200 flex gap-2">
+                        <input type="text" value={input} onChange={(e) => setInput(e.target.value)} placeholder={conversationStep === 'LOCATION' ? "Enter room..." : "Describe the issue..."} className="flex-1 bg-zinc-50 border border-zinc-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-zinc-900/10 focus:border-zinc-900 transition-all" />
+                        <button type="submit" className="bg-zinc-900 text-white p-3 rounded-xl hover:bg-zinc-700 transition-colors shadow-sm"><Send size={18} /></button>
+                    </form>
+                )}
+            </div>
+        </div>
+    );
+}
+
+function AdminDashboard({ tickets, onUpdateTicket, currentUser, users, onAddUser, keywords, setKeywords, departments, onAddDepartment, onRemoveDepartment, kbArticles, onAddKbArticle, onRemoveKbArticle, schools }) {
+    const [activeTab, setActiveTab] = useState('tickets');
+    const [selectedTicket, setSelectedTicket] = useState(null);
+    const [showLogicModal, setShowLogicModal] = useState(false);
+    const [filters, setFilters] = useState({ status: 'ACTIVE', category: 'ALL_CATS', school: 'ALL_SCHOOLS' });
+
+    const visibleTickets = useMemo(() => TicketEngine.getVisibleTickets(tickets, currentUser, filters, keywords), [tickets, currentUser, filters, keywords]);
+    
+    const isOverdue = (timestamp, status) => {
+        if (!timestamp) return false;
+        return status !== 'Resolved' && (Date.now() - new Date(timestamp).getTime()) / (1000 * 60 * 60) > 24;
+    };
+    
+    const getTimeAgo = (timestamp) => {
+        if (!timestamp) return 'Just now';
+        const diff = Date.now() - new Date(timestamp).getTime();
+        const hours = Math.floor(diff / (1000 * 60 * 60));
+        if (hours < 1) return `${Math.floor(diff / (1000 * 60))} mins ago`;
+        if (hours < 24) return `${hours} hrs ago`;
+        return `${Math.floor(hours / 24)} days ago`;
+    };
+
+    return (
+        <div className="h-full flex flex-col bg-white rounded-2xl border border-zinc-200 shadow-sm overflow-hidden">
+            <div className="bg-white border-b border-zinc-200 px-6 py-2 flex items-center justify-between sticky top-0 z-40">
+                <div className="flex gap-1">
+                    {['tickets', 'users', 'kb', 'depts'].map(tab => {
+                        if (tab === 'users' && !currentUser.is_super_admin) return null;
+                        if (tab === 'kb' && !currentUser.is_super_admin) return null;
+                        if (tab === 'depts' && !currentUser.is_super_admin) return null;
+                        return (
+                            <button key={tab} onClick={() => setActiveTab(tab)} className={`px-4 py-3 text-xs font-bold transition-all border-b-2 ${activeTab === tab ? 'border-zinc-900 text-zinc-900' : 'border-transparent text-zinc-500 hover:text-zinc-800'}`}>
+                                {tab === 'tickets' ? 'Dashboard' : tab === 'users' ? 'Directory' : tab === 'kb' ? 'Knowledge' : 'Settings'}
+                            </button>
+                        );
+                    })}
+                </div>
+                {currentUser.is_super_admin && (
+                    <button onClick={() => setShowLogicModal(true)} className="text-xs flex items-center gap-1.5 text-zinc-500 hover:text-indigo-600 transition-colors font-medium border border-zinc-200 rounded-lg px-3 py-1.5 hover:bg-zinc-50">
+                        <Settings size={14} /> Logic Config
+                    </button>
+                )}
+            </div>
+
+            <div className="flex-1 overflow-hidden">
+                {activeTab === 'users' ? <UserDirectory users={users} currentUser={currentUser} onAddUser={onAddUser} departments={departments} schools={schools} /> :
+                 activeTab === 'depts' ? <DepartmentManager departments={departments} onAdd={onAddDepartment} onRemove={onRemoveDepartment} /> :
+                 activeTab === 'kb' ? <KnowledgeBaseManager articles={kbArticles} onAdd={onAddKbArticle} onRemove={onRemoveKbArticle} /> :
+                 (
+                    <div className="h-full flex">
+                        <div className="w-[400px] flex flex-col border-r border-zinc-200 bg-zinc-50/50">
+                            <div className="p-4 border-b border-zinc-200">
+                                <div className="flex items-center justify-between mb-3">
+                                    <h3 className="font-bold text-zinc-800 text-xs uppercase tracking-wider flex items-center gap-2">
+                                        <Layers size={14}/> Queue
+                                    </h3>
+                                    <span className="text-[10px] font-bold bg-zinc-200 text-zinc-600 px-2 py-0.5 rounded-full">{visibleTickets.length}</span>
+                                </div>
+                                <div className="grid grid-cols-2 gap-2">
+                                    <select value={filters.status} onChange={e => setFilters({...filters, status: e.target.value})} className="w-full px-3 py-2 text-xs border border-zinc-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-indigo-600/20">
+                                        <option value="ACTIVE">Open</option><option value="RESOLVED">Closed</option><option value="ALL">All</option>
+                                    </select>
+                                    <select value={filters.category} onChange={e => setFilters({...filters, category: e.target.value})} className="w-full px-3 py-2 text-xs border border-zinc-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-indigo-600/20">
+                                        <option value="ALL_CATS">Category</option>{Object.keys(keywords).map(c => <option key={c} value={c}>{c}</option>)}
+                                    </select>
+                                    <select value={filters.school} onChange={e => setFilters({...filters, school: e.target.value})} className="w-full px-3 py-2 text-xs border border-zinc-200 rounded-lg bg-white col-span-2 focus:outline-none focus:ring-2 focus:ring-indigo-600/20">
+                                        <option value="ALL_SCHOOLS">All Locations</option>
+                                        {((currentUser.accessSchools || []).includes('ALL') ? schools : (currentUser.accessSchools || [])).map(s => <option key={s} value={s}>{s}</option>)}
+                                    </select>
+                                </div>
+                            </div>
+
+                            <div className="overflow-y-auto flex-1 p-2 space-y-2">
+                                {visibleTickets.length === 0 ? (
+                                    <div className="p-12 text-center text-zinc-400 flex flex-col items-center">
+                                        <EyeOff size={32} className="mb-3 opacity-20"/>
+                                        <span className="text-xs">No tickets found</span>
+                                    </div>
+                                ) : (
+                                    visibleTickets.map(ticket => (
+                                        <div key={ticket.id} onClick={() => setSelectedTicket(ticket)} className={`p-4 rounded-xl cursor-pointer transition-all border shadow-sm group ${selectedTicket?.id === ticket.id ? 'bg-white border-zinc-900 ring-1 ring-zinc-900 shadow-md z-10' : 'bg-white border-zinc-200 hover:border-zinc-300'}`}>
+                                            <div className="flex justify-between items-start mb-2">
+                                                <div className="flex items-center gap-2">
+                                                    <span className={`w-2 h-2 rounded-full ${ticket.priority === 'High' ? 'bg-red-500' : ticket.priority === 'Medium' ? 'bg-amber-400' : 'bg-emerald-400'}`}></span>
+                                                    <span className="text-[10px] font-bold text-zinc-400 font-mono">#{ticket.id}</span>
+                                                </div>
+                                                <span className="text-[10px] text-zinc-400">{getTimeAgo(ticket.created_at)}</span>
+                                            </div>
+                                            <h4 className={`text-sm font-bold mb-1 line-clamp-1 leading-tight ${ticket.is_sensitive ? 'text-red-700' : 'text-zinc-800'}`}>{ticket.is_sensitive ? 'Confidential Ticket' : ticket.subject}</h4>
+                                            <div className="flex justify-between items-center mt-2">
+                                                <div className="flex items-center gap-1.5">
+                                                    <span className="text-[10px] font-semibold px-2 py-0.5 rounded bg-zinc-100 text-zinc-600 border border-zinc-200">{ticket.category}</span>
+                                                    <span className="text-[10px] px-1.5 py-0.5 text-zinc-400 flex items-center gap-1"><School size={10}/> {ticket.school}</span>
+                                                </div>
+                                                {isOverdue(ticket.created_at, ticket.status) && <AlertTriangle size={12} className="text-red-500" />}
+                                            </div>
+                                        </div>
+                                    ))
+                                )}
+                            </div>
+                        </div>
+                        <div className="flex-1 bg-white relative">
+                            {selectedTicket ? <TicketDetailView ticket={selectedTicket} onUpdateTicket={onUpdateTicket} currentUser={currentUser} /> : (
+                                <div className="h-full flex flex-col items-center justify-center text-zinc-300 bg-zinc-50/30">
+                                    <div className="w-16 h-16 bg-zinc-100 rounded-2xl flex items-center justify-center mb-4">
+                                        <Command size={32} className="opacity-20" />
+                                    </div>
+                                    <p className="text-sm font-medium text-zinc-400">Select a ticket from the queue</p>
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                )}
+            </div>
+            {showLogicModal && <LogicConfigModal keywords={keywords} setKeywords={setKeywords} departments={departments} onClose={() => setShowLogicModal(false)} />}
+        </div>
+    );
+}
