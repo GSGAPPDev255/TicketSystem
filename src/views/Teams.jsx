@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
-import { ArrowLeft, Users, MoreHorizontal, UserPlus, Plus, Trash2, Mail, Briefcase, User, Edit2 } from 'lucide-react';
+import { ArrowLeft, Users, UserPlus, Plus, Trash2, Mail, Briefcase, User, Edit2 } from 'lucide-react';
 import { GlassCard, Modal } from '../components/ui';
 
 export default function TeamsView({ departments: initialDepts }) {
@@ -11,16 +11,17 @@ export default function TeamsView({ departments: initialDepts }) {
   
   // --- MODAL STATE ---
   const [isMemberModalOpen, setIsMemberModalOpen] = useState(false);
-  
-  // Dept Modals
   const [isDeptModalOpen, setIsDeptModalOpen] = useState(false);
-  const [editingDept, setEditingDept] = useState(null); // Track which dept we are editing
+
+  // Edit Trackers
+  const [editingDept, setEditingDept] = useState(null); 
+  const [editingMember, setEditingMember] = useState(null); // <--- NEW: Track member being edited
+
+  // Forms
   const [deptNameForm, setDeptNameForm] = useState('');
-  
-  // Member Form
   const [memberForm, setMemberForm] = useState({ firstName: '', lastName: '', email: '', role: 'Staff' });
 
-  // --- 1. INITIAL LOAD ---
+  // --- 1. DATA LOADING ---
   useEffect(() => { fetchDepts(); }, []);
 
   async function fetchDepts() {
@@ -51,24 +52,18 @@ export default function TeamsView({ departments: initialDepts }) {
 
   const handleSaveDepartment = async () => {
     if (!deptNameForm) return;
-
     if (editingDept) {
-      // UPDATE
-      const { error } = await supabase.from('departments').update({ name: deptNameForm }).eq('id', editingDept.id);
-      if (error) alert(error.message);
+      await supabase.from('departments').update({ name: deptNameForm }).eq('id', editingDept.id);
     } else {
-      // CREATE
-      const { error } = await supabase.from('departments').insert({ name: deptNameForm });
-      if (error) alert(error.message);
+      await supabase.from('departments').insert({ name: deptNameForm });
     }
-
     fetchDepts();
     setIsDeptModalOpen(false);
   };
 
   const handleDeleteDepartment = async (e, id) => {
     e.stopPropagation();
-    if (!window.confirm("Delete this department? All members will be removed.")) return;
+    if (!confirm("Delete this department? All members will be removed.")) return;
     const { error } = await supabase.from('departments').delete().eq('id', id);
     if (!error) {
       fetchDepts();
@@ -76,37 +71,83 @@ export default function TeamsView({ departments: initialDepts }) {
     }
   };
 
-  // --- 3. MEMBER ACTIONS ---
-  const handleAddMember = async () => {
+  // --- 3. MEMBER ACTIONS (ADD & EDIT) ---
+  
+  // A. OPEN ADD MODAL
+  const openAddMemberModal = () => {
+    setEditingMember(null);
+    setMemberForm({ firstName: '', lastName: '', email: '', role: 'Staff' });
+    setIsMemberModalOpen(true);
+  };
+
+  // B. OPEN EDIT MODAL (NEW)
+  const openEditMemberModal = (member) => {
+    const fullName = member.profile?.full_name || '';
+    const nameParts = fullName.split(' ');
+    const firstName = nameParts[0] || '';
+    const lastName = nameParts.slice(1).join(' ') || '';
+
+    setEditingMember(member);
+    setMemberForm({
+      firstName,
+      lastName,
+      email: member.profile?.email || '',
+      role: member.role || 'Staff'
+    });
+    setIsMemberModalOpen(true);
+  };
+
+  // C. SAVE (HANDLE BOTH CREATE AND UPDATE)
+  const handleSaveMember = async () => {
     const { firstName, lastName, email, role } = memberForm;
     if (!email || !firstName || !lastName) return;
 
     const fullName = `${firstName} ${lastName}`;
     const initials = (firstName[0] + lastName[0]).toUpperCase();
 
-    // Check/Create User
-    let { data: existingUser } = await supabase.from('profiles').select('id').eq('email', email).single();
-    let userId = existingUser?.id;
+    if (editingMember) {
+      // --- UPDATE EXISTING MEMBER ---
+      // 1. Update Profile Name
+      await supabase.from('profiles').update({
+        full_name: fullName,
+        avatar_initials: initials
+      }).eq('id', editingMember.user_id);
 
-    if (!userId) {
-      const { data: newUser, error } = await supabase.from('profiles').insert({ email, full_name: fullName, avatar_initials: initials, role: 'user' }).select().single();
-      if (error) { alert(error.message); return; }
-      userId = newUser.id;
-    }
+      // 2. Update Role in Department
+      const { error } = await supabase.from('department_members').update({
+        role: role
+      }).eq('id', editingMember.id);
 
-    // Link to Dept
-    const { error: linkError } = await supabase.from('department_members').insert({ department_id: selectedDept.id, user_id: userId, role });
-    if (!linkError) {
-      setIsMemberModalOpen(false);
-      setMemberForm({ firstName: '', lastName: '', email: '', role: 'Staff' });
-      fetchMembers(selectedDept.id);
+      if (error) alert(error.message);
+
     } else {
-      alert(linkError.message);
+      // --- CREATE NEW MEMBER ---
+      // 1. Check/Create Profile
+      let { data: existingUser } = await supabase.from('profiles').select('id').eq('email', email).single();
+      let userId = existingUser?.id;
+
+      if (!userId) {
+        const { data: newUser, error } = await supabase.from('profiles').insert({ 
+          email, full_name: fullName, avatar_initials: initials, role: 'user' 
+        }).select().single();
+        if (error) { alert(error.message); return; }
+        userId = newUser.id;
+      }
+
+      // 2. Link to Department
+      const { error: linkError } = await supabase.from('department_members').insert({ 
+        department_id: selectedDept.id, user_id: userId, role 
+      });
+      if (linkError) alert(linkError.message);
     }
+
+    // Cleanup
+    setIsMemberModalOpen(false);
+    fetchMembers(selectedDept.id);
   };
 
   const handleRemoveMember = async (id) => {
-    if (!confirm("Remove user?")) return;
+    if (!confirm("Remove user from team?")) return;
     const { error } = await supabase.from('department_members').delete().eq('id', id);
     if (!error) fetchMembers(selectedDept.id);
   };
@@ -117,38 +158,84 @@ export default function TeamsView({ departments: initialDepts }) {
       <div className="space-y-6 animate-in fade-in slide-in-from-right-4">
         <div className="flex items-center justify-between">
            <button onClick={() => setSelectedDept(null)} className="flex items-center gap-2 text-slate-400 hover:text-white"><ArrowLeft size={16} /> Back</button>
-           <button onClick={() => setIsMemberModalOpen(true)} className="flex items-center gap-2 bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded-lg text-sm font-medium"><UserPlus size={16} /> Add Member</button>
+           <button onClick={openAddMemberModal} className="flex items-center gap-2 bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded-lg text-sm font-medium"><UserPlus size={16} /> Add Member</button>
         </div>
+
         <GlassCard className="p-6 border-l-4 border-l-blue-500 flex justify-between items-center">
            <div className="flex items-center gap-4">
               <div className="p-3 rounded-xl bg-blue-500/20 text-blue-400"><Users size={24} /></div>
               <div><h2 className="text-2xl font-bold text-white">{selectedDept.name}</h2><p className="text-slate-400 text-sm">{members.length} Active Members</p></div>
            </div>
         </GlassCard>
+
         <div className="grid gap-3">
            {members.map(m => (
              <GlassCard key={m.id} className="p-4 flex items-center justify-between group hover:border-white/20">
                <div className="flex items-center gap-4">
                  <div className="w-10 h-10 rounded-full bg-slate-700 flex items-center justify-center text-sm font-bold text-white">{m.profile?.avatar_initials}</div>
-                 <div><h4 className="font-medium text-white">{m.profile?.full_name}</h4><div className="flex gap-2 text-xs text-slate-400"><span className="bg-white/5 px-1.5 rounded">{m.role}</span><span>{m.profile?.email}</span></div></div>
+                 <div>
+                    <h4 className="font-medium text-white">{m.profile?.full_name}</h4>
+                    <div className="flex gap-2 text-xs text-slate-400"><span className="bg-white/5 px-1.5 rounded">{m.role}</span><span>{m.profile?.email}</span></div>
+                 </div>
                </div>
-               <button onClick={() => handleRemoveMember(m.id)} className="p-2 text-slate-600 hover:text-rose-400 opacity-0 group-hover:opacity-100"><Trash2 size={16} /></button>
+               
+               {/* EDIT AND DELETE BUTTONS */}
+               <div className="flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                  <button 
+                    onClick={() => openEditMemberModal(m)} 
+                    className="p-2 text-slate-500 hover:text-white bg-black/20 hover:bg-black/40 rounded-lg"
+                    title="Edit Member"
+                  >
+                    <Edit2 size={16} />
+                  </button>
+                  <button 
+                    onClick={() => handleRemoveMember(m.id)} 
+                    className="p-2 text-slate-500 hover:text-rose-400 bg-black/20 hover:bg-black/40 rounded-lg"
+                    title="Remove from Team"
+                  >
+                    <Trash2 size={16} />
+                  </button>
+               </div>
              </GlassCard>
            ))}
            {members.length === 0 && !loading && <div className="text-center py-10 text-slate-500 border border-white/5 rounded-xl border-dashed">No members yet.</div>}
         </div>
 
-        <Modal isOpen={isMemberModalOpen} onClose={() => setIsMemberModalOpen(false)} title="Add Team Member">
+        {/* MEMBER MODAL (Add & Edit) */}
+        <Modal isOpen={isMemberModalOpen} onClose={() => setIsMemberModalOpen(false)} title={editingMember ? "Edit Team Member" : "Add Team Member"}>
            <div className="space-y-4">
               <div className="grid grid-cols-2 gap-4">
-                 <input type="text" placeholder="First Name" className="bg-black/30 border border-white/10 rounded-lg px-3 py-2 text-white" value={memberForm.firstName} onChange={e => setMemberForm({...memberForm, firstName: e.target.value})} />
-                 <input type="text" placeholder="Last Name" className="bg-black/30 border border-white/10 rounded-lg px-3 py-2 text-white" value={memberForm.lastName} onChange={e => setMemberForm({...memberForm, lastName: e.target.value})} />
+                 <div>
+                    <label className="block text-xs font-medium text-slate-400 mb-1.5">First Name</label>
+                    <input type="text" className="w-full bg-black/30 border border-white/10 rounded-lg px-3 py-2 text-white" value={memberForm.firstName} onChange={e => setMemberForm({...memberForm, firstName: e.target.value})} />
+                 </div>
+                 <div>
+                    <label className="block text-xs font-medium text-slate-400 mb-1.5">Last Name</label>
+                    <input type="text" className="w-full bg-black/30 border border-white/10 rounded-lg px-3 py-2 text-white" value={memberForm.lastName} onChange={e => setMemberForm({...memberForm, lastName: e.target.value})} />
+                 </div>
               </div>
-              <input type="email" placeholder="Email Address" className="w-full bg-black/30 border border-white/10 rounded-lg px-3 py-2 text-white" value={memberForm.email} onChange={e => setMemberForm({...memberForm, email: e.target.value})} />
-              <select className="w-full bg-black/30 border border-white/10 rounded-lg px-3 py-2 text-slate-200" value={memberForm.role} onChange={e => setMemberForm({...memberForm, role: e.target.value})}>
-                 {['Staff','Admin','Manager','Technician'].map(r => <option key={r} value={r}>{r}</option>)}
-              </select>
-              <button onClick={handleAddMember} className="w-full py-2 bg-blue-600 text-white rounded-lg">Confirm & Add</button>
+              
+              <div>
+                <label className="block text-xs font-medium text-slate-400 mb-1.5">Email Address</label>
+                <input 
+                  type="email" 
+                  className={`w-full bg-black/30 border border-white/10 rounded-lg px-3 py-2 text-white ${editingMember ? 'opacity-50 cursor-not-allowed' : ''}`}
+                  value={memberForm.email} 
+                  onChange={e => setMemberForm({...memberForm, email: e.target.value})}
+                  disabled={!!editingMember} // Lock email in edit mode
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-medium text-slate-400 mb-1.5">Role</label>
+                <select className="w-full bg-black/30 border border-white/10 rounded-lg px-3 py-2 text-slate-200" value={memberForm.role} onChange={e => setMemberForm({...memberForm, role: e.target.value})}>
+                   {['Staff','Admin','Manager','Technician'].map(r => <option key={r} value={r}>{r}</option>)}
+                </select>
+              </div>
+
+              <button onClick={handleSaveMember} className="w-full py-2 bg-blue-600 text-white rounded-lg">
+                {editingMember ? "Update Member" : "Confirm & Add"}
+              </button>
            </div>
         </Modal>
       </div>
@@ -176,6 +263,8 @@ export default function TeamsView({ departments: initialDepts }) {
            </GlassCard>
          ))}
       </div>
+      
+      {/* DEPT MODAL */}
       <Modal isOpen={isDeptModalOpen} onClose={() => setIsDeptModalOpen(false)} title={editingDept ? "Edit Department" : "New Department"}>
          <div className="space-y-4">
             <input type="text" placeholder="Department Name" className="w-full bg-black/30 border border-white/10 rounded-lg px-3 py-2 text-white" value={deptNameForm} onChange={(e) => setDeptNameForm(e.target.value)} />
