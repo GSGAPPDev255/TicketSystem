@@ -7,7 +7,7 @@ import TeamsView from './views/Teams';
 import TenantsView from './views/Tenants';
 import SettingsView from './views/Settings';
 
-// UI
+// UI COMPONENTS
 import { GlassCard, NavItem, TicketForm, TicketDetailView, KnowledgeBaseView } from './components/ui';
 import { 
   LayoutDashboard, Plus, Search, Bell, Settings, LogOut, Monitor, Menu, X, 
@@ -58,9 +58,9 @@ export default function App() {
     if (data) setProfile(data);
   }
 
-  // --- CENTRAL DATA FETCH (Refreshes EVERYTHING) ---
+  // --- CENTRAL DATA FETCH ---
   async function fetchAllData() {
-    // 1. Settings
+    // 1. Settings (Categories)
     const cats = await supabase.from('categories').select('*').order('label', { ascending: true });
     if (cats.data) setCategories(cats.data);
 
@@ -69,11 +69,11 @@ export default function App() {
     if (tens.data) setTenants(tens.data);
 
     // 3. Departments
-    const depts = await supabase.from('departments').select('*');
+    const depts = await supabase.from('departments').select('*').order('name', { ascending: true });
     if (depts.data) setDepartments(depts.data);
 
-    // 4. KB
-    const kb = await supabase.from('kb_articles').select('*');
+    // 4. Knowledge Base
+    const kb = await supabase.from('kb_articles').select('*').order('title', { ascending: true });
     if (kb.data) setKbArticles(kb.data);
 
     // 5. Tickets
@@ -124,6 +124,17 @@ export default function App() {
     }
   };
 
+  const handleDeleteKB = async (id) => {
+    if (!window.confirm("Are you sure you want to delete this article?")) return;
+    
+    const { error } = await supabase.from('kb_articles').delete().eq('id', id);
+    if (error) {
+      alert("Error: " + error.message);
+    } else {
+      fetchAllData(); // Refresh list
+    }
+  };
+
   // --- RENDER ---
   if (!session) {
     return (
@@ -146,6 +157,7 @@ export default function App() {
     <div className="min-h-screen w-full bg-[#0f172a] text-slate-200 font-sans flex overflow-hidden relative selection:bg-blue-500/30">
       <div className="fixed top-0 left-0 w-full h-full pointer-events-none z-0">
         <div className="absolute top-[-20%] left-[20%] w-[800px] h-[800px] bg-blue-900/20 rounded-full blur-[120px]"></div>
+        <div className="absolute bottom-[-20%] right-[10%] w-[600px] h-[600px] bg-purple-900/20 rounded-full blur-[120px]"></div>
       </div>
 
       <aside className={`fixed md:relative z-20 h-full transition-all duration-300 ease-in-out ${sidebarOpen ? 'w-64 translate-x-0' : 'w-20 md:w-20 -translate-x-full md:translate-x-0'} border-r border-white/5 bg-[#0f172a]/80 backdrop-blur-xl flex flex-col`}>
@@ -172,10 +184,12 @@ export default function App() {
           <NavItem icon={Clock} label="My Queue" count={tickets.filter(t => t.status === 'New').length} collapsed={!sidebarOpen} />
           <NavItem icon={Plus} label="New Ticket" active={activeTab === 'new'} onClick={() => setActiveTab('new')} collapsed={!sidebarOpen} />
           <NavItem icon={Users} label="Teams" active={activeTab === 'teams'} onClick={() => setActiveTab('teams')} collapsed={!sidebarOpen} />
+          
           {/* Tenant Tab only for Super Admins */}
           {profile?.role === 'super_admin' && (
              <NavItem icon={Building2} label="Tenants" active={activeTab === 'tenants'} onClick={() => setActiveTab('tenants')} collapsed={!sidebarOpen} />
           )}
+          
           <NavItem icon={Book} label="Knowledge Base" active={activeTab === 'knowledge'} onClick={() => setActiveTab('knowledge')} collapsed={!sidebarOpen} />
           <NavItem icon={Settings} label="Settings" active={activeTab === 'settings'} onClick={() => setActiveTab('settings')} collapsed={!sidebarOpen} />
         </nav>
@@ -224,11 +238,18 @@ export default function App() {
           )}
           {selectedTicket && <TicketDetailView ticket={selectedTicket} onBack={() => setSelectedTicket(null)} />}
           
-          {activeTab === 'teams' && <TeamsView departments={departments} members={{}} />}
+          {/* Passing REAL data to views */}
+          {activeTab === 'teams' && <TeamsView departments={departments} />}
           {activeTab === 'tenants' && <TenantsView tenants={tenants} />}
-          {activeTab === 'knowledge' && <KnowledgeBaseView articles={kbArticles} categories={categories} />}
+          {activeTab === 'knowledge' && (
+             <KnowledgeBaseView 
+               articles={kbArticles} 
+               categories={categories} 
+               onDelete={handleDeleteKB} 
+             />
+          )}
           
-          {/* UPDATED SETTINGS: Now receives real data and a refresh trigger */}
+          {/* Settings receives callback to refresh Global State */}
           {activeTab === 'settings' && (
              <SettingsView 
                 categories={categories} 
