@@ -1,24 +1,21 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from './lib/supabase';
 
-// IMPORT VIEWS
+// VIEWS
 import DashboardView from './views/Dashboard';
 import TeamsView from './views/Teams';
 import TenantsView from './views/Tenants';
 import SettingsView from './views/Settings';
 
-// IMPORT UI COMPONENTS
-import { 
-  GlassCard, NavItem, TicketForm, TicketDetailView, KnowledgeBaseView 
-} from './components/ui';
-
+// UI
+import { GlassCard, NavItem, TicketForm, TicketDetailView, KnowledgeBaseView } from './components/ui';
 import { 
   LayoutDashboard, Plus, Search, Bell, Settings, LogOut, Monitor, Menu, X, 
   Building2, Users, Book, ChevronDown, Clock
 } from 'lucide-react';
 
 export default function App() {
-  // --- GLOBAL STATE (Database Driven) ---
+  // --- GLOBAL STATE ---
   const [session, setSession] = useState(null);
   const [profile, setProfile] = useState(null);
   const [activeTab, setActiveTab] = useState('dashboard');
@@ -26,22 +23,20 @@ export default function App() {
   const [loading, setLoading] = useState(false);
   const [selectedTicket, setSelectedTicket] = useState(null);
 
-  // Data Containers (No more mocks)
+  // --- REAL DATA CONTAINERS (No Mocks) ---
   const [tickets, setTickets] = useState([]);
   const [tenants, setTenants] = useState([]);
   const [categories, setCategories] = useState([]);
   const [departments, setDepartments] = useState([]);
   const [kbArticles, setKbArticles] = useState([]);
 
-  // --- 1. AUTHENTICATION & INITIAL LOAD ---
+  // --- AUTH & INIT ---
   useEffect(() => {
-    // Check Session
     supabase.auth.getSession().then(({ data: { session } }) => {
       setSession(session);
       if (session) initializeApp(session.user.id);
     });
 
-    // Listen for Auth Changes
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       setSession(session);
       if (session) initializeApp(session.user.id);
@@ -50,14 +45,11 @@ export default function App() {
     return () => subscription.unsubscribe();
   }, []);
 
-  // --- 2. DATA FETCHING ENGINE ---
+  // --- DATA ENGINE ---
   async function initializeApp(userId) {
     setLoading(true);
-    await Promise.all([
-      fetchProfile(userId),
-      fetchSystemData(),
-      fetchTickets()
-    ]);
+    await fetchProfile(userId);
+    await fetchAllData();
     setLoading(false);
   }
 
@@ -66,29 +58,30 @@ export default function App() {
     if (data) setProfile(data);
   }
 
-  async function fetchSystemData() {
-    // Parallel fetch for system configuration
-    const [tenantsData, catsData, deptsData, kbData] = await Promise.all([
-      supabase.from('tenants').select('*'),
-      supabase.from('categories').select('*'),
-      supabase.from('departments').select('*'),
-      supabase.from('kb_articles').select('*')
-    ]);
+  async function fetchAllData() {
+    // 1. Fetch System Settings
+    const cats = await supabase.from('categories').select('*');
+    if (cats.data) setCategories(cats.data);
 
-    if (tenantsData.data) setTenants(tenantsData.data);
-    if (catsData.data) setCategories(catsData.data);
-    if (deptsData.data) setDepartments(deptsData.data);
-    if (kbData.data) setKbArticles(kbData.data);
-  }
+    // 2. Fetch Tenants
+    const tens = await supabase.from('tenants').select('*');
+    if (tens.data) setTenants(tens.data);
 
-  async function fetchTickets() {
-    const { data } = await supabase
-      .from('tickets')
+    // 3. Fetch Departments
+    const depts = await supabase.from('departments').select('*');
+    if (depts.data) setDepartments(depts.data);
+
+    // 4. Fetch KB
+    const kb = await supabase.from('kb_articles').select('*');
+    if (kb.data) setKbArticles(kb.data);
+
+    // 5. Fetch Tickets
+    const tix = await supabase.from('tickets')
       .select('*, requester:profiles!requester_id(full_name)')
       .order('created_at', { ascending: false });
     
-    if (data) {
-      setTickets(data.map(t => ({ 
+    if (tix.data) {
+      setTickets(tix.data.map(t => ({ 
         ...t, 
         requester: t.requester?.full_name || 'Unknown', 
         status: t.status || 'New' 
@@ -96,7 +89,7 @@ export default function App() {
     }
   }
 
-  // --- 3. ACTIONS ---
+  // --- ACTIONS ---
   const handleLogin = async () => {
     await supabase.auth.signInWithOAuth({
       provider: 'azure',
@@ -110,26 +103,29 @@ export default function App() {
     setProfile(null);
   };
 
-  const handleCreateTicket = async (newTicketData) => {
+  const handleCreateTicket = async (formData) => {
+    // Determine Requester ID (Fallback to current user if not provided)
+    const requesterId = session?.user?.id;
+
     const { error } = await supabase.from('tickets').insert({
-      subject: newTicketData.subject,
-      description: newTicketData.description,
-      category: newTicketData.category,
-      location: newTicketData.location,
+      subject: formData.subject,
+      description: formData.description,
+      category: formData.category,
+      location: formData.location,
       status: 'New',
       priority: 'Medium',
-      // requester_id: session.user.id (Enable this once RLS policies are set)
+      requester_id: requesterId 
     });
     
     if (!error) {
-      await fetchTickets();
+      await fetchAllData(); // Refresh all lists
       setActiveTab('dashboard');
     } else {
       alert("Database Error: " + error.message);
     }
   };
 
-  // --- 4. RENDER: LOGIN SCREEN ---
+  // --- RENDER ---
   if (!session) {
     return (
       <div className="min-h-screen w-full bg-[#0f172a] flex items-center justify-center font-sans text-slate-200">
@@ -138,10 +134,7 @@ export default function App() {
             <h1 className="text-3xl font-bold text-blue-200">Nexus ESM</h1>
             <p className="text-slate-400 mt-2 text-sm">Enterprise Service Management</p>
           </div>
-          <button 
-            onClick={handleLogin}
-            className="w-full px-4 py-3 bg-[#2f2f2f] hover:bg-[#3f3f3f] text-white rounded-lg border border-white/5 flex items-center justify-center gap-3 transition-all"
-          >
+          <button onClick={handleLogin} className="w-full px-4 py-3 bg-[#2f2f2f] hover:bg-[#3f3f3f] text-white rounded-lg border border-white/5 flex items-center justify-center gap-3">
             <img src="https://img.icons8.com/color/48/000000/microsoft.png" className="w-5 h-5" alt="MS"/>
             <span>Sign in with Microsoft</span>
           </button>
@@ -149,9 +142,6 @@ export default function App() {
       </div>
     );
   }
-
-  // --- 5. RENDER: MAIN DASHBOARD ---
-  const isSuperAdmin = profile?.role === 'super_admin';
 
   return (
     <div className="min-h-screen w-full bg-[#0f172a] text-slate-200 font-sans flex overflow-hidden relative selection:bg-blue-500/30">
@@ -183,7 +173,12 @@ export default function App() {
           <NavItem icon={Clock} label="My Queue" count={tickets.filter(t => t.status === 'New').length} collapsed={!sidebarOpen} />
           <NavItem icon={Plus} label="New Ticket" active={activeTab === 'new'} onClick={() => setActiveTab('new')} collapsed={!sidebarOpen} />
           <NavItem icon={Users} label="Teams" active={activeTab === 'teams'} onClick={() => setActiveTab('teams')} collapsed={!sidebarOpen} />
-          {isSuperAdmin && <NavItem icon={Building2} label="Tenants" active={activeTab === 'tenants'} onClick={() => setActiveTab('tenants')} collapsed={!sidebarOpen} />}
+          
+          {/* Tenant Tab only for Super Admins */}
+          {profile?.role === 'super_admin' && (
+             <NavItem icon={Building2} label="Tenants" active={activeTab === 'tenants'} onClick={() => setActiveTab('tenants')} collapsed={!sidebarOpen} />
+          )}
+          
           <NavItem icon={Book} label="Knowledge Base" active={activeTab === 'knowledge'} onClick={() => setActiveTab('knowledge')} collapsed={!sidebarOpen} />
           <NavItem icon={Settings} label="Settings" active={activeTab === 'settings'} onClick={() => setActiveTab('settings')} collapsed={!sidebarOpen} />
         </nav>
@@ -191,7 +186,7 @@ export default function App() {
         <div className="p-4 border-t border-white/5">
           <div className={`flex items-center gap-3 ${!sidebarOpen && 'justify-center'}`}>
             <div className="w-9 h-9 rounded-full bg-gradient-to-br from-emerald-500 to-teal-600 flex items-center justify-center text-sm font-bold shadow-lg">{profile?.avatar_initials || 'U'}</div>
-            {sidebarOpen && <div className="flex-1 min-w-0"><p className="text-sm font-medium truncate text-white">{profile?.full_name || 'User'}</p><p className="text-xs text-slate-400 truncate capitalize">{profile?.role || 'Staff'}</p></div>}
+            {sidebarOpen && <div className="flex-1 min-w-0"><p className="text-sm font-medium truncate text-white">{profile?.full_name || 'Loading...'}</p><p className="text-xs text-slate-400 truncate capitalize">{profile?.role || 'User'}</p></div>}
             {sidebarOpen && <button onClick={handleLogout} className="p-1.5 text-slate-400 hover:text-rose-400 hover:bg-rose-500/10 rounded-lg"><LogOut size={16} /></button>}
           </div>
         </div>
@@ -213,7 +208,6 @@ export default function App() {
         </header>
 
         <div className="p-4 md:p-8 max-w-7xl mx-auto w-full">
-          {/* DYNAMIC VIEWS WITH REAL DATA */}
           {activeTab === 'new' && (
              <TicketForm 
                 categories={categories} 
@@ -226,13 +220,14 @@ export default function App() {
                 tickets={tickets} 
                 loading={loading} 
                 role={profile?.role} 
-                onRefresh={fetchTickets}
+                onRefresh={fetchAllData}
                 onSelectTicket={setSelectedTicket}
                 onNewTicket={() => setActiveTab('new')}
              />
           )}
           {selectedTicket && <TicketDetailView ticket={selectedTicket} onBack={() => setSelectedTicket(null)} />}
           
+          {/* Passing REAL data to views */}
           {activeTab === 'teams' && <TeamsView departments={departments} members={{}} />}
           {activeTab === 'tenants' && <TenantsView tenants={tenants} />}
           {activeTab === 'knowledge' && <KnowledgeBaseView articles={kbArticles} categories={categories} />}
