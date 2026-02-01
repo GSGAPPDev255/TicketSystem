@@ -1,13 +1,15 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { supabase } from './lib/supabase';
+// IMPORT THE UI COMPONENTS WE JUST MOVED
+import { GlassCard, Badge, NavItem, StatCard, getIcon, SourceIcon } from './components/ui';
 import { 
-  LayoutDashboard, Plus, Search, Bell, Settings, LogOut, Wifi, Monitor, Cpu, ShieldAlert, 
-  User, MessageSquare, CheckCircle2, Clock, AlertCircle, Menu, X, ChevronRight, Filter, 
-  MoreVertical, Paperclip, Send, Building2, Users, Mail, MessageCircle, Globe, Zap, Eye, 
-  Book, FileText, ThumbsUp, Share2, MoreHorizontal, Trash2, ArrowLeft, Key, Server, HelpCircle, Wrench, ShoppingBag, UserPlus, ChevronDown, ChevronUp
+  LayoutDashboard, Plus, Search, Bell, Settings, LogOut, Monitor, ShieldAlert, 
+  User, CheckCircle2, Clock, AlertCircle, Menu, X, ChevronRight, Filter, 
+  MoreVertical, Paperclip, Send, Building2, Users, Globe, Eye, 
+  Book, FileText, ThumbsUp, Share2, MoreHorizontal, Trash2, ArrowLeft, Key, Server, Wrench, ShoppingBag, UserPlus, ChevronDown, ChevronUp, Hash, Shield
 } from 'lucide-react';
 
-// --- MOCK DATA (For non-DB features) ---
+// --- MOCK DATA (Restored for non-DB features) ---
 const INITIAL_TENANTS = [
   { id: 't1', name: "St. Mary's High", code: 'SMH', domain: 'stmarys.edu', status: 'active', users: 1240, type: 'School' },
   { id: 't2', name: "Northfield Primary", code: 'NFP', domain: 'northfield.edu', status: 'active', users: 850, type: 'School' }
@@ -17,25 +19,35 @@ const MOCK_CATEGORIES = [
   { id: 'hardware', label: 'Hardware', icon: 'Monitor', color: 'text-blue-400', bg: 'bg-blue-500/10' },
   { id: 'software', label: 'Software', icon: 'Cpu', color: 'text-purple-400', bg: 'bg-purple-500/10' },
   { id: 'network', label: 'Network', icon: 'Wifi', color: 'text-emerald-400', bg: 'bg-emerald-500/10' },
+  { id: 'security', label: 'Security', icon: 'ShieldAlert', color: 'text-rose-400', bg: 'bg-rose-500/10' },
 ];
+
+const MOCK_DEPARTMENTS = [
+  { id: 'd1', name: 'IT Services', head: 'Alex Chen', members: 8, activeTickets: 42, icon: Monitor, color: 'text-blue-400', bg: 'bg-blue-500/10', entralGroup: 'SG-Staff-IT' },
+  { id: 'd2', name: 'Estates & Facilities', head: 'Dave Miller', members: 12, activeTickets: 15, icon: Building2, color: 'text-orange-400', bg: 'bg-orange-500/10', entralGroup: 'SG-Staff-Estates' },
+];
+
+const MOCK_TEAM_MEMBERS = {
+  'd1': [
+    { id: 'tm1', name: 'Alex Chen', role: 'Head of IT', status: 'online', email: 'alex.c@school.edu', avatar: 'AC' },
+    { id: 'tm2', name: 'Jamie Smith', role: 'Network Engineer', status: 'busy', email: 'j.smith@school.edu', avatar: 'JS' },
+  ],
+  'd2': [
+    { id: 'tm5', name: 'Dave Miller', role: 'Facilities Manager', status: 'online', email: 'd.miller@school.edu', avatar: 'DM' },
+  ]
+};
 
 const MOCK_KB_ARTICLES = [
   { id: 1, title: 'Connecting to Student Wi-Fi', category: 'Network', views: 1250, author: 'Alex Chen', lastUpdated: '2 days ago', helpful: 142, content: 'To connect, select Student-WiFi...' },
   { id: 2, title: 'Kyocera Printer: Paper Jam', category: 'Hardware', views: 890, author: 'Sarah Jenkins', lastUpdated: '1 week ago', helpful: 56, content: 'Open Tray 1...' },
 ];
 
-// --- UTILITIES ---
-const getIcon = (iconName, size = 20, className) => {
-  const icons = { Monitor, Cpu, Wifi, ShieldAlert, Wrench, ShoppingBag, Briefcase, Zap, Globe };
-  const IconComponent = icons[iconName] || HelpCircle;
-  return <IconComponent size={size} className={className} />;
-};
-
-// --- MAIN APP COMPONENT ---
+// --- MAIN APP ---
 export default function App() {
   const [currentUser, setCurrentUser] = useState(null); 
   const [tickets, setTickets] = useState([]); // REAL DB DATA
   const [kbArticles, setKbArticles] = useState(MOCK_KB_ARTICLES);
+  const [categories, setCategories] = useState(MOCK_CATEGORIES);
   const [tenants, setTenants] = useState(INITIAL_TENANTS);
   const [activeTab, setActiveTab] = useState('dashboard');
   const [selectedTicket, setSelectedTicket] = useState(null);
@@ -43,14 +55,13 @@ export default function App() {
   const [currentTenant, setCurrentTenant] = useState(INITIAL_TENANTS[0]);
   const [loading, setLoading] = useState(false);
 
-  // --- SUPABASE FETCH ---
+  // FETCH REAL TICKETS
   useEffect(() => {
     fetchTickets();
   }, []);
 
   async function fetchTickets() {
     setLoading(true);
-    // Fetch tickets and join with profiles for names
     const { data, error } = await supabase
       .from('tickets')
       .select(`
@@ -66,7 +77,6 @@ export default function App() {
         requester: t.requester?.full_name || 'Unknown',
         assignee: t.assignee?.full_name || 'Unassigned',
         lastUpdate: new Date(t.created_at).toLocaleDateString(),
-        // Defaults for UI fields not yet in DB
         sla: '4h', 
         slaStatus: 'ok',
         comments: [],
@@ -78,7 +88,6 @@ export default function App() {
   }
 
   const handleLogin = (role) => {
-    // Simulating login
     setCurrentUser({
       id: 'u1', name: 'Sarah Jenkins', role: role, avatar: 'SJ',
       allowedTenants: ['t1', 't2']
@@ -86,10 +95,9 @@ export default function App() {
   };
 
   const handleCreateTicket = async (newTicketData) => {
-    // REAL DB INSERT
     const { error } = await supabase.from('tickets').insert({
       subject: newTicketData.subject,
-      description: newTicketData.description || newTicketData.subject, 
+      description: newTicketData.description || newTicketData.subject,
       category: newTicketData.category,
       location: newTicketData.location || 'Unknown',
       status: 'New',
@@ -152,6 +160,7 @@ export default function App() {
         <nav className="flex-1 py-6 px-2 space-y-1">
           <NavItem icon={LayoutDashboard} label="Dashboard" active={activeTab === 'dashboard'} onClick={() => { setActiveTab('dashboard'); setSelectedTicket(null); }} collapsed={!sidebarOpen} />
           <NavItem icon={Plus} label="New Ticket" active={activeTab === 'new'} onClick={() => setActiveTab('new')} collapsed={!sidebarOpen} />
+          {currentUser.role !== 'staff' && <NavItem icon={Users} label="Teams" active={activeTab === 'teams'} onClick={() => setActiveTab('teams')} collapsed={!sidebarOpen} />}
           <NavItem icon={Book} label="Knowledge Base" active={activeTab === 'knowledge'} onClick={() => setActiveTab('knowledge')} collapsed={!sidebarOpen} />
           {currentUser.role !== 'staff' && <NavItem icon={Settings} label="Settings" active={activeTab === 'settings'} onClick={() => setActiveTab('settings')} collapsed={!sidebarOpen} />}
         </nav>
@@ -181,23 +190,27 @@ export default function App() {
         </header>
 
         <div className="p-4 md:p-8 max-w-7xl mx-auto w-full">
-          {/* VIEW: Chatbot */}
           {activeTab === 'new' && (
             <NewTicketChatView 
-              kbArticles={kbArticles} categories={MOCK_CATEGORIES}
+              kbArticles={kbArticles} categories={categories}
               onSubmit={handleCreateTicket} onCancel={() => setActiveTab('dashboard')} currentUser={currentUser}
             />
           )}
 
-          {/* VIEW: Knowledge Base */}
-          {activeTab === 'knowledge' && (
-             <KnowledgeBaseView articles={kbArticles} categories={MOCK_CATEGORIES} />
+          {activeTab === 'teams' && (
+             <TeamsView departments={MOCK_DEPARTMENTS} members={MOCK_TEAM_MEMBERS} />
           )}
 
-          {/* VIEW: Dashboard */}
+          {activeTab === 'knowledge' && (
+             <KnowledgeBaseView articles={kbArticles} categories={categories} />
+          )}
+
+          {activeTab === 'settings' && (
+             <SystemSettingsView categories={categories} tenants={INITIAL_TENANTS} />
+          )}
+
           {activeTab === 'dashboard' && !selectedTicket && (
             <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
-              {/* RESTORED STAT CARDS */}
               {currentUser.role !== 'staff' && (
                 <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                   <StatCard label="My Open Tickets" value={tickets.length} trend="+2" color="blue" />
@@ -231,7 +244,6 @@ export default function App() {
             </div>
           )}
 
-          {/* VIEW: Detail */}
           {selectedTicket && (
             <TicketDetailView ticket={selectedTicket} onBack={() => setSelectedTicket(null)} />
           )}
@@ -241,41 +253,7 @@ export default function App() {
   );
 }
 
-// --- SUB COMPONENTS (DEFINED OUTSIDE APP) ---
-
-const GlassCard = ({ children, className = '', hover = false, onClick }) => (
-  <div onClick={onClick} className={`relative overflow-hidden bg-white/5 backdrop-blur-xl border border-white/10 rounded-2xl shadow-[0_8px_32px_0_rgba(0,0,0,0.37)] ${hover ? 'transition-all duration-300 hover:bg-white/10 hover:scale-[1.01] hover:border-white/20 cursor-pointer' : ''} ${className}`}>
-    {children}
-  </div>
-);
-
-const Badge = ({ status }) => {
-  const styles = {
-    'New': 'bg-blue-500/20 text-blue-300 border-blue-500/30',
-    'In Progress': 'bg-amber-500/20 text-amber-300 border-amber-500/30',
-    'Resolved': 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30',
-    'Critical': 'bg-rose-500/20 text-rose-300 border-rose-500/30 animate-pulse',
-  };
-  return <span className={`px-2.5 py-0.5 rounded-full text-xs font-medium border ${styles[status] || 'bg-gray-500/20 text-gray-300 border-gray-500/30'}`}>{status}</span>;
-};
-
-const NavItem = ({ icon: Icon, label, active, count, onClick, collapsed }) => (
-  <button onClick={onClick} className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg mb-1 transition-all duration-200 ${active ? 'bg-blue-600/10 text-blue-400 border border-blue-600/20 shadow-[0_0_15px_rgba(59,130,246,0.15)]' : 'text-slate-400 hover:text-slate-100 hover:bg-white/5'} ${collapsed ? 'justify-center' : ''}`}>
-    <Icon size={20} className={active ? 'text-blue-400' : 'text-slate-400'} />
-    {!collapsed && <span className="flex-1 text-left text-sm font-medium">{label}</span>}
-    {!collapsed && count && <span className="bg-rose-500/20 text-rose-300 text-xs py-0.5 px-2 rounded-full border border-rose-500/20">{count}</span>}
-  </button>
-);
-
-const StatCard = ({ label, value, trend, color }) => (
-  <GlassCard className="p-4 flex flex-col gap-1">
-    <span className="text-slate-400 text-xs uppercase tracking-wider font-semibold">{label}</span>
-    <div className="flex items-end justify-between">
-      <span className="text-2xl font-bold text-white">{value}</span>
-      <span className={`text-xs px-1.5 py-0.5 rounded ${color === 'rose' ? 'bg-rose-500/20 text-rose-300' : color === 'blue' ? 'bg-blue-500/20 text-blue-300' : 'bg-emerald-500/20 text-emerald-300'}`}>{trend}</span>
-    </div>
-  </GlassCard>
-);
+// --- VIEW COMPONENTS (Fully Restored Logic) ---
 
 const TicketRow = ({ ticket, onClick }) => (
   <GlassCard hover className="p-4 group flex items-center gap-4" onClick={onClick}>
@@ -284,7 +262,10 @@ const TicketRow = ({ ticket, onClick }) => (
     </div>
     <div className="flex-1 min-w-0 grid grid-cols-1 md:grid-cols-12 gap-4 items-center">
       <div className="md:col-span-5">
-        <h4 className="font-medium text-slate-200 truncate group-hover:text-blue-400 transition-colors">{ticket.subject}</h4>
+        <h4 className="font-medium text-slate-200 truncate group-hover:text-blue-400 transition-colors flex items-center gap-2">
+           {ticket.subject}
+           <span className="opacity-50 group-hover:opacity-100 transition-opacity" title={`Source: ${ticket.source}`}><SourceIcon source={ticket.source} /></span>
+        </h4>
         <p className="text-xs text-slate-500">#{ticket.friendly_id || '?'} • {ticket.location}</p>
       </div>
       <div className="hidden md:block md:col-span-3">
@@ -311,8 +292,13 @@ const NewTicketChatView = ({ kbArticles, categories, onSubmit, onCancel, current
     setMessages(p => [...p, {id: Date.now(), type:'user', text: input}]);
     setInput('');
     setTimeout(() => {
-       setMessages(p => [...p, {id: Date.now()+1, type:'bot', text: "I can't find a solution in the KB. Let's raise a ticket."}]);
-       setShowForm(true);
+       const hasMatch = kbArticles.some(a => a.title.toLowerCase().includes(input.toLowerCase()));
+       if (hasMatch) {
+          setMessages(p => [...p, {id: Date.now()+1, type:'bot', text: "I found a matching article. Does this help?", isArticle: true}]);
+       } else {
+          setMessages(p => [...p, {id: Date.now()+1, type:'bot', text: "I can't find a solution in the KB. Let's raise a ticket."}]);
+          setShowForm(true);
+       }
     }, 800);
   };
 
@@ -393,9 +379,42 @@ const TicketDetailView = ({ ticket, onBack }) => (
 );
 
 const KnowledgeBaseView = ({ articles, categories }) => (
-  <div className="space-y-6">
+  <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4">
     <div className="relative py-8 px-6 rounded-3xl bg-gradient-to-br from-blue-900/20 to-purple-900/20 border border-white/5 text-center"><h2 className="text-2xl font-bold text-white">Knowledge Base</h2><p className="text-slate-400">Search guides and documentation</p></div>
     <div className="grid grid-cols-2 md:grid-cols-4 gap-4">{categories.map(cat => <GlassCard key={cat.id} className="p-4 flex flex-col items-center gap-2 hover:bg-white/5"><div className={`p-3 rounded-full ${cat.bg} ${cat.color}`}>{getIcon(cat.icon)}</div><span className="text-sm font-medium text-slate-300">{cat.label}</span></GlassCard>)}</div>
     <div className="space-y-4">{articles.map(a => <GlassCard key={a.id} className="p-5"><h4 className="font-medium text-slate-200">{a.title}</h4><p className="text-xs text-slate-500 mt-1">{a.category} • {a.views} views</p></GlassCard>)}</div>
+  </div>
+);
+
+const TeamsView = ({ departments, members }) => {
+  const [selectedDept, setSelectedDept] = useState(null);
+  if (selectedDept) {
+    return (
+      <div className="space-y-6 animate-in fade-in slide-in-from-right-4">
+        <button onClick={() => setSelectedDept(null)} className="flex items-center gap-2 text-slate-400 hover:text-white transition-colors"><ArrowLeft size={16} /> Back to Departments</button>
+        <div className="flex items-center justify-between"><div className="flex items-center gap-4"><div className={`p-3 rounded-xl ${selectedDept.bg} ${selectedDept.color}`}><selectedDept.icon size={24} /></div><div><h2 className="text-2xl font-bold text-white">{selectedDept.name}</h2><p className="text-slate-400 text-sm">Managing staff members</p></div></div></div>
+        <div className="grid gap-3">{members[selectedDept.id]?.map(member => (<GlassCard key={member.id} className="p-4 flex items-center justify-between group"><div className="flex items-center gap-4"><div className="w-10 h-10 rounded-full bg-slate-700 flex items-center justify-center text-sm font-bold border border-white/10">{member.avatar}</div><div><h4 className="font-medium text-white group-hover:text-blue-400 transition-colors">{member.name}</h4><p className="text-xs text-slate-400">{member.role}</p></div></div></GlassCard>))}</div>
+      </div>
+    );
+  }
+  return (
+    <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">{departments.map(dept => (<GlassCard key={dept.id} hover className="p-6 space-y-4 group cursor-pointer" onClick={() => setSelectedDept(dept)}><div className="flex justify-between items-start"><div className={`p-3 rounded-xl ${dept.bg} ${dept.color}`}><dept.icon size={24} /></div></div><div><h4 className="text-lg font-semibold text-white group-hover:text-blue-400 transition-colors">{dept.name}</h4><p className="text-xs text-slate-500 mt-1">Lead: {dept.head}</p></div></GlassCard>))}</div>
+    </div>
+  );
+};
+
+const SystemSettingsView = ({ categories, tenants }) => (
+  <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4">
+    <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+      <GlassCard className="p-6 space-y-6">
+         <div className="flex items-center gap-3 border-b border-white/10 pb-4"><div className="p-2 bg-blue-500/20 rounded-lg text-blue-400"><Hash size={20} /></div><div><h3 className="font-semibold text-white">Issue Categories</h3></div></div>
+         <div className="space-y-3">{categories.map(cat => (<div key={cat.id} className="flex items-center justify-between p-3 bg-white/5 rounded-lg border border-white/5"><div className="flex items-center gap-3"><div className={`p-2 rounded-lg ${cat.bg} ${cat.color}`}>{getIcon(cat.icon, 16)}</div><span className="text-sm font-medium text-slate-200">{cat.label}</span></div></div>))}</div>
+      </GlassCard>
+      <GlassCard className="p-6 space-y-6">
+         <div className="flex items-center gap-3 border-b border-white/10 pb-4"><div className="p-2 bg-indigo-500/20 rounded-lg text-indigo-400"><Shield size={20} /></div><div><h3 className="font-semibold text-white">Access Control</h3></div></div>
+         <div className="space-y-3"><label className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Active Tenants</label>{tenants.map(t => (<div key={t.id} className="bg-white/5 border border-white/5 rounded-xl p-3 flex items-center justify-between"><span className="text-sm text-white">{t.name}</span><span className="text-[10px] bg-emerald-500/20 text-emerald-300 px-2 py-0.5 rounded border border-emerald-500/30">Active</span></div>))}</div>
+      </GlassCard>
+    </div>
   </div>
 );
