@@ -150,3 +150,30 @@ export const KnowledgeBaseView = ({ articles, categories }) => (
     <div className="space-y-4">{articles.map(a => <GlassCard key={a.id} className="p-5"><h4 className="font-medium text-slate-200">{a.title}</h4><p className="text-xs text-slate-500 mt-1">{a.category} • {a.views} views</p></GlassCard>)}</div>
   </div>
 );
+
+// --- MODAL COMPONENT ---
+export const Modal = ({ isOpen, onClose, title, children }) => {
+  if (!isOpen) return null;
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      {/* Backdrop */}
+      <div 
+        className="absolute inset-0 bg-black/60 backdrop-blur-sm transition-opacity" 
+        onClick={onClose}
+      ></div>
+      
+      {/* Content */}
+      <div className="relative w-full max-w-md bg-[#1e293b] border border-white/10 rounded-2xl shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+        <div className="flex items-center justify-between p-4 border-b border-white/10 bg-white/5">
+          <h3 className="font-semibold text-white">{title}</h3>
+          <button onClick={onClose} className="text-slate-400 hover:text-white transition-colors">
+            <ChevronRight className="rotate-90" size={20} /> 
+          </button>
+        </div>
+        <div className="p-6">
+          {children}
+        </div>
+      </div>
+    </div>
+  );
+};
