@@ -23,7 +23,7 @@ export default function App() {
   const [loading, setLoading] = useState(false);
   const [selectedTicket, setSelectedTicket] = useState(null);
 
-  // --- REAL DATA CONTAINERS (No Mocks) ---
+  // --- REAL DATA CONTAINERS ---
   const [tickets, setTickets] = useState([]);
   const [tenants, setTenants] = useState([]);
   const [categories, setCategories] = useState([]);
@@ -58,24 +58,25 @@ export default function App() {
     if (data) setProfile(data);
   }
 
+  // --- CENTRAL DATA FETCH (Refreshes EVERYTHING) ---
   async function fetchAllData() {
-    // 1. Fetch System Settings
-    const cats = await supabase.from('categories').select('*');
+    // 1. Settings
+    const cats = await supabase.from('categories').select('*').order('label', { ascending: true });
     if (cats.data) setCategories(cats.data);
 
-    // 2. Fetch Tenants
+    // 2. Tenants
     const tens = await supabase.from('tenants').select('*');
     if (tens.data) setTenants(tens.data);
 
-    // 3. Fetch Departments
+    // 3. Departments
     const depts = await supabase.from('departments').select('*');
     if (depts.data) setDepartments(depts.data);
 
-    // 4. Fetch KB
+    // 4. KB
     const kb = await supabase.from('kb_articles').select('*');
     if (kb.data) setKbArticles(kb.data);
 
-    // 5. Fetch Tickets
+    // 5. Tickets
     const tix = await supabase.from('tickets')
       .select('*, requester:profiles!requester_id(full_name)')
       .order('created_at', { ascending: false });
@@ -104,9 +105,7 @@ export default function App() {
   };
 
   const handleCreateTicket = async (formData) => {
-    // Determine Requester ID (Fallback to current user if not provided)
     const requesterId = session?.user?.id;
-
     const { error } = await supabase.from('tickets').insert({
       subject: formData.subject,
       description: formData.description,
@@ -118,7 +117,7 @@ export default function App() {
     });
     
     if (!error) {
-      await fetchAllData(); // Refresh all lists
+      await fetchAllData();
       setActiveTab('dashboard');
     } else {
       alert("Database Error: " + error.message);
@@ -173,12 +172,10 @@ export default function App() {
           <NavItem icon={Clock} label="My Queue" count={tickets.filter(t => t.status === 'New').length} collapsed={!sidebarOpen} />
           <NavItem icon={Plus} label="New Ticket" active={activeTab === 'new'} onClick={() => setActiveTab('new')} collapsed={!sidebarOpen} />
           <NavItem icon={Users} label="Teams" active={activeTab === 'teams'} onClick={() => setActiveTab('teams')} collapsed={!sidebarOpen} />
-          
           {/* Tenant Tab only for Super Admins */}
           {profile?.role === 'super_admin' && (
              <NavItem icon={Building2} label="Tenants" active={activeTab === 'tenants'} onClick={() => setActiveTab('tenants')} collapsed={!sidebarOpen} />
           )}
-          
           <NavItem icon={Book} label="Knowledge Base" active={activeTab === 'knowledge'} onClick={() => setActiveTab('knowledge')} collapsed={!sidebarOpen} />
           <NavItem icon={Settings} label="Settings" active={activeTab === 'settings'} onClick={() => setActiveTab('settings')} collapsed={!sidebarOpen} />
         </nav>
@@ -186,7 +183,7 @@ export default function App() {
         <div className="p-4 border-t border-white/5">
           <div className={`flex items-center gap-3 ${!sidebarOpen && 'justify-center'}`}>
             <div className="w-9 h-9 rounded-full bg-gradient-to-br from-emerald-500 to-teal-600 flex items-center justify-center text-sm font-bold shadow-lg">{profile?.avatar_initials || 'U'}</div>
-            {sidebarOpen && <div className="flex-1 min-w-0"><p className="text-sm font-medium truncate text-white">{profile?.full_name || 'Loading...'}</p><p className="text-xs text-slate-400 truncate capitalize">{profile?.role || 'User'}</p></div>}
+            {sidebarOpen && <div className="flex-1 min-w-0"><p className="text-sm font-medium truncate text-white">{profile?.full_name || 'User'}</p><p className="text-xs text-slate-400 truncate capitalize">{profile?.role || 'Staff'}</p></div>}
             {sidebarOpen && <button onClick={handleLogout} className="p-1.5 text-slate-400 hover:text-rose-400 hover:bg-rose-500/10 rounded-lg"><LogOut size={16} /></button>}
           </div>
         </div>
@@ -227,11 +224,18 @@ export default function App() {
           )}
           {selectedTicket && <TicketDetailView ticket={selectedTicket} onBack={() => setSelectedTicket(null)} />}
           
-          {/* Passing REAL data to views */}
           {activeTab === 'teams' && <TeamsView departments={departments} members={{}} />}
           {activeTab === 'tenants' && <TenantsView tenants={tenants} />}
           {activeTab === 'knowledge' && <KnowledgeBaseView articles={kbArticles} categories={categories} />}
-          {activeTab === 'settings' && <SettingsView categories={categories} tenants={tenants} />}
+          
+          {/* UPDATED SETTINGS: Now receives real data and a refresh trigger */}
+          {activeTab === 'settings' && (
+             <SettingsView 
+                categories={categories} 
+                tenants={tenants} 
+                onUpdate={fetchAllData} 
+             />
+          )}
         </div>
       </main>
     </div>
