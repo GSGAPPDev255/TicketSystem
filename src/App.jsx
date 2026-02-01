@@ -7,13 +7,9 @@ import TeamsView from './views/Teams';
 import TenantsView from './views/Tenants';
 import SettingsView from './views/Settings';
 
-// IMPORT UI COMPONENTS (This was the missing link causing the crash)
+// IMPORT UI COMPONENTS
 import { 
-  GlassCard, 
-  NavItem, 
-  TicketForm,        // <--- Was missing
-  TicketDetailView,  // <--- Was missing
-  KnowledgeBaseView  // <--- Was missing
+  GlassCard, NavItem, TicketForm, TicketDetailView, KnowledgeBaseView 
 } from './components/ui';
 
 import { 
@@ -21,65 +17,90 @@ import {
   Building2, Users, Book, ChevronDown, Clock
 } from 'lucide-react';
 
-// --- MOCK DATA FOR STATIC VIEWS ---
-const INITIAL_TENANTS = [
-  { id: 't1', name: "St. Mary's High", code: 'SMH', domain: 'stmarys.edu', status: 'active', users: 1240 },
-  { id: 't2', name: "Northfield Primary", code: 'NFP', domain: 'northfield.edu', status: 'active', users: 850 }
-];
-const MOCK_CATEGORIES = [
-  { id: 'hw', label: 'Hardware', icon: 'Monitor', color: 'text-blue-400', bg: 'bg-blue-500/10' },
-  { id: 'sw', label: 'Software', icon: 'Cpu', color: 'text-purple-400', bg: 'bg-purple-500/10' },
-  { id: 'net', label: 'Network', icon: 'Wifi', color: 'text-emerald-400', bg: 'bg-emerald-500/10' },
-];
-const MOCK_DEPARTMENTS = [
-  { id: 'd1', name: 'IT Services', head: 'Alex Chen', members: 8, activeTickets: 42, icon: Monitor, color: 'text-blue-400', bg: 'bg-blue-500/10', entralGroup: 'SG-Staff-IT' },
-  { id: 'd2', name: 'Estates & Facilities', head: 'Dave Miller', members: 12, activeTickets: 15, icon: Building2, color: 'text-orange-400', bg: 'bg-orange-500/10', entralGroup: 'SG-Staff-Estates' },
-];
-const MOCK_MEMBERS = {
-  'd1': [{ id: 'tm1', name: 'Alex Chen', role: 'Head of IT', status: 'online', avatar: 'AC' }, { id: 'tm2', name: 'Jamie Smith', role: 'Network Engineer', status: 'busy', avatar: 'JS' }],
-  'd2': [{ id: 'tm5', name: 'Dave Miller', role: 'Facilities Manager', status: 'online', avatar: 'DM' }]
-};
-const MOCK_KB = [
-  { id: 1, title: 'Connecting to Student Wi-Fi', category: 'Network', views: 1250, author: 'Alex Chen', lastUpdated: '2 days ago', helpful: 142, content: 'To connect, select "Student-WiFi" and enter your school email...' },
-  { id: 2, title: 'Kyocera Printer: Clearing Paper Jam C-404', category: 'Hardware', views: 890, author: 'Sarah Jenkins', lastUpdated: '1 week ago', helpful: 56, content: 'Open Tray 1, remove crumpled paper, reset gear A...' },
-];
-
 export default function App() {
+  // --- GLOBAL STATE (Database Driven) ---
   const [session, setSession] = useState(null);
   const [profile, setProfile] = useState(null);
-  const [tickets, setTickets] = useState([]);
   const [activeTab, setActiveTab] = useState('dashboard');
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [loading, setLoading] = useState(false);
   const [selectedTicket, setSelectedTicket] = useState(null);
 
-  // --- AUTHENTICATION ---
+  // Data Containers (No more mocks)
+  const [tickets, setTickets] = useState([]);
+  const [tenants, setTenants] = useState([]);
+  const [categories, setCategories] = useState([]);
+  const [departments, setDepartments] = useState([]);
+  const [kbArticles, setKbArticles] = useState([]);
+
+  // --- 1. AUTHENTICATION & INITIAL LOAD ---
   useEffect(() => {
+    // Check Session
     supabase.auth.getSession().then(({ data: { session } }) => {
       setSession(session);
-      if (session) fetchProfile(session.user.id);
+      if (session) initializeApp(session.user.id);
     });
 
+    // Listen for Auth Changes
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       setSession(session);
-      if (session) fetchProfile(session.user.id);
+      if (session) initializeApp(session.user.id);
     });
 
     return () => subscription.unsubscribe();
   }, []);
+
+  // --- 2. DATA FETCHING ENGINE ---
+  async function initializeApp(userId) {
+    setLoading(true);
+    await Promise.all([
+      fetchProfile(userId),
+      fetchSystemData(),
+      fetchTickets()
+    ]);
+    setLoading(false);
+  }
 
   async function fetchProfile(userId) {
     const { data } = await supabase.from('profiles').select('*').eq('id', userId).single();
     if (data) setProfile(data);
   }
 
+  async function fetchSystemData() {
+    // Parallel fetch for system configuration
+    const [tenantsData, catsData, deptsData, kbData] = await Promise.all([
+      supabase.from('tenants').select('*'),
+      supabase.from('categories').select('*'),
+      supabase.from('departments').select('*'),
+      supabase.from('kb_articles').select('*')
+    ]);
+
+    if (tenantsData.data) setTenants(tenantsData.data);
+    if (catsData.data) setCategories(catsData.data);
+    if (deptsData.data) setDepartments(deptsData.data);
+    if (kbData.data) setKbArticles(kbData.data);
+  }
+
+  async function fetchTickets() {
+    const { data } = await supabase
+      .from('tickets')
+      .select('*, requester:profiles!requester_id(full_name)')
+      .order('created_at', { ascending: false });
+    
+    if (data) {
+      setTickets(data.map(t => ({ 
+        ...t, 
+        requester: t.requester?.full_name || 'Unknown', 
+        status: t.status || 'New' 
+      })));
+    }
+  }
+
+  // --- 3. ACTIONS ---
   const handleLogin = async () => {
     await supabase.auth.signInWithOAuth({
       provider: 'azure',
-      options: {
-        scopes: 'email',
-        redirectTo: window.location.origin,
-      },
+      options: { scopes: 'email', redirectTo: window.location.origin },
     });
   };
 
@@ -89,18 +110,6 @@ export default function App() {
     setProfile(null);
   };
 
-  // --- DATA FETCHING ---
-  useEffect(() => {
-    if (session) fetchTickets();
-  }, [session]);
-
-  async function fetchTickets() {
-    setLoading(true);
-    const { data } = await supabase.from('tickets').select('*, requester:profiles!requester_id(full_name)').order('created_at', { ascending: false });
-    if (data) setTickets(data.map(t => ({ ...t, requester: t.requester?.full_name || 'Unknown', status: t.status || 'New' })));
-    setLoading(false);
-  }
-
   const handleCreateTicket = async (newTicketData) => {
     const { error } = await supabase.from('tickets').insert({
       subject: newTicketData.subject,
@@ -109,19 +118,18 @@ export default function App() {
       location: newTicketData.location,
       status: 'New',
       priority: 'Medium',
-      // We rely on RLS/Triggers to handle requester_id in a real app, 
-      // or we pass it here if your RLS allows it:
-      // requester_id: session.user.id 
+      // requester_id: session.user.id (Enable this once RLS policies are set)
     });
+    
     if (!error) {
       await fetchTickets();
       setActiveTab('dashboard');
     } else {
-      alert("Error: " + error.message);
+      alert("Database Error: " + error.message);
     }
   };
 
-  // --- RENDER LOGIN SCREEN ---
+  // --- 4. RENDER: LOGIN SCREEN ---
   if (!session) {
     return (
       <div className="min-h-screen w-full bg-[#0f172a] flex items-center justify-center font-sans text-slate-200">
@@ -142,14 +150,13 @@ export default function App() {
     );
   }
 
-  // --- RENDER MAIN APP ---
+  // --- 5. RENDER: MAIN DASHBOARD ---
   const isSuperAdmin = profile?.role === 'super_admin';
 
   return (
     <div className="min-h-screen w-full bg-[#0f172a] text-slate-200 font-sans flex overflow-hidden relative selection:bg-blue-500/30">
       <div className="fixed top-0 left-0 w-full h-full pointer-events-none z-0">
         <div className="absolute top-[-20%] left-[20%] w-[800px] h-[800px] bg-blue-900/20 rounded-full blur-[120px]"></div>
-        <div className="absolute bottom-[-20%] right-[10%] w-[600px] h-[600px] bg-purple-900/20 rounded-full blur-[120px]"></div>
       </div>
 
       <aside className={`fixed md:relative z-20 h-full transition-all duration-300 ease-in-out ${sidebarOpen ? 'w-64 translate-x-0' : 'w-20 md:w-20 -translate-x-full md:translate-x-0'} border-r border-white/5 bg-[#0f172a]/80 backdrop-blur-xl flex flex-col`}>
@@ -206,9 +213,10 @@ export default function App() {
         </header>
 
         <div className="p-4 md:p-8 max-w-7xl mx-auto w-full">
+          {/* DYNAMIC VIEWS WITH REAL DATA */}
           {activeTab === 'new' && (
              <TicketForm 
-                categories={MOCK_CATEGORIES} 
+                categories={categories} 
                 onSubmit={handleCreateTicket} 
                 onCancel={() => setActiveTab('dashboard')} 
              />
@@ -225,10 +233,10 @@ export default function App() {
           )}
           {selectedTicket && <TicketDetailView ticket={selectedTicket} onBack={() => setSelectedTicket(null)} />}
           
-          {activeTab === 'teams' && <TeamsView departments={MOCK_DEPARTMENTS} members={MOCK_MEMBERS} />}
-          {activeTab === 'tenants' && <TenantsView tenants={INITIAL_TENANTS} />}
-          {activeTab === 'knowledge' && <KnowledgeBaseView articles={MOCK_KB} categories={MOCK_CATEGORIES} />}
-          {activeTab === 'settings' && <SettingsView categories={MOCK_CATEGORIES} tenants={INITIAL_TENANTS} />}
+          {activeTab === 'teams' && <TeamsView departments={departments} members={{}} />}
+          {activeTab === 'tenants' && <TenantsView tenants={tenants} />}
+          {activeTab === 'knowledge' && <KnowledgeBaseView articles={kbArticles} categories={categories} />}
+          {activeTab === 'settings' && <SettingsView categories={categories} tenants={tenants} />}
         </div>
       </main>
     </div>
