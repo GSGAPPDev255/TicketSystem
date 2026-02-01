@@ -1,12 +1,12 @@
-import React, { useState } from 'react';
+import React from 'react';
 import { 
   Monitor, Cpu, Wifi, ShieldAlert, Wrench, ShoppingBag, Briefcase, Zap, Globe, HelpCircle,
-  Mail, MessageCircle, ChevronRight, ArrowLeft
+  Mail, MessageCircle, ChevronRight, ArrowLeft, Trash2, Users, FileText
 } from 'lucide-react';
 
 // --- ICONS ---
 export const getIcon = (iconName, size = 20, className) => {
-  const icons = { Monitor, Cpu, Wifi, ShieldAlert, Wrench, ShoppingBag, Briefcase, Zap, Globe };
+  const icons = { Monitor, Cpu, Wifi, ShieldAlert, Wrench, ShoppingBag, Briefcase, Zap, Globe, Users, FileText };
   const IconComponent = icons[iconName] || HelpCircle;
   return <IconComponent size={size} className={className} />;
 };
@@ -57,7 +57,23 @@ export const StatCard = ({ label, value, trend, color }) => (
   </GlassCard>
 );
 
-// --- COMPLEX COMPONENTS (Moved here to fix build errors) ---
+export const Modal = ({ isOpen, onClose, title, children }) => {
+  if (!isOpen) return null;
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-black/60 backdrop-blur-sm transition-opacity" onClick={onClose}></div>
+      <div className="relative w-full max-w-md bg-[#1e293b] border border-white/10 rounded-2xl shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+        <div className="flex items-center justify-between p-4 border-b border-white/10 bg-white/5">
+          <h3 className="font-semibold text-white">{title}</h3>
+          <button onClick={onClose} className="text-slate-400 hover:text-white transition-colors"><ChevronRight className="rotate-90" size={20} /></button>
+        </div>
+        <div className="p-6">{children}</div>
+      </div>
+    </div>
+  );
+};
+
+// --- VIEW COMPONENTS ---
 
 export const TicketRow = ({ ticket, onClick }) => (
   <GlassCard hover className="p-4 group flex items-center gap-4" onClick={onClick}>
@@ -119,6 +135,9 @@ export const TicketDetailView = ({ ticket, onBack }) => (
 
 export const TicketForm = ({ categories, initialSubject, onSubmit, onCancel }) => {
   const [formData, setFormData] = useState({ subject: initialSubject || '', description: '', category: 'Hardware', location: '' });
+  // Make state import work if not imported at top
+  const React = require('react');
+  const useState = React.useState; 
   return (
     <GlassCard className="p-8 space-y-6 animate-in fade-in zoom-in-95">
        <div className="flex items-center gap-3 mb-6 pb-6 border-b border-white/10">
@@ -143,37 +162,26 @@ export const TicketForm = ({ categories, initialSubject, onSubmit, onCancel }) =
   );
 };
 
-export const KnowledgeBaseView = ({ articles, categories }) => (
+export const KnowledgeBaseView = ({ articles, categories, onDelete }) => (
   <div className="space-y-6">
     <div className="relative py-8 px-6 rounded-3xl bg-gradient-to-br from-blue-900/20 to-purple-900/20 border border-white/5 text-center"><h2 className="text-2xl font-bold text-white">Knowledge Base</h2><p className="text-slate-400">Search guides and documentation</p></div>
     <div className="grid grid-cols-2 md:grid-cols-4 gap-4">{categories.map(cat => <GlassCard key={cat.id} className="p-4 flex flex-col items-center gap-2 hover:bg-white/5"><div className={`p-3 rounded-full ${cat.bg} ${cat.color}`}>{getIcon(cat.icon)}</div><span className="text-sm font-medium text-slate-300">{cat.label}</span></GlassCard>)}</div>
-    <div className="space-y-4">{articles.map(a => <GlassCard key={a.id} className="p-5"><h4 className="font-medium text-slate-200">{a.title}</h4><p className="text-xs text-slate-500 mt-1">{a.category} • {a.views} views</p></GlassCard>)}</div>
+    <div className="space-y-4">
+      {articles.map(a => (
+        <GlassCard key={a.id} className="p-5 flex items-start justify-between group">
+          <div>
+            <h4 className="font-medium text-slate-200">{a.title}</h4>
+            <p className="text-xs text-slate-500 mt-1">{a.category} • {a.views} views</p>
+          </div>
+          {/* DELETE BUTTON ADDED HERE */}
+          <button 
+            onClick={(e) => { e.stopPropagation(); onDelete(a.id); }}
+            className="p-2 text-slate-500 hover:text-rose-400 hover:bg-rose-500/10 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity"
+          >
+            <Trash2 size={16} />
+          </button>
+        </GlassCard>
+      ))}
+    </div>
   </div>
 );
-
-// --- MODAL COMPONENT ---
-export const Modal = ({ isOpen, onClose, title, children }) => {
-  if (!isOpen) return null;
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-      {/* Backdrop */}
-      <div 
-        className="absolute inset-0 bg-black/60 backdrop-blur-sm transition-opacity" 
-        onClick={onClose}
-      ></div>
-      
-      {/* Content */}
-      <div className="relative w-full max-w-md bg-[#1e293b] border border-white/10 rounded-2xl shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-200">
-        <div className="flex items-center justify-between p-4 border-b border-white/10 bg-white/5">
-          <h3 className="font-semibold text-white">{title}</h3>
-          <button onClick={onClose} className="text-slate-400 hover:text-white transition-colors">
-            <ChevronRight className="rotate-90" size={20} /> 
-          </button>
-        </div>
-        <div className="p-6">
-          {children}
-        </div>
-      </div>
-    </div>
-  );
-};
