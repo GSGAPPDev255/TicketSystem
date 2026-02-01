@@ -6,9 +6,10 @@ import DashboardView from './views/Dashboard';
 import TeamsView from './views/Teams';
 import TenantsView from './views/Tenants';
 import SettingsView from './views/Settings';
+import KnowledgeView from './views/Knowledge'; // <--- NEW IMPORT
 
 // UI COMPONENTS
-import { GlassCard, NavItem, TicketForm, TicketDetailView, KnowledgeBaseView } from './components/ui';
+import { GlassCard, NavItem, TicketForm, TicketDetailView } from './components/ui';
 import { 
   LayoutDashboard, Plus, Search, Bell, Settings, LogOut, Monitor, Menu, X, 
   Building2, Users, Book, ChevronDown, Clock
@@ -124,18 +125,7 @@ export default function App() {
     }
   };
 
-  const handleDeleteKB = async (id) => {
-    if (!window.confirm("Are you sure you want to delete this article?")) return;
-    
-    const { error } = await supabase.from('kb_articles').delete().eq('id', id);
-    if (error) {
-      alert("Error: " + error.message);
-    } else {
-      fetchAllData(); // Refresh list
-    }
-  };
-
-  // --- RENDER ---
+  // --- RENDER LOGIN ---
   if (!session) {
     return (
       <div className="min-h-screen w-full bg-[#0f172a] flex items-center justify-center font-sans text-slate-200">
@@ -153,6 +143,7 @@ export default function App() {
     );
   }
 
+  // --- RENDER MAIN LAYOUT ---
   return (
     <div className="min-h-screen w-full bg-[#0f172a] text-slate-200 font-sans flex overflow-hidden relative selection:bg-blue-500/30">
       <div className="fixed top-0 left-0 w-full h-full pointer-events-none z-0">
@@ -184,12 +175,10 @@ export default function App() {
           <NavItem icon={Clock} label="My Queue" count={tickets.filter(t => t.status === 'New').length} collapsed={!sidebarOpen} />
           <NavItem icon={Plus} label="New Ticket" active={activeTab === 'new'} onClick={() => setActiveTab('new')} collapsed={!sidebarOpen} />
           <NavItem icon={Users} label="Teams" active={activeTab === 'teams'} onClick={() => setActiveTab('teams')} collapsed={!sidebarOpen} />
-          
           {/* Tenant Tab only for Super Admins */}
           {profile?.role === 'super_admin' && (
              <NavItem icon={Building2} label="Tenants" active={activeTab === 'tenants'} onClick={() => setActiveTab('tenants')} collapsed={!sidebarOpen} />
           )}
-          
           <NavItem icon={Book} label="Knowledge Base" active={activeTab === 'knowledge'} onClick={() => setActiveTab('knowledge')} collapsed={!sidebarOpen} />
           <NavItem icon={Settings} label="Settings" active={activeTab === 'settings'} onClick={() => setActiveTab('settings')} collapsed={!sidebarOpen} />
         </nav>
@@ -219,6 +208,7 @@ export default function App() {
         </header>
 
         <div className="p-4 md:p-8 max-w-7xl mx-auto w-full">
+          {/* DASHBOARD & TICKETS */}
           {activeTab === 'new' && (
              <TicketForm 
                 categories={categories} 
@@ -238,18 +228,20 @@ export default function App() {
           )}
           {selectedTicket && <TicketDetailView ticket={selectedTicket} onBack={() => setSelectedTicket(null)} />}
           
-          {/* Passing REAL data to views */}
+          {/* MANAGEMENT VIEWS */}
           {activeTab === 'teams' && <TeamsView departments={departments} />}
           {activeTab === 'tenants' && <TenantsView tenants={tenants} />}
+          
+          {/* NEW: KNOWLEDGE BASE MANAGER */}
           {activeTab === 'knowledge' && (
-             <KnowledgeBaseView 
+             <KnowledgeView 
                articles={kbArticles} 
                categories={categories} 
-               onDelete={handleDeleteKB} 
+               onUpdate={fetchAllData} 
              />
           )}
           
-          {/* Settings receives callback to refresh Global State */}
+          {/* SETTINGS MANAGER */}
           {activeTab === 'settings' && (
              <SettingsView 
                 categories={categories} 
