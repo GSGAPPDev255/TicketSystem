@@ -1,10 +1,10 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { supabase } from '../lib/supabase';
-import { Send, Bot, User, ThumbsUp, ThumbsDown, ArrowRight, MapPin, Wrench } from 'lucide-react';
+import { Send, Bot, User, ThumbsUp, ThumbsDown, Wrench, MapPin } from 'lucide-react';
 import { GlassCard } from '../components/ui';
 
 export default function NewTicketView({ categories, kbArticles, onSubmit }) {
-  // STATES: 'greeting' | 'triage' | 'suggestion' | 'form'
+  // STATES: 'greeting' | 'triage' | 'suggestion' | 'form' | 'resolved'
   const [step, setStep] = useState('greeting');
   const [messages, setMessages] = useState([
     { role: 'bot', text: "Good day! I'm Nexus, your 1st line support bot. Please describe your issue." }
@@ -15,39 +15,75 @@ export default function NewTicketView({ categories, kbArticles, onSubmit }) {
   
   const messagesEndRef = useRef(null);
 
-  // Auto-scroll to bottom of chat
+  // Auto-scroll
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, step]);
 
-  // --- LOGIC ENGINE ---
+  // --- 1. SMART SEARCH ENGINE ---
+  const findBestArticle = (userQuery) => {
+    if (!kbArticles || kbArticles.length === 0) return null;
+
+    const cleanQuery = userQuery.toLowerCase().replace(/[^a-z0-9 ]/g, ''); // Remove special chars (e.g. "wi-fi" -> "wifi")
+    const queryWords = cleanQuery.split(' ').filter(w => w.length > 3); // Ignore small words like "the", "to"
+
+    let bestMatch = null;
+    let maxScore = 0;
+
+    kbArticles.forEach(article => {
+      let score = 0;
+      const cleanTitle = article.title.toLowerCase().replace(/[^a-z0-9 ]/g, '');
+      
+      // Check for word matches
+      queryWords.forEach(word => {
+        if (cleanTitle.includes(word)) score += 10; // High score for title match
+        if (article.category.toLowerCase().includes(word)) score += 5; // Medium for category
+      });
+
+      // Boost if strict phrase match exists (fallback)
+      if (cleanTitle.includes(cleanQuery)) score += 20;
+
+      if (score > maxScore) {
+        maxScore = score;
+        bestMatch = article;
+      }
+    });
+
+    // Only return if we have a decent confidence match
+    return maxScore > 0 ? bestMatch : null;
+  };
+
+  // --- 2. LOGIC ENGINE ---
   const handleSend = () => {
     if (!inputText.trim()) return;
 
-    // 1. Add User Message
-    const newMessages = [...messages, { role: 'user', text: inputText }];
-    setMessages(newMessages);
+    // Add User Message
     const userQuery = inputText;
+    const newMessages = [...messages, { role: 'user', text: userQuery }];
+    setMessages(newMessages);
     setInputText('');
 
-    // 2. LOGIC BRANCHING
+    // BRANCHING LOGIC
     if (step === 'greeting') {
-      // First input is the Issue Description
-      setTicketData(prev => ({ ...prev, description: userQuery, subject: userQuery.substring(0, 50) + '...' }));
+      // Capture the description
+      setTicketData(prev => ({ 
+        ...prev, 
+        description: userQuery, 
+        subject: userQuery.length > 40 ? userQuery.substring(0, 40) + '...' : userQuery 
+      }));
       
-      // SEARCH KB (Simple Keyword Match)
-      const hit = kbArticles.find(a => 
-        userQuery.toLowerCase().includes(a.title.toLowerCase()) || 
-        a.title.toLowerCase().includes(userQuery.toLowerCase())
-      );
+      // Run Smart Search
+      const hit = findBestArticle(userQuery);
 
       if (hit) {
         setFoundArticle(hit);
+        // Bot suggests fix
         setTimeout(() => {
           setMessages(prev => [...prev, { role: 'bot', text: "I found a solution that might help. Please try this:" }]);
           setStep('suggestion');
         }, 600);
       } else {
+        // No fix found -> Ask for location
         setTimeout(() => {
           setMessages(prev => [...prev, { role: 'bot', text: "I see. To help the technician, which room or location are you in?" }]);
           setStep('location');
@@ -63,13 +99,19 @@ export default function NewTicketView({ categories, kbArticles, onSubmit }) {
     }
   };
 
-  // --- RENDER HELPERS ---
+  // --- 3. INTERACTION HANDLERS ---
   const handleSolutionWorked = (worked) => {
     if (worked) {
-      setMessages(prev => [...prev, { role: 'user', text: "Yes, that worked!" }, { role: 'bot', text: "Great! I'm glad I could help. Have a wonderful day!" }]);
+      setMessages(prev => [...prev, 
+        { role: 'user', text: "Yes, that worked!" }, 
+        { role: 'bot', text: "Great! I'm glad I could help. Have a wonderful day!" }
+      ]);
       setStep('resolved');
     } else {
-      setMessages(prev => [...prev, { role: 'user', text: "No, it's still broken." }, { role: 'bot', text: "I'm sorry about that. Let's raise a ticket. Which room/location are you in?" }]);
+      setMessages(prev => [...prev, 
+        { role: 'user', text: "No, it's still broken." }, 
+        { role: 'bot', text: "I'm sorry about that. Let's raise a ticket. Which room/location are you in?" }
+      ]);
       setStep('location');
     }
   };
@@ -117,7 +159,7 @@ export default function NewTicketView({ categories, kbArticles, onSubmit }) {
                  <div>
                    <label className="text-xs text-slate-400 uppercase font-semibold">Description</label>
                    <textarea 
-                     className="w-full bg-black/30 border border-white/10 rounded-lg p-3 text-sm text-white mt-1 h-24"
+                     className="w-full bg-black/30 border border-white/10 rounded-lg p-3 text-sm text-white mt-1 h-24 focus:outline-none focus:border-blue-500/50"
                      value={ticketData.description}
                      onChange={e => setTicketData({...ticketData, description: e.target.value})}
                    />
@@ -127,7 +169,7 @@ export default function NewTicketView({ categories, kbArticles, onSubmit }) {
                     <div>
                        <label className="text-xs text-slate-400 uppercase font-semibold">Category</label>
                        <select 
-                          className="w-full bg-black/30 border border-white/10 rounded-lg p-2.5 text-sm text-white mt-1"
+                          className="w-full bg-black/30 border border-white/10 rounded-lg p-2.5 text-sm text-white mt-1 focus:outline-none focus:border-blue-500/50"
                           value={ticketData.category}
                           onChange={e => setTicketData({...ticketData, category: e.target.value})}
                        >
@@ -136,7 +178,7 @@ export default function NewTicketView({ categories, kbArticles, onSubmit }) {
                     </div>
                     <div>
                        <label className="text-xs text-slate-400 uppercase font-semibold">Location</label>
-                       <div className="flex items-center gap-2 bg-black/30 border border-white/10 rounded-lg p-2.5 mt-1">
+                       <div className="flex items-center gap-2 bg-black/30 border border-white/10 rounded-lg p-2.5 mt-1 focus-within:border-blue-500/50">
                           <MapPin size={16} className="text-slate-500" />
                           <input 
                             className="bg-transparent text-sm text-white w-full focus:outline-none"
@@ -147,7 +189,7 @@ export default function NewTicketView({ categories, kbArticles, onSubmit }) {
                     </div>
                  </div>
 
-                 <button onClick={handleFinalSubmit} className="w-full py-3 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-lg shadow-lg shadow-blue-900/20 flex items-center justify-center gap-2">
+                 <button onClick={handleFinalSubmit} className="w-full py-3 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-lg shadow-lg shadow-blue-900/20 flex items-center justify-center gap-2 transition-all">
                     <Send size={18} /> Submit Ticket
                  </button>
               </div>
