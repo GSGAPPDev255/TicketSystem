@@ -1,25 +1,29 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
-import { ArrowLeft, Users, UserPlus, Plus, Trash2, Mail, Briefcase, User, Edit2 } from 'lucide-react';
+import { ArrowLeft, Users, UserPlus, Plus, Trash2, Edit2, Search, CheckCircle2 } from 'lucide-react';
 import { GlassCard, Modal } from '../components/ui';
 
 export default function TeamsView({ departments: initialDepts }) {
+  // --- STATE ---
   const [departments, setDepartments] = useState(initialDepts);
   const [selectedDept, setSelectedDept] = useState(null);
   const [members, setMembers] = useState([]);
   const [loading, setLoading] = useState(false);
-  
-  // --- MODAL STATE ---
-  const [isMemberModalOpen, setIsMemberModalOpen] = useState(false);
-  const [isDeptModalOpen, setIsDeptModalOpen] = useState(false);
 
-  // Edit Trackers
+  // Modals
+  const [isDeptModalOpen, setIsDeptModalOpen] = useState(false);
+  const [isSearchModalOpen, setIsSearchModalOpen] = useState(false); // New Search Modal
+  const [isEditMemberModalOpen, setIsEditMemberModalOpen] = useState(false);
+
+  // Trackers
   const [editingDept, setEditingDept] = useState(null); 
-  const [editingMember, setEditingMember] = useState(null); // <--- NEW: Track member being edited
+  const [editingMember, setEditingMember] = useState(null);
 
   // Forms
   const [deptNameForm, setDeptNameForm] = useState('');
-  const [memberForm, setMemberForm] = useState({ firstName: '', lastName: '', email: '', role: 'Staff' });
+  const [userSearch, setUserSearch] = useState('');
+  const [searchResults, setSearchResults] = useState([]);
+  const [editMemberForm, setEditMemberForm] = useState({ role: 'Member' });
 
   // --- 1. DATA LOADING ---
   useEffect(() => { fetchDepts(); }, []);
@@ -31,12 +35,16 @@ export default function TeamsView({ departments: initialDepts }) {
 
   async function fetchMembers(deptId) {
     setLoading(true);
-    const { data } = await supabase.from('department_members').select('*, profile:profiles!user_id(full_name, avatar_initials, email, role)').eq('department_id', deptId);
+    // Fetch members AND their profile data
+    const { data } = await supabase
+      .from('department_members')
+      .select('*, profile:profiles(*)')
+      .eq('department_id', deptId);
     if (data) setMembers(data);
     setLoading(false);
   }
 
-  // --- 2. DEPARTMENT ACTIONS ---
+  // --- 2. DEPARTMENT ACTIONS (Create/Edit/Delete) ---
   const openCreateDeptModal = () => {
     setEditingDept(null);
     setDeptNameForm('');
@@ -63,7 +71,7 @@ export default function TeamsView({ departments: initialDepts }) {
 
   const handleDeleteDepartment = async (e, id) => {
     e.stopPropagation();
-    if (!confirm("Delete this department? All members will be removed.")) return;
+    if (!confirm("Delete this team? All members will be removed.")) return;
     const { error } = await supabase.from('departments').delete().eq('id', id);
     if (!error) {
       fetchDepts();
@@ -71,78 +79,51 @@ export default function TeamsView({ departments: initialDepts }) {
     }
   };
 
-  // --- 3. MEMBER ACTIONS (ADD & EDIT) ---
-  
-  // A. OPEN ADD MODAL
-  const openAddMemberModal = () => {
-    setEditingMember(null);
-    setMemberForm({ firstName: '', lastName: '', email: '', role: 'Staff' });
-    setIsMemberModalOpen(true);
+  // --- 3. ADD MEMBER (SEARCH FLOW) ---
+  const handleSearch = async (val) => {
+    setUserSearch(val);
+    if (val.length < 2) { setSearchResults([]); return; }
+    
+    // Search profiles by name
+    const { data } = await supabase
+      .from('profiles')
+      .select('*')
+      .ilike('full_name', `%${val}%`)
+      .limit(5);
+      
+    // Filter out people already in the team
+    const currentMemberIds = members.map(m => m.user_id);
+    const newPeople = data ? data.filter(u => !currentMemberIds.includes(u.id)) : [];
+    setSearchResults(newPeople);
   };
 
-  // B. OPEN EDIT MODAL (NEW)
-  const openEditMemberModal = (member) => {
-    const fullName = member.profile?.full_name || '';
-    const nameParts = fullName.split(' ');
-    const firstName = nameParts[0] || '';
-    const lastName = nameParts.slice(1).join(' ') || '';
-
-    setEditingMember(member);
-    setMemberForm({
-      firstName,
-      lastName,
-      email: member.profile?.email || '',
-      role: member.role || 'Staff'
+  const handleAddMember = async (userId) => {
+    // Add to team with default role "Member"
+    await supabase.from('department_members').insert({
+      department_id: selectedDept.id,
+      user_id: userId,
+      role: 'Member'
     });
-    setIsMemberModalOpen(true);
+    setIsSearchModalOpen(false);
+    setUserSearch('');
+    fetchMembers(selectedDept.id);
   };
 
-  // C. SAVE (HANDLE BOTH CREATE AND UPDATE)
-  const handleSaveMember = async () => {
-    const { firstName, lastName, email, role } = memberForm;
-    if (!email || !firstName || !lastName) return;
+  // --- 4. EDIT MEMBER ROLE ---
+  const openEditMemberModal = (member) => {
+    setEditingMember(member);
+    setEditMemberForm({ role: member.role || 'Member' });
+    setIsEditMemberModalOpen(true);
+  };
 
-    const fullName = `${firstName} ${lastName}`;
-    const initials = (firstName[0] + lastName[0]).toUpperCase();
-
-    if (editingMember) {
-      // --- UPDATE EXISTING MEMBER ---
-      // 1. Update Profile Name
-      await supabase.from('profiles').update({
-        full_name: fullName,
-        avatar_initials: initials
-      }).eq('id', editingMember.user_id);
-
-      // 2. Update Role in Department
-      const { error } = await supabase.from('department_members').update({
-        role: role
-      }).eq('id', editingMember.id);
-
-      if (error) alert(error.message);
-
-    } else {
-      // --- CREATE NEW MEMBER ---
-      // 1. Check/Create Profile
-      let { data: existingUser } = await supabase.from('profiles').select('id').eq('email', email).single();
-      let userId = existingUser?.id;
-
-      if (!userId) {
-        const { data: newUser, error } = await supabase.from('profiles').insert({ 
-          email, full_name: fullName, avatar_initials: initials, role: 'user' 
-        }).select().single();
-        if (error) { alert(error.message); return; }
-        userId = newUser.id;
-      }
-
-      // 2. Link to Department
-      const { error: linkError } = await supabase.from('department_members').insert({ 
-        department_id: selectedDept.id, user_id: userId, role 
-      });
-      if (linkError) alert(linkError.message);
-    }
-
-    // Cleanup
-    setIsMemberModalOpen(false);
+  const handleUpdateMemberRole = async () => {
+    if (!editingMember) return;
+    await supabase
+      .from('department_members')
+      .update({ role: editMemberForm.role })
+      .eq('id', editingMember.id);
+    
+    setIsEditMemberModalOpen(false);
     fetchMembers(selectedDept.id);
   };
 
@@ -152,15 +133,17 @@ export default function TeamsView({ departments: initialDepts }) {
     if (!error) fetchMembers(selectedDept.id);
   };
 
-  // --- RENDER DETAIL VIEW ---
+  // --- RENDER ---
   if (selectedDept) {
     return (
       <div className="space-y-6 animate-in fade-in slide-in-from-right-4">
+        {/* HEADER */}
         <div className="flex items-center justify-between">
            <button onClick={() => setSelectedDept(null)} className="flex items-center gap-2 text-slate-400 hover:text-white"><ArrowLeft size={16} /> Back</button>
-           <button onClick={openAddMemberModal} className="flex items-center gap-2 bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded-lg text-sm font-medium"><UserPlus size={16} /> Add Member</button>
+           <button onClick={() => setIsSearchModalOpen(true)} className="flex items-center gap-2 bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded-lg text-sm font-medium"><UserPlus size={16} /> Add Member</button>
         </div>
 
+        {/* TEAM HEADER CARD */}
         <GlassCard className="p-6 border-l-4 border-l-blue-500 flex justify-between items-center">
            <div className="flex items-center gap-4">
               <div className="p-3 rounded-xl bg-blue-500/20 text-blue-400"><Users size={24} /></div>
@@ -168,86 +151,78 @@ export default function TeamsView({ departments: initialDepts }) {
            </div>
         </GlassCard>
 
+        {/* MEMBERS LIST */}
         <div className="grid gap-3">
            {members.map(m => (
              <GlassCard key={m.id} className="p-4 flex items-center justify-between group hover:border-white/20">
                <div className="flex items-center gap-4">
-                 <div className="w-10 h-10 rounded-full bg-slate-700 flex items-center justify-center text-sm font-bold text-white">{m.profile?.avatar_initials}</div>
+                 <div className="w-10 h-10 rounded-full bg-slate-700 flex items-center justify-center text-sm font-bold text-white border border-white/10">{m.profile?.avatar_initials}</div>
                  <div>
                     <h4 className="font-medium text-white">{m.profile?.full_name}</h4>
-                    <div className="flex gap-2 text-xs text-slate-400"><span className="bg-white/5 px-1.5 rounded">{m.role}</span><span>{m.profile?.email}</span></div>
+                    <div className="flex gap-2 text-xs text-slate-400 items-center">
+                        <span className={`px-1.5 py-0.5 rounded border ${m.role === 'Lead' ? 'bg-indigo-500/20 text-indigo-300 border-indigo-500/30' : 'bg-slate-500/10 text-slate-400 border-slate-500/20'}`}>
+                            {m.role || 'Member'}
+                        </span>
+                        <span>{m.profile?.email}</span>
+                    </div>
                  </div>
                </div>
                
-               {/* EDIT AND DELETE BUTTONS */}
                <div className="flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                  <button 
-                    onClick={() => openEditMemberModal(m)} 
-                    className="p-2 text-slate-500 hover:text-white bg-black/20 hover:bg-black/40 rounded-lg"
-                    title="Edit Member"
-                  >
-                    <Edit2 size={16} />
-                  </button>
-                  <button 
-                    onClick={() => handleRemoveMember(m.id)} 
-                    className="p-2 text-slate-500 hover:text-rose-400 bg-black/20 hover:bg-black/40 rounded-lg"
-                    title="Remove from Team"
-                  >
-                    <Trash2 size={16} />
-                  </button>
+                  <button onClick={() => openEditMemberModal(m)} className="p-2 text-slate-500 hover:text-white bg-black/20 hover:bg-black/40 rounded-lg" title="Edit Role"><Edit2 size={16} /></button>
+                  <button onClick={() => handleRemoveMember(m.id)} className="p-2 text-slate-500 hover:text-rose-400 bg-black/20 hover:bg-black/40 rounded-lg" title="Remove"><Trash2 size={16} /></button>
                </div>
              </GlassCard>
            ))}
            {members.length === 0 && !loading && <div className="text-center py-10 text-slate-500 border border-white/5 rounded-xl border-dashed">No members yet.</div>}
         </div>
 
-        {/* MEMBER MODAL (Add & Edit) */}
-        <Modal isOpen={isMemberModalOpen} onClose={() => setIsMemberModalOpen(false)} title={editingMember ? "Edit Team Member" : "Add Team Member"}>
-           <div className="space-y-4">
-              <div className="grid grid-cols-2 gap-4">
-                 <div>
-                    <label className="block text-xs font-medium text-slate-400 mb-1.5">First Name</label>
-                    <input type="text" className="w-full bg-black/30 border border-white/10 rounded-lg px-3 py-2 text-white" value={memberForm.firstName} onChange={e => setMemberForm({...memberForm, firstName: e.target.value})} />
-                 </div>
-                 <div>
-                    <label className="block text-xs font-medium text-slate-400 mb-1.5">Last Name</label>
-                    <input type="text" className="w-full bg-black/30 border border-white/10 rounded-lg px-3 py-2 text-white" value={memberForm.lastName} onChange={e => setMemberForm({...memberForm, lastName: e.target.value})} />
-                 </div>
-              </div>
-              
-              <div>
-                <label className="block text-xs font-medium text-slate-400 mb-1.5">Email Address</label>
-                <input 
-                  type="email" 
-                  className={`w-full bg-black/30 border border-white/10 rounded-lg px-3 py-2 text-white ${editingMember ? 'opacity-50 cursor-not-allowed' : ''}`}
-                  value={memberForm.email} 
-                  onChange={e => setMemberForm({...memberForm, email: e.target.value})}
-                  disabled={!!editingMember} // Lock email in edit mode
-                />
-              </div>
+        {/* MODAL: SEARCH TO ADD */}
+        <Modal isOpen={isSearchModalOpen} onClose={() => setIsSearchModalOpen(false)} title={`Add to ${selectedDept.name}`}>
+            <div className="space-y-4">
+               <div className="relative">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 w-4 h-4"/>
+                  <input autoFocus type="text" placeholder="Search users by name..." className="w-full bg-black/20 border border-white/10 rounded-lg pl-9 pr-4 py-3 text-sm text-white focus:outline-none focus:border-blue-500" value={userSearch} onChange={e => handleSearch(e.target.value)} />
+               </div>
+               <div className="space-y-2 max-h-[200px] overflow-y-auto">
+                  {searchResults.map(user => (
+                    <button key={user.id} onClick={() => handleAddMember(user.id)} className="w-full flex items-center gap-3 p-2 hover:bg-white/10 rounded-lg text-left group">
+                       <div className="w-8 h-8 rounded-full bg-slate-700 flex items-center justify-center text-xs text-white">{user.avatar_initials}</div>
+                       <div className="flex-1"><p className="text-sm text-white">{user.full_name}</p><p className="text-xs text-slate-500">{user.email}</p></div>
+                       <Plus size={16} className="text-blue-400 opacity-0 group-hover:opacity-100" />
+                    </button>
+                  ))}
+                  {userSearch.length > 1 && searchResults.length === 0 && <p className="text-center text-xs text-slate-500 py-2">No users found.</p>}
+               </div>
+            </div>
+        </Modal>
 
-              <div>
-                <label className="block text-xs font-medium text-slate-400 mb-1.5">Role</label>
-                <select className="w-full bg-black/30 border border-white/10 rounded-lg px-3 py-2 text-slate-200" value={memberForm.role} onChange={e => setMemberForm({...memberForm, role: e.target.value})}>
-                   {['Staff','Admin','Manager','Technician'].map(r => <option key={r} value={r}>{r}</option>)}
-                </select>
-              </div>
-
-              <button onClick={handleSaveMember} className="w-full py-2 bg-blue-600 text-white rounded-lg">
-                {editingMember ? "Update Member" : "Confirm & Add"}
-              </button>
-           </div>
+        {/* MODAL: EDIT MEMBER ROLE */}
+        <Modal isOpen={isEditMemberModalOpen} onClose={() => setIsEditMemberModalOpen(false)} title="Edit Team Role">
+            <div className="space-y-4">
+               <div>
+                  <label className="block text-xs font-medium text-slate-400 mb-1.5">Team Title</label>
+                  <select className="w-full bg-black/30 border border-white/10 rounded-lg px-3 py-2 text-slate-200" value={editMemberForm.role} onChange={e => setEditMemberForm({...editMemberForm, role: e.target.value})}>
+                     {/* FIXED: Removed Admin/Technician. Added clear team titles. */}
+                     <option value="Member">Member</option>
+                     <option value="Lead">Team Lead</option>
+                     <option value="Senior">Senior</option>
+                  </select>
+                  <p className="text-[10px] text-slate-500 mt-2">This is just a label (e.g., "Team Lead"). It does not grant Admin permissions.</p>
+               </div>
+               <button onClick={handleUpdateMemberRole} className="w-full py-2 bg-blue-600 text-white rounded-lg">Update Role</button>
+            </div>
         </Modal>
       </div>
     );
   }
 
-  // --- RENDER LIST VIEW ---
+  // --- RENDER LIST VIEW (DEPARTMENTS) ---
   return (
     <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4">
       <div className="flex justify-between items-center">
-        <h3 className="text-lg font-medium text-slate-200">Departments</h3>
-        <button onClick={openCreateDeptModal} className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-lg text-sm"><Plus size={16} /> New Department</button>
+        <h3 className="text-lg font-medium text-slate-200">Teams & Departments</h3>
+        <button onClick={openCreateDeptModal} className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-lg text-sm"><Plus size={16} /> New Team</button>
       </div>
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
          {departments.map(dept => (
@@ -265,10 +240,10 @@ export default function TeamsView({ departments: initialDepts }) {
       </div>
       
       {/* DEPT MODAL */}
-      <Modal isOpen={isDeptModalOpen} onClose={() => setIsDeptModalOpen(false)} title={editingDept ? "Edit Department" : "New Department"}>
+      <Modal isOpen={isDeptModalOpen} onClose={() => setIsDeptModalOpen(false)} title={editingDept ? "Edit Team Name" : "New Team"}>
          <div className="space-y-4">
-            <input type="text" placeholder="Department Name" className="w-full bg-black/30 border border-white/10 rounded-lg px-3 py-2 text-white" value={deptNameForm} onChange={(e) => setDeptNameForm(e.target.value)} />
-            <button onClick={handleSaveDepartment} className="w-full py-2 bg-blue-600 text-white rounded-lg">{editingDept ? "Save Changes" : "Create Department"}</button>
+            <input type="text" placeholder="Team Name (e.g. IT Services)" className="w-full bg-black/30 border border-white/10 rounded-lg px-3 py-2 text-white" value={deptNameForm} onChange={(e) => setDeptNameForm(e.target.value)} />
+            <button onClick={handleSaveDepartment} className="w-full py-2 bg-blue-600 text-white rounded-lg">{editingDept ? "Save Changes" : "Create Team"}</button>
          </div>
       </Modal>
     </div>
