@@ -14,10 +14,10 @@ export default function DashboardView({
 }) {
   // --- FILTER STATE ---
   const [isFilterOpen, setIsFilterOpen] = useState(false);
-  const [statusFilter, setStatusFilter] = useState('All'); // 'All', 'New', 'In Progress', etc.
-  const [priorityFilter, setPriorityFilter] = useState('All'); // 'All', 'Critical', etc.
+  const [statusFilter, setStatusFilter] = useState('All'); 
+  const [priorityFilter, setPriorityFilter] = useState('All'); 
 
-  // --- STATS CALCULATION (Based on raw data) ---
+  // --- STATS CALCULATION ---
   const stats = {
     open: tickets.filter(t => t.status !== 'Resolved' && t.status !== 'Closed').length,
     breaches: tickets.filter(t => t.priority === 'Critical' && t.status !== 'Resolved').length,
@@ -27,9 +27,7 @@ export default function DashboardView({
 
   // --- FILTER LOGIC ---
   const filteredTickets = tickets.filter(t => {
-    // 1. Filter by Status
     if (statusFilter !== 'All' && t.status !== statusFilter) return false;
-    // 2. Filter by Priority
     if (priorityFilter !== 'All' && t.priority !== priorityFilter) return false;
     return true;
   });
@@ -84,7 +82,7 @@ export default function DashboardView({
 
              {/* FILTER DROPDOWN */}
              {isFilterOpen && (
-               <div className="absolute right-0 top-full mt-2 w-64 bg-[#1e293b] border border-white/10 rounded-xl shadow-2xl z-50 p-4 space-y-4 animate-in fade-in zoom-in-95">
+               <div className="absolute right-0 top-full mt-2 w-72 bg-[#1e293b] border border-white/10 rounded-xl shadow-2xl z-50 p-4 space-y-4 animate-in fade-in zoom-in-95">
                   
                   {/* Status Filter */}
                   <div>
@@ -107,7 +105,7 @@ export default function DashboardView({
                   {/* Priority Filter */}
                   <div>
                     <label className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2 block">Priority</label>
-                    <div className="flex gap-2">
+                    <div className="flex flex-wrap gap-2"> {/* Added flex-wrap */}
                       {['All', 'Critical', 'High', 'Medium'].map(p => (
                         <button 
                           key={p}
