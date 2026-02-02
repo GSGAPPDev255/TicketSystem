@@ -97,6 +97,17 @@ export default function App() {
 
   const handleLogout = async () => { await supabase.auth.signOut(); setSession(null); };
 
+  // --- PERMISSION CHECKER ---
+  // Returns true if the current user has the required role level
+  const hasRole = (requiredRoles) => {
+    if (!profile?.role) return false;
+    return requiredRoles.includes(profile.role); // e.g. ['admin', 'manager']
+  };
+
+  const isAdmin = hasRole(['super_admin', 'admin']);
+  const isTech = hasRole(['super_admin', 'admin', 'manager', 'technician']);
+  // Staff falls through if they don't meet these checks
+
   if (!session) return <div className="min-h-screen w-full bg-[#0f172a] flex items-center justify-center font-sans text-slate-200"><GlassCard className="w-full max-w-md p-8 flex flex-col items-center gap-6"><h1 className="text-3xl font-bold text-blue-200">Nexus ESM</h1><button onClick={async () => await supabase.auth.signInWithOAuth({ provider: 'azure', options: { scopes: 'email', redirectTo: window.location.origin } })} className="w-full px-4 py-3 bg-[#2f2f2f] hover:bg-[#3f3f3f] text-white rounded-lg border border-white/5 flex items-center justify-center gap-3"><img src="https://img.icons8.com/color/48/000000/microsoft.png" className="w-5 h-5"/><span>Sign in with Microsoft</span></button></GlassCard></div>;
 
   return (
@@ -106,7 +117,7 @@ export default function App() {
       <aside className={`fixed md:relative z-20 h-full transition-all duration-300 ease-in-out ${sidebarOpen ? 'w-64 translate-x-0' : 'w-20 md:w-20 -translate-x-full md:translate-x-0'} border-r border-white/5 bg-[#0f172a]/80 backdrop-blur-xl flex flex-col`}>
         <div className="h-16 flex items-center justify-between px-4 border-b border-white/5"><div className={`flex items-center gap-3 ${!sidebarOpen && 'justify-center w-full'}`}><Monitor className="w-5 h-5 text-white" />{sidebarOpen && <span className="font-bold text-lg tracking-tight">Nexus</span>}</div><button onClick={() => setSidebarOpen(!sidebarOpen)} className="md:hidden text-slate-400"><X size={20} /></button></div>
         
-        {/* TENANT SWITCHER */}
+        {/* TENANT SWITCHER (Visible to ALL, but limited context for staff usually) */}
         {sidebarOpen && currentTenant && (
           <div className="px-4 pt-4 relative">
              <button onClick={() => setTenantMenuOpen(!tenantMenuOpen)} className="w-full bg-white/5 hover:bg-white/10 rounded-lg border border-white/10 p-2 flex items-center gap-2 text-sm font-medium text-white transition-colors">
@@ -114,7 +125,6 @@ export default function App() {
                 <span className="truncate flex-1 text-left">{currentTenant.name}</span>
                 <ChevronDown size={14} className="text-slate-500" />
              </button>
-             {/* Dropdown */}
              {tenantMenuOpen && (
                <div className="absolute top-full left-4 right-4 mt-2 bg-[#1e293b] border border-white/10 rounded-lg shadow-xl z-50 overflow-hidden">
                  {tenants.map(t => (
@@ -129,9 +139,8 @@ export default function App() {
         )}
 
         <nav className="flex-1 py-6 px-2 space-y-1">
+          {/* COMMON TABS (Everyone) */}
           <NavItem icon={LayoutDashboard} label="Dashboard" active={activeTab === 'dashboard'} onClick={() => {setActiveTab('dashboard'); setSelectedTicket(null);}} collapsed={!sidebarOpen} />
-          
-          {/* MY QUEUE: Shows tickets assigned to YOU or requested by YOU */}
           <NavItem 
             icon={Clock} 
             label="My Queue" 
@@ -140,13 +149,25 @@ export default function App() {
             onClick={() => {setActiveTab('queue'); setSelectedTicket(null);}} 
             collapsed={!sidebarOpen} 
           />
-          
           <NavItem icon={Plus} label="New Ticket" active={activeTab === 'new'} onClick={() => setActiveTab('new')} collapsed={!sidebarOpen} />
-          <NavItem icon={Users} label="Teams" active={activeTab === 'teams'} onClick={() => setActiveTab('teams')} collapsed={!sidebarOpen} />
-          {profile?.role === 'super_admin' && <NavItem icon={Building2} label="Tenants" active={activeTab === 'tenants'} onClick={() => setActiveTab('tenants')} collapsed={!sidebarOpen} />}
-          <NavItem icon={Book} label="Knowledge Base" active={activeTab === 'knowledge'} onClick={() => setActiveTab('knowledge')} collapsed={!sidebarOpen} />
-          <NavItem icon={Settings} label="Settings" active={activeTab === 'settings'} onClick={() => setActiveTab('settings')} collapsed={!sidebarOpen} />
+          
+          {/* TECHNICAL TABS (Technician, Manager, Admin) */}
+          {isTech && (
+            <>
+              <NavItem icon={Users} label="Teams" active={activeTab === 'teams'} onClick={() => setActiveTab('teams')} collapsed={!sidebarOpen} />
+              <NavItem icon={Book} label="Knowledge Base" active={activeTab === 'knowledge'} onClick={() => setActiveTab('knowledge')} collapsed={!sidebarOpen} />
+            </>
+          )}
+
+          {/* ADMIN TABS (Admin Only) */}
+          {isAdmin && (
+            <>
+               {profile?.role === 'super_admin' && <NavItem icon={Building2} label="Tenants" active={activeTab === 'tenants'} onClick={() => setActiveTab('tenants')} collapsed={!sidebarOpen} />}
+               <NavItem icon={Settings} label="Settings" active={activeTab === 'settings'} onClick={() => setActiveTab('settings')} collapsed={!sidebarOpen} />
+            </>
+          )}
         </nav>
+
         <div className="p-4 border-t border-white/5"><div className={`flex items-center gap-3 ${!sidebarOpen && 'justify-center'}`}><div className="w-9 h-9 rounded-full bg-emerald-600 flex items-center justify-center text-sm font-bold">{profile?.avatar_initials}</div>{sidebarOpen && <div className="flex-1 min-w-0"><p className="text-sm font-medium truncate">{profile?.full_name}</p><p className="text-xs text-slate-400 truncate capitalize">{profile?.role}</p></div>}{sidebarOpen && <button onClick={handleLogout} className="p-1.5 text-slate-400 hover:text-white"><LogOut size={16} /></button>}</div></div>
       </aside>
 
@@ -158,11 +179,7 @@ export default function App() {
 
         <div className="p-4 md:p-8 max-w-7xl mx-auto w-full">
           {activeTab === 'new' && <NewTicketView categories={categories} kbArticles={kbArticles} onSubmit={handleCreateTicket} />}
-          
-          {/* DASHBOARD (ALL TICKETS) */}
           {activeTab === 'dashboard' && !selectedTicket && <DashboardView tickets={tickets} loading={loading} role={profile?.role} onRefresh={fetchAllData} onSelectTicket={setSelectedTicket} onNewTicket={() => setActiveTab('new')} />}
-          
-          {/* MY QUEUE (FILTERED TICKETS) */}
           {activeTab === 'queue' && !selectedTicket && (
              <DashboardView 
                tickets={tickets.filter(t => t.requester === profile?.full_name || t.assignee === profile?.full_name)} 
@@ -174,12 +191,13 @@ export default function App() {
                title="My Active Tickets"
              />
           )}
-
           {selectedTicket && <TicketDetailView ticket={selectedTicket} onBack={() => setSelectedTicket(null)} />}
-          {activeTab === 'teams' && <TeamsView departments={departments} />}
-          {activeTab === 'tenants' && <TenantsView tenants={tenants} />}
-          {activeTab === 'knowledge' && <KnowledgeView articles={kbArticles} categories={categories} onUpdate={fetchAllData} />}
-          {activeTab === 'settings' && <SettingsView categories={categories} tenants={tenants} users={users} onUpdate={fetchAllData} />}
+          
+          {/* PROTECTED ROUTES (Check again before rendering to prevent URL hacking) */}
+          {activeTab === 'teams' && isTech && <TeamsView departments={departments} />}
+          {activeTab === 'tenants' && isAdmin && <TenantsView tenants={tenants} />}
+          {activeTab === 'knowledge' && isTech && <KnowledgeView articles={kbArticles} categories={categories} onUpdate={fetchAllData} />}
+          {activeTab === 'settings' && isAdmin && <SettingsView categories={categories} tenants={tenants} users={users} onUpdate={fetchAllData} />}
         </div>
       </main>
     </div>
