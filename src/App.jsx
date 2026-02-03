@@ -48,21 +48,31 @@ export default function App() {
     return () => subscription.unsubscribe();
   }, []);
 
+  // --- INITIALIZATION SEQUENCE ---
   async function initializeApp(userId) {
     setLoading(true);
-    await fetchProfile(userId);
-    await fetchAllData();
+    // 1. Fetch Profile FIRST so we know the Role
+    const userProfile = await fetchProfile(userId);
+    
+    // 2. Fetch Data using that Profile (to filter tenants)
+    if (userProfile) {
+      await fetchAllData(userProfile);
+    }
     setLoading(false);
   }
 
   async function fetchProfile(userId) {
     const { data } = await supabase.from('profiles').select('*').eq('id', userId).single();
-    if (data) setProfile(data);
+    if (data) {
+       setProfile(data);
+       return data;
+    }
+    return null;
   }
 
-  async function fetchAllData() {
-    // 1. UPDATED QUERY: We now fetch 'assignee_profile' too
-    const [cats, tens, depts, kb, tix] = await Promise.all([
+  async function fetchAllData(currentUserProfile) {
+    // 1. Run all queries in parallel
+    const [cats, tens, depts, kb, tix, myAccess] = await Promise.all([
       supabase.from('categories').select('*').order('label'),
       supabase.from('tenants').select('*').order('name'),
       supabase.from('departments').select('*').order('name'),
@@ -70,43 +80,74 @@ export default function App() {
       supabase
         .from('tickets')
         .select('*, requester:profiles!requester_id(full_name), assignee_profile:profiles!assignee_id(full_name)')
-        .order('created_at', { ascending: false })
+        .order('created_at', { ascending: false }),
+      // Fetch Access List for the current user
+      supabase.from('tenant_access').select('tenant_id').eq('user_id', currentUserProfile.id)
     ]);
 
     if (cats.data) setCategories(cats.data);
     
-    // Set Tenants & Default
+    // --- SECURE TENANT FILTERING ---
     if (tens.data) {
-      setTenants(tens.data);
-      if (!currentTenant && tens.data.length > 0) setCurrentTenant(tens.data[0]);
+      let visibleTenants = tens.data;
+
+      // If NOT Super Admin, filter the list
+      if (currentUserProfile.role !== 'super_admin') {
+        const allowedIds = myAccess.data ? myAccess.data.map(a => a.tenant_id) : [];
+        visibleTenants = tens.data.filter(t => allowedIds.includes(t.id));
+      }
+
+      setTenants(visibleTenants);
+      
+      // Smart Default: If current tenant is invalid/missing, pick the first allowed one
+      if (visibleTenants.length > 0) {
+        if (!currentTenant || !visibleTenants.find(t => t.id === currentTenant.id)) {
+           setCurrentTenant(visibleTenants[0]);
+        }
+      } else {
+        setCurrentTenant(null); // No access to any tenant
+      }
     }
 
     if (depts.data) setDepartments(depts.data);
     if (kb.data) setKbArticles(kb.data);
     
-    // 2. UPDATED MAPPING: Flatten the assignee name for easier display
+    // Process Tickets
     if (tix.data) {
       setTickets(tix.data.map(t => ({ 
         ...t, 
         requester: t.requester?.full_name || 'Unknown', 
-        assignee: t.assignee_profile?.full_name || null, // <--- This now works!
+        assignee: t.assignee_profile?.full_name || null,
         assignee_id: t.assignee_id,
         status: t.status || 'New' 
       })));
     }
 
-    // Fetch Users (For Settings)
-    const { data: userData } = await supabase.from('profiles').select('*').order('full_name');
-    const { data: accessData } = await supabase.from('tenant_access').select('*');
-    if (userData && accessData) {
-      setUsers(userData.map(u => ({ ...u, access_list: accessData.filter(a => a.user_id === u.id).map(a => a.tenant_id) })));
+    // Fetch Users (For Admin Settings only)
+    if (currentUserProfile.role === 'super_admin' || currentUserProfile.role === 'admin') {
+        const { data: userData } = await supabase.from('profiles').select('*').order('full_name');
+        const { data: accessData } = await supabase.from('tenant_access').select('*');
+        if (userData && accessData) {
+          setUsers(userData.map(u => ({ ...u, access_list: accessData.filter(a => a.user_id === u.id).map(a => a.tenant_id) })));
+        }
     }
   }
 
   const handleCreateTicket = async (formData) => {
     const requesterId = session?.user?.id;
-    const { error } = await supabase.from('tickets').insert({ ...formData, requester_id: requesterId });
-    if (!error) { await fetchAllData(); setActiveTab('dashboard'); } else { alert(error.message); }
+    // Attach the current tenant ID to the ticket so it belongs to the right school
+    const { error } = await supabase.from('tickets').insert({ 
+      ...formData, 
+      requester_id: requesterId,
+      tenant_id: currentTenant?.id // <--- IMPORTANT: Link ticket to tenant
+    });
+    
+    if (!error) { 
+      await fetchAllData(profile); 
+      setActiveTab('dashboard'); 
+    } else { 
+      alert(error.message); 
+    }
   };
 
   const handleLogout = async () => { await supabase.auth.signOut(); setSession(null); };
@@ -129,6 +170,7 @@ export default function App() {
       <aside className={`fixed md:relative z-20 h-full transition-all duration-300 ease-in-out ${sidebarOpen ? 'w-64 translate-x-0' : 'w-20 md:w-20 -translate-x-full md:translate-x-0'} border-r border-white/5 bg-[#0f172a]/80 backdrop-blur-xl flex flex-col`}>
         <div className="h-16 flex items-center justify-between px-4 border-b border-white/5"><div className={`flex items-center gap-3 ${!sidebarOpen && 'justify-center w-full'}`}><Monitor className="w-5 h-5 text-white" />{sidebarOpen && <span className="font-bold text-lg tracking-tight">Nexus</span>}</div><button onClick={() => setSidebarOpen(!sidebarOpen)} className="md:hidden text-slate-400"><X size={20} /></button></div>
         
+        {/* TENANT SWITCHER (Visible to ALL, but limited context for staff usually) */}
         {sidebarOpen && currentTenant && (
           <div className="px-4 pt-4 relative">
              <button onClick={() => setTenantMenuOpen(!tenantMenuOpen)} className="w-full bg-white/5 hover:bg-white/10 rounded-lg border border-white/10 p-2 flex items-center gap-2 text-sm font-medium text-white transition-colors">
@@ -138,6 +180,7 @@ export default function App() {
              </button>
              {tenantMenuOpen && (
                <div className="absolute top-full left-4 right-4 mt-2 bg-[#1e293b] border border-white/10 rounded-lg shadow-xl z-50 overflow-hidden">
+                 {/* This list is now strictly filtered by the fetchAllData logic */}
                  {tenants.map(t => (
                    <div key={t.id} onClick={() => { setCurrentTenant(t); setTenantMenuOpen(false); }} className="px-3 py-2 text-sm hover:bg-blue-600 hover:text-white cursor-pointer flex items-center justify-between group">
                       <span className={t.id === currentTenant.id ? 'text-white' : 'text-slate-400 group-hover:text-white'}>{t.name}</span>
@@ -150,9 +193,8 @@ export default function App() {
         )}
 
         <nav className="flex-1 py-6 px-2 space-y-1">
+          {/* COMMON TABS (Everyone) */}
           <NavItem icon={LayoutDashboard} label="Dashboard" active={activeTab === 'dashboard'} onClick={() => {setActiveTab('dashboard'); setSelectedTicket(null);}} collapsed={!sidebarOpen} />
-          
-          {/* UPDATED: Queue count now filters for tickets assigned to ME or requested by ME */}
           <NavItem 
             icon={Clock} 
             label="My Queue" 
@@ -163,6 +205,7 @@ export default function App() {
           />
           <NavItem icon={Plus} label="New Ticket" active={activeTab === 'new'} onClick={() => setActiveTab('new')} collapsed={!sidebarOpen} />
           
+          {/* TECHNICAL TABS (Technician, Manager, Admin) */}
           {isTech && (
             <>
               <NavItem icon={Users} label="Teams" active={activeTab === 'teams'} onClick={() => setActiveTab('teams')} collapsed={!sidebarOpen} />
@@ -170,6 +213,7 @@ export default function App() {
             </>
           )}
 
+          {/* ADMIN TABS (Admin Only) */}
           {isAdmin && (
             <>
                {profile?.role === 'super_admin' && <NavItem icon={Building2} label="Tenants" active={activeTab === 'tenants'} onClick={() => setActiveTab('tenants')} collapsed={!sidebarOpen} />}
@@ -189,27 +233,24 @@ export default function App() {
 
         <div className="p-4 md:p-8 max-w-7xl mx-auto w-full">
           {activeTab === 'new' && <NewTicketView categories={categories} kbArticles={kbArticles} onSubmit={handleCreateTicket} />}
-          {activeTab === 'dashboard' && !selectedTicket && <DashboardView tickets={tickets} loading={loading} role={profile?.role} onRefresh={fetchAllData} onSelectTicket={setSelectedTicket} onNewTicket={() => setActiveTab('new')} />}
-          
-          {/* UPDATED: Queue View now includes Assigned Tickets */}
+          {activeTab === 'dashboard' && !selectedTicket && <DashboardView tickets={tickets} loading={loading} role={profile?.role} onRefresh={() => fetchAllData(profile)} onSelectTicket={setSelectedTicket} onNewTicket={() => setActiveTab('new')} />}
           {activeTab === 'queue' && !selectedTicket && (
              <DashboardView 
                tickets={tickets.filter(t => t.requester === profile?.full_name || t.assignee === profile?.full_name)} 
                loading={loading} 
                role={profile?.role} 
-               onRefresh={fetchAllData} 
+               onRefresh={() => fetchAllData(profile)} 
                onSelectTicket={setSelectedTicket} 
                onNewTicket={() => setActiveTab('new')}
                title="My Active Tickets"
              />
           )}
-          
-          {selectedTicket && <TicketDetailView ticket={selectedTicket} onBack={() => { setSelectedTicket(null); fetchAllData(); }} />} {/* Refetch on back to update status/assignee */}
+          {selectedTicket && <TicketDetailView ticket={selectedTicket} onBack={() => { setSelectedTicket(null); fetchAllData(profile); }} />}
           
           {activeTab === 'teams' && isTech && <TeamsView departments={departments} />}
           {activeTab === 'tenants' && isAdmin && <TenantsView tenants={tenants} />}
-          {activeTab === 'knowledge' && isTech && <KnowledgeView articles={kbArticles} categories={categories} onUpdate={fetchAllData} />}
-          {activeTab === 'settings' && isAdmin && <SettingsView categories={categories} tenants={tenants} users={users} onUpdate={fetchAllData} />}
+          {activeTab === 'knowledge' && isTech && <KnowledgeView articles={kbArticles} categories={categories} onUpdate={() => fetchAllData(profile)} />}
+          {activeTab === 'settings' && isAdmin && <SettingsView categories={categories} tenants={tenants} users={users} onUpdate={() => fetchAllData(profile)} />}
         </div>
       </main>
     </div>
