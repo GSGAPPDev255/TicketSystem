@@ -12,7 +12,7 @@ export default function TeamsView({ departments: initialDepts }) {
 
   // Modals
   const [isDeptModalOpen, setIsDeptModalOpen] = useState(false);
-  const [isSearchModalOpen, setIsSearchModalOpen] = useState(false); // New Search Modal
+  const [isSearchModalOpen, setIsSearchModalOpen] = useState(false); // Search Modal
   const [isEditMemberModalOpen, setIsEditMemberModalOpen] = useState(false);
 
   // Trackers
@@ -79,16 +79,16 @@ export default function TeamsView({ departments: initialDepts }) {
     }
   };
 
-  // --- 3. ADD MEMBER (SEARCH FLOW) ---
+  // --- 3. ADD MEMBER (SEARCH FLOW - FIXED) ---
   const handleSearch = async (val) => {
     setUserSearch(val);
     if (val.length < 2) { setSearchResults([]); return; }
     
-    // Search profiles by name
+    // UPDATED: Search profiles where Name OR Email matches the search term
     const { data } = await supabase
       .from('profiles')
       .select('*')
-      .ilike('full_name', `%${val}%`)
+      .or(`full_name.ilike.%${val}%,email.ilike.%${val}%`) 
       .limit(5);
       
     // Filter out people already in the team
@@ -182,7 +182,7 @@ export default function TeamsView({ departments: initialDepts }) {
             <div className="space-y-4">
                <div className="relative">
                   <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 w-4 h-4"/>
-                  <input autoFocus type="text" placeholder="Search users by name..." className="w-full bg-black/20 border border-white/10 rounded-lg pl-9 pr-4 py-3 text-sm text-white focus:outline-none focus:border-blue-500" value={userSearch} onChange={e => handleSearch(e.target.value)} />
+                  <input autoFocus type="text" placeholder="Search by name or email..." className="w-full bg-black/20 border border-white/10 rounded-lg pl-9 pr-4 py-3 text-sm text-white focus:outline-none focus:border-blue-500" value={userSearch} onChange={e => handleSearch(e.target.value)} />
                </div>
                <div className="space-y-2 max-h-[200px] overflow-y-auto">
                   {searchResults.map(user => (
@@ -203,7 +203,6 @@ export default function TeamsView({ departments: initialDepts }) {
                <div>
                   <label className="block text-xs font-medium text-slate-400 mb-1.5">Team Title</label>
                   <select className="w-full bg-black/30 border border-white/10 rounded-lg px-3 py-2 text-slate-200" value={editMemberForm.role} onChange={e => setEditMemberForm({...editMemberForm, role: e.target.value})}>
-                     {/* FIXED: Removed Admin/Technician. Added clear team titles. */}
                      <option value="Member">Member</option>
                      <option value="Lead">Team Lead</option>
                      <option value="Senior">Senior</option>
