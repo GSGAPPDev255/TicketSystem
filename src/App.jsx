@@ -48,30 +48,21 @@ export default function App() {
     return () => subscription.unsubscribe();
   }, []);
 
-  // --- INITIALIZATION SEQUENCE ---
   async function initializeApp(userId) {
     setLoading(true);
-    // 1. Fetch Profile FIRST so we know the Role
     const userProfile = await fetchProfile(userId);
-    
-    // 2. Fetch Data using that Profile (to filter tenants)
-    if (userProfile) {
-      await fetchAllData(userProfile);
-    }
+    if (userProfile) await fetchAllData(userProfile);
     setLoading(false);
   }
 
   async function fetchProfile(userId) {
     const { data } = await supabase.from('profiles').select('*').eq('id', userId).single();
-    if (data) {
-       setProfile(data);
-       return data;
-    }
+    if (data) { setProfile(data); return data; }
     return null;
   }
 
   async function fetchAllData(currentUserProfile) {
-    // 1. Run all queries in parallel
+    setLoading(true); // Visual feedback that "Reload" is happening
     const [cats, tens, depts, kb, tix, myAccess] = await Promise.all([
       supabase.from('categories').select('*').order('label'),
       supabase.from('tenants').select('*').order('name'),
@@ -81,49 +72,42 @@ export default function App() {
         .from('tickets')
         .select('*, requester:profiles!requester_id(full_name), assignee_profile:profiles!assignee_id(full_name)')
         .order('created_at', { ascending: false }),
-      // Fetch Access List for the current user
       supabase.from('tenant_access').select('tenant_id').eq('user_id', currentUserProfile.id)
     ]);
 
     if (cats.data) setCategories(cats.data);
     
-    // --- SECURE TENANT FILTERING ---
     if (tens.data) {
       let visibleTenants = tens.data;
-
-      // If NOT Super Admin, filter the list
       if (currentUserProfile.role !== 'super_admin') {
         const allowedIds = myAccess.data ? myAccess.data.map(a => a.tenant_id) : [];
         visibleTenants = tens.data.filter(t => allowedIds.includes(t.id));
       }
-
       setTenants(visibleTenants);
-      
-      // Smart Default: If current tenant is invalid/missing, pick the first allowed one
       if (visibleTenants.length > 0) {
         if (!currentTenant || !visibleTenants.find(t => t.id === currentTenant.id)) {
            setCurrentTenant(visibleTenants[0]);
         }
       } else {
-        setCurrentTenant(null); // No access to any tenant
+        setCurrentTenant(null);
       }
     }
 
     if (depts.data) setDepartments(depts.data);
     if (kb.data) setKbArticles(kb.data);
     
-    // Process Tickets
     if (tix.data) {
       setTickets(tix.data.map(t => ({ 
         ...t, 
         requester: t.requester?.full_name || 'Unknown', 
         assignee: t.assignee_profile?.full_name || null,
         assignee_id: t.assignee_id,
-        status: t.status || 'New' 
+        status: t.status || 'New',
+        priority: t.priority || 'Medium', // Default for UI
+        sla_due_at: t.sla_due_at
       })));
     }
 
-    // Fetch Users (For Admin Settings only)
     if (currentUserProfile.role === 'super_admin' || currentUserProfile.role === 'admin') {
         const { data: userData } = await supabase.from('profiles').select('*').order('full_name');
         const { data: accessData } = await supabase.from('tenant_access').select('*');
@@ -131,15 +115,45 @@ export default function App() {
           setUsers(userData.map(u => ({ ...u, access_list: accessData.filter(a => a.user_id === u.id).map(a => a.tenant_id) })));
         }
     }
+    setLoading(false);
   }
+
+  // --- NEW: FORCED RELOAD ON NAV CLICK ---
+  const handleNavClick = (tabName) => {
+    setActiveTab(tabName);
+    setSelectedTicket(null);
+    if (profile) fetchAllData(profile); // <--- Triggers the refresh!
+  };
+
+  // --- SLA CALCULATOR ---
+  const calculateDueDate = (priority) => {
+    const now = new Date();
+    // SLA Rules:
+    // Critical = 4 Hours
+    // High = 8 Hours
+    // Medium = 24 Hours
+    // Low = 72 Hours
+    const hours = 
+      priority === 'Critical' ? 4 : 
+      priority === 'High' ? 8 : 
+      priority === 'Low' ? 72 : 24; 
+
+    now.setHours(now.getHours() + hours);
+    return now.toISOString();
+  };
 
   const handleCreateTicket = async (formData) => {
     const requesterId = session?.user?.id;
-    // Attach the current tenant ID to the ticket so it belongs to the right school
+    // Calculate SLA based on priority (Defaulting to Medium if not set)
+    const priority = formData.priority || 'Medium';
+    const dueAt = calculateDueDate(priority);
+
     const { error } = await supabase.from('tickets').insert({ 
       ...formData, 
       requester_id: requesterId,
-      tenant_id: currentTenant?.id // <--- IMPORTANT: Link ticket to tenant
+      tenant_id: currentTenant?.id,
+      priority: priority, // Save Priority
+      sla_due_at: dueAt   // Save Deadline
     });
     
     if (!error) { 
@@ -170,7 +184,6 @@ export default function App() {
       <aside className={`fixed md:relative z-20 h-full transition-all duration-300 ease-in-out ${sidebarOpen ? 'w-64 translate-x-0' : 'w-20 md:w-20 -translate-x-full md:translate-x-0'} border-r border-white/5 bg-[#0f172a]/80 backdrop-blur-xl flex flex-col`}>
         <div className="h-16 flex items-center justify-between px-4 border-b border-white/5"><div className={`flex items-center gap-3 ${!sidebarOpen && 'justify-center w-full'}`}><Monitor className="w-5 h-5 text-white" />{sidebarOpen && <span className="font-bold text-lg tracking-tight">Nexus</span>}</div><button onClick={() => setSidebarOpen(!sidebarOpen)} className="md:hidden text-slate-400"><X size={20} /></button></div>
         
-        {/* TENANT SWITCHER (Visible to ALL, but limited context for staff usually) */}
         {sidebarOpen && currentTenant && (
           <div className="px-4 pt-4 relative">
              <button onClick={() => setTenantMenuOpen(!tenantMenuOpen)} className="w-full bg-white/5 hover:bg-white/10 rounded-lg border border-white/10 p-2 flex items-center gap-2 text-sm font-medium text-white transition-colors">
@@ -180,7 +193,6 @@ export default function App() {
              </button>
              {tenantMenuOpen && (
                <div className="absolute top-full left-4 right-4 mt-2 bg-[#1e293b] border border-white/10 rounded-lg shadow-xl z-50 overflow-hidden">
-                 {/* This list is now strictly filtered by the fetchAllData logic */}
                  {tenants.map(t => (
                    <div key={t.id} onClick={() => { setCurrentTenant(t); setTenantMenuOpen(false); }} className="px-3 py-2 text-sm hover:bg-blue-600 hover:text-white cursor-pointer flex items-center justify-between group">
                       <span className={t.id === currentTenant.id ? 'text-white' : 'text-slate-400 group-hover:text-white'}>{t.name}</span>
@@ -193,31 +205,29 @@ export default function App() {
         )}
 
         <nav className="flex-1 py-6 px-2 space-y-1">
-          {/* COMMON TABS (Everyone) */}
-          <NavItem icon={LayoutDashboard} label="Dashboard" active={activeTab === 'dashboard'} onClick={() => {setActiveTab('dashboard'); setSelectedTicket(null);}} collapsed={!sidebarOpen} />
+          {/* USES NEW HANDLER FOR REFRESH */}
+          <NavItem icon={LayoutDashboard} label="Dashboard" active={activeTab === 'dashboard'} onClick={() => handleNavClick('dashboard')} collapsed={!sidebarOpen} />
           <NavItem 
             icon={Clock} 
             label="My Queue" 
             count={tickets.filter(t => t.status !== 'Resolved' && (t.requester === profile?.full_name || t.assignee === profile?.full_name)).length} 
             active={activeTab === 'queue'}
-            onClick={() => {setActiveTab('queue'); setSelectedTicket(null);}} 
+            onClick={() => handleNavClick('queue')} 
             collapsed={!sidebarOpen} 
           />
-          <NavItem icon={Plus} label="New Ticket" active={activeTab === 'new'} onClick={() => setActiveTab('new')} collapsed={!sidebarOpen} />
+          <NavItem icon={Plus} label="New Ticket" active={activeTab === 'new'} onClick={() => handleNavClick('new')} collapsed={!sidebarOpen} />
           
-          {/* TECHNICAL TABS (Technician, Manager, Admin) */}
           {isTech && (
             <>
-              <NavItem icon={Users} label="Teams" active={activeTab === 'teams'} onClick={() => setActiveTab('teams')} collapsed={!sidebarOpen} />
-              <NavItem icon={Book} label="Knowledge Base" active={activeTab === 'knowledge'} onClick={() => setActiveTab('knowledge')} collapsed={!sidebarOpen} />
+              <NavItem icon={Users} label="Teams" active={activeTab === 'teams'} onClick={() => handleNavClick('teams')} collapsed={!sidebarOpen} />
+              <NavItem icon={Book} label="Knowledge Base" active={activeTab === 'knowledge'} onClick={() => handleNavClick('knowledge')} collapsed={!sidebarOpen} />
             </>
           )}
 
-          {/* ADMIN TABS (Admin Only) */}
           {isAdmin && (
             <>
-               {profile?.role === 'super_admin' && <NavItem icon={Building2} label="Tenants" active={activeTab === 'tenants'} onClick={() => setActiveTab('tenants')} collapsed={!sidebarOpen} />}
-               <NavItem icon={Settings} label="Settings" active={activeTab === 'settings'} onClick={() => setActiveTab('settings')} collapsed={!sidebarOpen} />
+               {profile?.role === 'super_admin' && <NavItem icon={Building2} label="Tenants" active={activeTab === 'tenants'} onClick={() => handleNavClick('tenants')} collapsed={!sidebarOpen} />}
+               <NavItem icon={Settings} label="Settings" active={activeTab === 'settings'} onClick={() => handleNavClick('settings')} collapsed={!sidebarOpen} />
             </>
           )}
         </nav>
@@ -233,7 +243,7 @@ export default function App() {
 
         <div className="p-4 md:p-8 max-w-7xl mx-auto w-full">
           {activeTab === 'new' && <NewTicketView categories={categories} kbArticles={kbArticles} onSubmit={handleCreateTicket} />}
-          {activeTab === 'dashboard' && !selectedTicket && <DashboardView tickets={tickets} loading={loading} role={profile?.role} onRefresh={() => fetchAllData(profile)} onSelectTicket={setSelectedTicket} onNewTicket={() => setActiveTab('new')} />}
+          {activeTab === 'dashboard' && !selectedTicket && <DashboardView tickets={tickets} loading={loading} role={profile?.role} onRefresh={() => fetchAllData(profile)} onSelectTicket={setSelectedTicket} onNewTicket={() => handleNavClick('new')} />}
           {activeTab === 'queue' && !selectedTicket && (
              <DashboardView 
                tickets={tickets.filter(t => t.requester === profile?.full_name || t.assignee === profile?.full_name)} 
@@ -241,7 +251,7 @@ export default function App() {
                role={profile?.role} 
                onRefresh={() => fetchAllData(profile)} 
                onSelectTicket={setSelectedTicket} 
-               onNewTicket={() => setActiveTab('new')}
+               onNewTicket={() => handleNavClick('new')}
                title="My Active Tickets"
              />
           )}
