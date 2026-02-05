@@ -2,7 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 import { 
   ArrowLeft, Clock, Send, Users, 
-  Briefcase, Monitor, Cpu, Wifi, ShieldAlert, Wrench, Zap, Globe, FileText, CheckCircle2 
+  Briefcase, Monitor, Cpu, Wifi, ShieldAlert, Wrench, Zap, Globe, FileText, CheckCircle2,
+  TrendingUp, TrendingDown
 } from 'lucide-react';
 
 // --- HELPER: ICON MAPPER ---
@@ -25,6 +26,73 @@ export const GlassCard = ({ children, className = "", hover = false, onClick }) 
     `}
   >
     {children}
+  </div>
+);
+
+// --- COMPONENT: STAT CARD (RESTORED) ---
+export const StatCard = ({ label, value, icon: Icon, trend, trendUp }) => (
+  <div className="bg-[#1e293b]/60 backdrop-blur-md border border-white/5 p-6 rounded-2xl relative overflow-hidden group hover:border-blue-500/30 transition-all duration-300">
+    <div className="flex justify-between items-start mb-4">
+      <div>
+        <p className="text-slate-400 text-xs font-bold uppercase tracking-wider mb-1">{label}</p>
+        <h3 className="text-3xl font-bold text-white">{value}</h3>
+      </div>
+      <div className="p-3 bg-white/5 rounded-xl text-blue-400 group-hover:scale-110 transition-transform duration-300">
+        <Icon size={24} />
+      </div>
+    </div>
+    {trend && (
+      <div className={`flex items-center gap-2 text-xs font-medium ${trendUp ? 'text-emerald-400' : 'text-rose-400'}`}>
+        {trendUp ? <TrendingUp size={14} /> : <TrendingDown size={14} />}
+        <span>{trend}</span>
+      </div>
+    )}
+  </div>
+);
+
+// --- COMPONENT: TICKET ROW (RESTORED) ---
+export const TicketRow = ({ ticket, onClick }) => (
+  <div 
+    onClick={onClick}
+    className="group flex items-center justify-between p-4 bg-[#1e293b]/40 border border-white/5 rounded-xl hover:bg-[#1e293b]/80 hover:border-blue-500/30 transition-all cursor-pointer"
+  >
+    <div className="flex items-center gap-4">
+      <div className={`p-3 rounded-full ${
+        ticket.priority === 'Critical' ? 'bg-rose-500/10 text-rose-400' : 
+        ticket.priority === 'High' ? 'bg-orange-500/10 text-orange-400' : 
+        'bg-blue-500/10 text-blue-400'
+      }`}>
+        {getIcon(ticket.category, 20)}
+      </div>
+      <div>
+        <h4 className="font-semibold text-slate-200 group-hover:text-white transition-colors">{ticket.subject}</h4>
+        <div className="flex items-center gap-3 text-xs text-slate-500 mt-1">
+          <span className="font-mono">#{ticket.id.slice(0,4)}</span>
+          <span>•</span>
+          <span>{ticket.requester}</span>
+          <span>•</span>
+          <span>{new Date(ticket.created_at).toLocaleDateString()}</span>
+        </div>
+      </div>
+    </div>
+    <div className="flex items-center gap-4">
+      {ticket.priority && (
+        <span className={`px-2 py-1 rounded text-[10px] font-bold uppercase tracking-wider ${
+           ticket.priority === 'Critical' ? 'bg-rose-500/20 text-rose-300' : 
+           ticket.priority === 'High' ? 'bg-orange-500/20 text-orange-300' : 
+           'bg-blue-500/10 text-blue-300'
+        }`}>
+          {ticket.priority}
+        </span>
+      )}
+      <div className={`px-3 py-1 rounded-full text-xs font-medium border ${
+        ticket.status === 'Resolved' ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' : 
+        ticket.status === 'New' ? 'bg-blue-500/10 text-blue-400 border-blue-500/20' : 
+        'bg-slate-700/50 text-slate-300 border-white/10'
+      }`}>
+        {ticket.status}
+      </div>
+    </div>
   </div>
 );
 
@@ -82,7 +150,7 @@ export const Modal = ({ isOpen, onClose, title, children }) => {
   );
 };
 
-// --- TICKET DETAIL VIEW (WITH ASSIGNMENT & SLA) ---
+// --- TICKET DETAIL VIEW (WITH ASSIGNMENT & SLA & TAKE OWNERSHIP) ---
 export const TicketDetailView = ({ ticket, onBack }) => {
   const [updates, setUpdates] = useState([]);
   const [newUpdate, setNewUpdate] = useState('');
