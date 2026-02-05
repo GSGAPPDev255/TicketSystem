@@ -29,7 +29,7 @@ export const GlassCard = ({ children, className = "", hover = false, onClick }) 
   </div>
 );
 
-// --- COMPONENT: STAT CARD (RESTORED) ---
+// --- COMPONENT: STAT CARD ---
 export const StatCard = ({ label, value, icon: Icon, trend, trendUp }) => (
   <div className="bg-[#1e293b]/60 backdrop-blur-md border border-white/5 p-6 rounded-2xl relative overflow-hidden group hover:border-blue-500/30 transition-all duration-300">
     <div className="flex justify-between items-start mb-4">
@@ -50,7 +50,7 @@ export const StatCard = ({ label, value, icon: Icon, trend, trendUp }) => (
   </div>
 );
 
-// --- COMPONENT: TICKET ROW (RESTORED) ---
+// --- COMPONENT: TICKET ROW ---
 export const TicketRow = ({ ticket, onClick }) => (
   <div 
     onClick={onClick}
@@ -150,7 +150,7 @@ export const Modal = ({ isOpen, onClose, title, children }) => {
   );
 };
 
-// --- TICKET DETAIL VIEW (WITH ASSIGNMENT & SLA & TAKE OWNERSHIP) ---
+// --- TICKET DETAIL VIEW ---
 export const TicketDetailView = ({ ticket, onBack }) => {
   const [updates, setUpdates] = useState([]);
   const [newUpdate, setNewUpdate] = useState('');
@@ -158,13 +158,12 @@ export const TicketDetailView = ({ ticket, onBack }) => {
   const [assigneeId, setAssigneeId] = useState(ticket.assignee_id || '');
   const [staffMembers, setStaffMembers] = useState([]);
   const [loading, setLoading] = useState(false);
-  const [currentUser, setCurrentUser] = useState(null); // Track who "I" am
+  const [currentUser, setCurrentUser] = useState(null);
 
-  // 1. Init Data
   useEffect(() => {
     fetchUpdates();
     fetchStaff();
-    getCurrentUser(); // Get my own ID
+    getCurrentUser();
   }, [ticket.id]);
 
   const getCurrentUser = async () => {
@@ -190,30 +189,22 @@ export const TicketDetailView = ({ ticket, onBack }) => {
     if (data) setStaffMembers(data);
   };
 
-  // 2. Handle Assignment
   const handleAssign = async (newId) => {
     setAssigneeId(newId);
-    
-    // DB Update
     await supabase.from('tickets').update({ assignee_id: newId || null }).eq('id', ticket.id);
-    
-    // Auto-Status: If assigning to someone (and it was New), make it In Progress
     if (newId && status === 'New') {
       setStatus('In Progress');
       await supabase.from('tickets').update({ status: 'In Progress' }).eq('id', ticket.id);
     }
   };
 
-  // 3. "TAKE OWNERSHIP" SHORTCUT
   const assignToMe = async () => {
     if (!currentUser) return;
     await handleAssign(currentUser.id);
-    // Force a visual update immediately
     setAssigneeId(currentUser.id);
     setStatus('In Progress'); 
   };
 
-  // 4. Post Update
   const handlePostUpdate = async () => {
     if (!newUpdate.trim()) return;
     setLoading(true);
@@ -238,10 +229,8 @@ export const TicketDetailView = ({ ticket, onBack }) => {
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 h-[calc(100vh-140px)] animate-in fade-in slide-in-from-right-4">
-      
-      {/* LEFT COL: INFO & CHAT */}
+      {/* LEFT COL: INFO */}
       <div className="lg:col-span-2 flex flex-col h-full gap-4 overflow-hidden">
-        {/* Header */}
         <div className="flex items-start gap-4 mb-2 shrink-0">
           <button onClick={onBack} className="p-2 -ml-2 text-slate-400 hover:text-white hover:bg-white/5 rounded-full transition-colors">
             <ArrowLeft size={20} />
@@ -249,8 +238,6 @@ export const TicketDetailView = ({ ticket, onBack }) => {
           <div className="flex-1">
              <div className="flex justify-between items-start">
                 <h1 className="text-2xl font-bold text-white leading-tight">{ticket.subject}</h1>
-                
-                {/* SLA / PRIORITY BADGE */}
                 {ticket.priority && (
                   <span className={`px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider border ${
                     ticket.priority === 'Critical' ? 'bg-rose-500/20 text-rose-400 border-rose-500/30' :
@@ -261,7 +248,6 @@ export const TicketDetailView = ({ ticket, onBack }) => {
                   </span>
                 )}
              </div>
-
              <div className="flex items-center gap-3 mt-2 text-sm text-slate-400">
                <span className="font-mono bg-white/5 px-1.5 rounded text-xs">#{ticket.id.slice(0,4)}</span>
                <span className="w-1 h-1 bg-slate-600 rounded-full"></span>
@@ -272,7 +258,6 @@ export const TicketDetailView = ({ ticket, onBack }) => {
           </div>
         </div>
 
-        {/* Description Card */}
         <GlassCard className="p-6 border-l-4 border-l-blue-500 shrink-0">
            <div className="flex items-center gap-3 mb-4 border-b border-white/5 pb-4">
                <div className="w-8 h-8 rounded-full bg-slate-700 flex items-center justify-center text-xs border border-white/10 font-bold">
@@ -286,7 +271,6 @@ export const TicketDetailView = ({ ticket, onBack }) => {
            <p className="text-slate-300 leading-relaxed whitespace-pre-wrap">{ticket.description || 'No description provided.'}</p>
         </GlassCard>
 
-        {/* Chat / Activity Log */}
         <div className="flex-1 overflow-y-auto space-y-4 pr-2 custom-scrollbar mt-2">
            <div className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-4">Activity Log</div>
            {updates.length === 0 && <div className="text-center py-8 text-slate-500 italic text-sm border border-white/5 rounded-xl border-dashed">No updates yet.</div>}
@@ -315,8 +299,6 @@ export const TicketDetailView = ({ ticket, onBack }) => {
       {/* RIGHT COL: CONTROLS */}
       <div className="hidden lg:block space-y-4">
         <GlassCard className="p-5 space-y-6 sticky top-0">
-           
-           {/* STATUS */}
            <div>
               <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider block mb-2">Current Status</label>
               <select 
@@ -328,21 +310,15 @@ export const TicketDetailView = ({ ticket, onBack }) => {
               </select>
            </div>
 
-           {/* ASSIGNEE */}
            <div className="pt-4 border-t border-white/5">
               <div className="flex justify-between items-center mb-2">
                 <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Assignee</label>
-                {/* ASSIGN TO ME BUTTON */}
                 {assigneeId !== currentUser?.id && (
-                  <button 
-                    onClick={assignToMe}
-                    className="text-[10px] bg-blue-600/20 hover:bg-blue-600 hover:text-white text-blue-400 px-2 py-1 rounded transition-colors uppercase font-bold"
-                  >
+                  <button onClick={assignToMe} className="text-[10px] bg-blue-600/20 hover:bg-blue-600 hover:text-white text-blue-400 px-2 py-1 rounded transition-colors uppercase font-bold">
                     Take Ownership
                   </button>
                 )}
               </div>
-              
               <div className="relative">
                 <select 
                   className="w-full bg-black/30 border border-white/10 rounded-lg px-3 py-2 pl-9 text-sm text-white focus:outline-none focus:border-blue-500/50 appearance-none"
@@ -350,19 +326,12 @@ export const TicketDetailView = ({ ticket, onBack }) => {
                   onChange={(e) => handleAssign(e.target.value)}
                 >
                   <option value="">Unassigned</option>
-                  {staffMembers.map(staff => (
-                    <option key={staff.id} value={staff.id}>
-                      {staff.full_name} ({staff.role})
-                    </option>
-                  ))}
+                  {staffMembers.map(staff => <option key={staff.id} value={staff.id}>{staff.full_name} ({staff.role})</option>)}
                 </select>
-                <div className="absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none text-slate-400">
-                  <Users size={14} />
-                </div>
+                <div className="absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none text-slate-400"><Users size={14} /></div>
               </div>
            </div>
 
-           {/* UPDATE BOX */}
            <div className="pt-4 border-t border-white/5">
               <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider block mb-2">Add Update</label>
               <textarea 
@@ -373,15 +342,10 @@ export const TicketDetailView = ({ ticket, onBack }) => {
               />
            </div>
 
-           <button 
-             onClick={handlePostUpdate}
-             disabled={loading}
-             className="w-full py-2.5 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white rounded-lg font-medium shadow-lg shadow-blue-900/20 transition-all flex items-center justify-center gap-2"
-           >
+           <button onClick={handlePostUpdate} disabled={loading} className="w-full py-2.5 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white rounded-lg font-medium shadow-lg shadow-blue-900/20 transition-all flex items-center justify-center gap-2">
              {loading ? <Clock size={16} className="animate-spin"/> : <Send size={16}/>}
              {loading ? 'Posting...' : 'Post Update'}
            </button>
-
         </GlassCard>
       </div>
     </div>
