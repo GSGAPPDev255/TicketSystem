@@ -1,218 +1,296 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Send, Bot, User, ThumbsUp, ThumbsDown, Wrench, MapPin, CheckCircle } from 'lucide-react';
-import { GlassCard } from '../components/ui';
+import { Send, Bot, User, ThumbsUp, ThumbsDown, ArrowRight, Loader } from 'lucide-react';
+import { supabase } from '../lib/supabase';
 
 export default function NewTicketView({ categories, kbArticles, onSubmit }) {
-  const [step, setStep] = useState('greeting');
+  // FORM STATE
+  const [subject, setSubject] = useState('');
+  const [description, setDescription] = useState('');
+  const [category, setCategory] = useState('');
+  const [priority, setPriority] = useState('Medium');
+  
+  // CHAT STATE
   const [messages, setMessages] = useState([
-    { role: 'bot', text: "Good day! I'm Nexus, your 1st line support bot. Please describe your issue." }
+    { id: 1, type: 'bot', text: "Good day! I'm Nexus, your 1st line support bot. Please describe your issue." }
   ]);
-  const [inputText, setInputText] = useState('');
-  const [ticketData, setTicketData] = useState({ subject: '', description: '', category: 'Hardware', location: '' });
-  const [foundArticle, setFoundArticle] = useState(null);
+  const [isTyping, setIsTyping] = useState(false);
+  const [showForm, setShowForm] = useState(false);
+  const [suggestedFix, setSuggestedFix] = useState(null);
+  
+  // BOT IDENTITY
+  const [botId, setBotId] = useState(null);
   const messagesEndRef = useRef(null);
+
+  // 1. FETCH BOT ID ON MOUNT
+  useEffect(() => {
+    async function getBotId() {
+      // Find the user we created earlier
+      const { data } = await supabase
+        .from('profiles')
+        .select('id')
+        .eq('email', 'bot@nexus.ai')
+        .single();
+      if (data) setBotId(data.id);
+    }
+    getBotId();
+  }, []);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages, step]);
+  }, [messages]);
 
-  // --- SMART SEARCH ---
-  const findBestArticle = (userQuery) => {
-    if (!kbArticles || kbArticles.length === 0) return null;
-    const cleanQuery = userQuery.toLowerCase().replace(/[^a-z0-9 ]/g, '');
-    const queryWords = cleanQuery.split(' ').filter(w => w.length > 3);
-    
-    let bestMatch = null;
-    let maxScore = 0;
+  // 2. HANDLE USER TYPING
+  const handleSend = async () => {
+    if (!description.trim()) return;
 
-    kbArticles.forEach(article => {
-      let score = 0;
-      const cleanTitle = article.title.toLowerCase();
-      queryWords.forEach(word => {
-        if (cleanTitle.includes(word)) score += 10;
-        if (article.category.toLowerCase().includes(word)) score += 5;
-      });
-      if (cleanTitle.includes(cleanQuery)) score += 20;
-      if (score > maxScore) { maxScore = score; bestMatch = article; }
-    });
-    return maxScore > 0 ? bestMatch : null;
-  };
+    // Add User Message
+    const userMsg = { id: Date.now(), type: 'user', text: description };
+    setMessages(prev => [...prev, userMsg]);
+    setIsTyping(true);
 
-  // --- HANDLERS ---
-  const handleSend = () => {
-    if (!inputText.trim()) return;
-    const userQuery = inputText;
-    const newMessages = [...messages, { role: 'user', text: userQuery }];
-    setMessages(newMessages);
-    setInputText('');
+    // AI/Keyword Matching Logic
+    setTimeout(() => {
+      const lowerDesc = description.toLowerCase();
+      // Simple keyword matching against KB articles
+      const match = kbArticles.find(article => 
+        lowerDesc.includes(article.title.toLowerCase()) || 
+        (article.tags && article.tags.some(tag => lowerDesc.includes(tag.toLowerCase())))
+      );
 
-    if (step === 'greeting') {
-      // Initialize Ticket Data
-      setTicketData(prev => ({ 
-        ...prev, 
-        description: userQuery, 
-        subject: userQuery.length > 40 ? userQuery.substring(0, 40) + '...' : userQuery 
-      }));
-      
-      const hit = findBestArticle(userQuery);
-      if (hit) {
-        setFoundArticle(hit);
-        // Pre-set category based on KB article if found
-        setTicketData(prev => ({ ...prev, category: hit.category }));
-        setTimeout(() => {
-          setMessages(prev => [...prev, { role: 'bot', text: "I found a solution that might help:" }]);
-          setStep('suggestion');
-        }, 600);
+      setIsTyping(false);
+
+      if (match) {
+        setSuggestedFix(match);
+        setMessages(prev => [...prev, { 
+          id: Date.now() + 1, 
+          type: 'bot', 
+          text: "I found a solution that might help:",
+          isSuggestion: true,
+          article: match 
+        }]);
       } else {
-        setTimeout(() => {
-          setMessages(prev => [...prev, { role: 'bot', text: "I see. To help the technician, which room or location are you in?" }]);
-          setStep('location');
-        }, 600);
+        // No match? Go straight to form
+        setMessages(prev => [...prev, { 
+          id: Date.now() + 1, 
+          type: 'bot', 
+          text: "I couldn't find an immediate fix in my database. Let's raise a ticket for a human engineer." 
+        }]);
+        setShowForm(true);
+        // Auto-fill subject if empty
+        if (!subject) setSubject(description.substring(0, 50) + (description.length > 50 ? '...' : ''));
       }
-    } else if (step === 'location') {
-      setTicketData(prev => ({ ...prev, location: userQuery }));
-      setTimeout(() => {
-        setMessages(prev => [...prev, { role: 'bot', text: "Understood. Please confirm the details below to raise the ticket." }]);
-        setStep('form');
-      }, 600);
-    }
+    }, 1500);
   };
 
-  // --- AUTO-LOG RESOLVED TICKETS ---
-  const handleSolutionWorked = (worked) => {
-    if (worked) {
-      // 1. Log success message
-      setMessages(prev => [...prev, 
-        { role: 'user', text: "Yes, that worked!" }, 
-        { role: 'bot', text: "Great! I've logged this as a resolved incident for our records. Have a wonderful day!" }
-      ]);
-      setStep('resolved');
+  // 3. LOG THE WIN (Auto-Resolve)
+  const handleItWorked = async () => {
+    // A. Add success message to UI
+    setMessages(prev => [...prev, { 
+      id: Date.now(), 
+      type: 'user', 
+      text: "It Worked", 
+      isAction: true 
+    }, {
+      id: Date.now() + 1,
+      type: 'bot',
+      text: "Glad I could help! I've logged this as a resolved incident."
+    }]);
+    setSuggestedFix(null);
 
-      // 2. SILENTLY CREATE RESOLVED TICKET (Data Analytics)
-      onSubmit({
-        subject: `[Resolved by Bot] ${ticketData.subject}`,
-        description: `User Issue: ${ticketData.description}\n\nSolution: Applied KB Article "${foundArticle.title}" successfully.`,
-        category: ticketData.category || 'Hardware',
-        location: 'Remote / Chat',
-        status: 'Resolved', // <--- This goes straight to "Resolved" tab
-        priority: 'Low'
-      });
+    // B. SAVE TO DB (The Missing Link)
+    const { data: { user } } = await supabase.auth.getUser();
+    
+    await supabase.from('tickets').insert({
+      subject: `Auto-Resolved: ${suggestedFix.title}`, // Clear title
+      description: `User Issue: "${description}"\n\nResolved by Nexus Bot using article: ${suggestedFix.title}`,
+      category: category || 'Software',
+      priority: 'Low',
+      status: 'Resolved', // <--- INSTANT CLOSE
+      assignee_id: botId, // <--- ASSIGNED TO BOT
+      requester_id: user?.id
+    });
+    
+    // Optional: Refresh or redirect? For now, we stay in chat to show success.
+  };
 
-    } else {
-      setMessages(prev => [...prev, 
-        { role: 'user', text: "No, it's still broken." }, 
-        { role: 'bot', text: "I'm sorry about that. Let's get an engineer to look at this. Which room are you in?" }
-      ]);
-      setStep('location');
-    }
+  const handleStillBroken = () => {
+    setMessages(prev => [...prev, { 
+      id: Date.now(), 
+      type: 'user', 
+      text: "Still Broken", 
+      isAction: true 
+    }, {
+      id: Date.now() + 1,
+      type: 'bot',
+      text: "I understand. Let's get this to a human expert immediately."
+    }]);
+    setSuggestedFix(null);
+    setShowForm(true);
+    if (!subject) setSubject(description.substring(0, 50) + (description.length > 50 ? '...' : ''));
+  };
+
+  const handleSubmitForm = () => {
+    onSubmit({
+      subject,
+      description,
+      category: category || 'General',
+      priority
+    });
   };
 
   return (
-    <div className="max-w-4xl mx-auto h-[calc(100vh-140px)] flex flex-col gap-6 animate-in fade-in slide-in-from-bottom-4">
-      
-      {/* CHAT STREAM */}
-      <GlassCard className="flex-1 overflow-y-auto p-6 space-y-6">
-        {messages.map((msg, i) => (
-          <div key={i} className={`flex gap-4 ${msg.role === 'user' ? 'flex-row-reverse' : ''}`}>
-             <div className={`w-10 h-10 rounded-full flex items-center justify-center shrink-0 ${msg.role === 'bot' ? 'bg-blue-600' : 'bg-slate-600'}`}>
-                {msg.role === 'bot' ? <Bot size={20} className="text-white" /> : <User size={20} className="text-white" />}
-             </div>
-             <div className={`p-4 rounded-2xl max-w-[80%] text-sm md:text-base ${msg.role === 'bot' ? 'bg-white/10 text-slate-200 rounded-tl-none' : 'bg-blue-600 text-white rounded-tr-none'}`}>
+    <div className="max-w-3xl mx-auto h-[calc(100vh-140px)] flex flex-col gap-6 animate-in fade-in slide-in-from-bottom-4">
+      {/* HEADER */}
+      <div>
+        <h2 className="text-2xl font-bold text-white">New Request</h2>
+        <p className="text-slate-400">Describe your issue and Nexus will attempt to solve it.</p>
+      </div>
+
+      {/* CHAT AREA */}
+      <div className="flex-1 bg-[#1e293b]/60 backdrop-blur-md border border-white/5 rounded-2xl p-6 overflow-y-auto custom-scrollbar space-y-6">
+        {messages.map((msg) => (
+          <div key={msg.id} className={`flex gap-4 ${msg.type === 'user' ? 'flex-row-reverse' : ''}`}>
+            
+            {/* AVATAR */}
+            <div className={`w-10 h-10 rounded-full flex items-center justify-center shrink-0 ${msg.type === 'bot' ? 'bg-blue-600' : 'bg-slate-700'}`}>
+              {msg.type === 'bot' ? <Bot size={20} className="text-white" /> : <User size={20} className="text-slate-300" />}
+            </div>
+
+            {/* BUBBLE */}
+            <div className={`flex flex-col gap-2 max-w-[80%] ${msg.type === 'user' ? 'items-end' : 'items-start'}`}>
+              <div className={`px-5 py-3 rounded-2xl text-sm leading-relaxed ${
+                msg.type === 'bot' 
+                  ? 'bg-[#2d3748] text-slate-200 rounded-tl-none border border-white/5' 
+                  : msg.isAction 
+                    ? 'bg-slate-700/50 text-slate-400 italic rounded-tr-none' 
+                    : 'bg-blue-600 text-white rounded-tr-none shadow-lg shadow-blue-900/20'
+              }`}>
                 {msg.text}
-             </div>
+              </div>
+
+              {/* SUGGESTION CARD */}
+              {msg.isSuggestion && msg.article && (
+                <div className="bg-[#0f172a] border border-green-500/30 rounded-xl p-4 w-full mt-2 animate-in zoom-in-95 duration-300">
+                  <div className="flex items-center gap-2 text-green-400 mb-2">
+                    <Wrench size={16} />
+                    <span className="text-xs font-bold uppercase tracking-wider">Suggested Fix: {msg.article.title}</span>
+                  </div>
+                  <p className="text-slate-300 text-sm mb-4">{msg.article.content.substring(0, 150)}...</p>
+                  
+                  {!suggestedFix && <div className="text-xs text-slate-500 italic">Feedback recorded.</div>}
+                  
+                  {suggestedFix && (
+                    <div className="flex gap-3">
+                      <button onClick={handleItWorked} className="flex-1 py-2 bg-green-600 hover:bg-green-500 text-white rounded-lg text-sm font-medium transition-colors flex items-center justify-center gap-2">
+                        <ThumbsUp size={16} /> It Worked
+                      </button>
+                      <button onClick={handleStillBroken} className="flex-1 py-2 bg-[#1e293b] hover:bg-[#2d3748] border border-white/10 text-slate-300 rounded-lg text-sm font-medium transition-colors flex items-center justify-center gap-2">
+                        <ThumbsDown size={16} /> Still Broken
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
           </div>
         ))}
-
-        {/* KB WIDGET */}
-        {step === 'suggestion' && foundArticle && (
-          <div className="ml-14 max-w-[90%] md:max-w-[70%] animate-in fade-in slide-in-from-left-2 space-y-3">
-             <div className="p-5 bg-emerald-900/20 border border-emerald-500/30 rounded-xl relative overflow-hidden">
-                <div className="absolute top-0 left-0 w-1 h-full bg-emerald-500"></div>
-                <h4 className="font-bold text-emerald-400 mb-2 flex items-center gap-2"><Wrench size={16}/> Suggested Fix: {foundArticle.title}</h4>
-                <p className="text-slate-300 text-sm whitespace-pre-line leading-relaxed">{foundArticle.content}</p>
-             </div>
-             <div className="flex gap-3">
-               <button onClick={() => handleSolutionWorked(true)} className="flex-1 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-sm font-medium transition-colors flex items-center justify-center gap-2"><ThumbsUp size={16}/> It Worked</button>
-               <button onClick={() => handleSolutionWorked(false)} className="flex-1 py-2 bg-slate-700 hover:bg-slate-600 text-white rounded-lg text-sm font-medium transition-colors flex items-center justify-center gap-2"><ThumbsDown size={16}/> Still Broken</button>
-             </div>
+        
+        {isTyping && (
+          <div className="flex gap-4">
+            <div className="w-10 h-10 rounded-full bg-blue-600 flex items-center justify-center shrink-0">
+               <Bot size={20} className="text-white" />
+            </div>
+            <div className="bg-[#2d3748] px-5 py-4 rounded-2xl rounded-tl-none border border-white/5 flex gap-1">
+              <span className="w-2 h-2 bg-slate-400 rounded-full animate-bounce"></span>
+              <span className="w-2 h-2 bg-slate-400 rounded-full animate-bounce delay-100"></span>
+              <span className="w-2 h-2 bg-slate-400 rounded-full animate-bounce delay-200"></span>
+            </div>
           </div>
         )}
-
-        {/* TICKET FORM WIDGET */}
-        {step === 'form' && (
-           <div className="ml-0 md:ml-14 max-w-full md:max-w-[80%] animate-in fade-in slide-in-from-left-2">
-              <div className="bg-[#1e293b]/80 border border-blue-500/30 rounded-xl p-6 space-y-4 shadow-2xl">
-                 <div className="flex items-center justify-between border-b border-white/10 pb-3">
-                    <h3 className="font-bold text-white">Confirm Ticket Details</h3>
-                    <span className="text-xs bg-blue-500/20 text-blue-300 px-2 py-0.5 rounded border border-blue-500/30">New Ticket</span>
-                 </div>
-                 
-                 <div>
-                   <label className="text-[10px] text-slate-400 uppercase font-bold tracking-wider">Description</label>
-                   <textarea 
-                     className="w-full bg-black/40 border border-white/10 rounded-lg p-3 text-sm text-white mt-1 h-20 focus:outline-none focus:border-blue-500/50 resize-none"
-                     value={ticketData.description}
-                     onChange={e => setTicketData({...ticketData, description: e.target.value})}
-                   />
-                 </div>
-
-                 <div className="grid grid-cols-2 gap-4">
-                    <div>
-                       <label className="text-[10px] text-slate-400 uppercase font-bold tracking-wider">Category</label>
-                       <select 
-                          className="w-full bg-black/40 border border-white/10 rounded-lg p-2.5 text-sm text-white mt-1 focus:outline-none focus:border-blue-500/50"
-                          value={ticketData.category}
-                          onChange={e => setTicketData({...ticketData, category: e.target.value})}
-                       >
-                          {categories.map(c => <option key={c.id} value={c.label}>{c.label}</option>)}
-                       </select>
-                    </div>
-                    <div>
-                       <label className="text-[10px] text-slate-400 uppercase font-bold tracking-wider">Location</label>
-                       <div className="flex items-center gap-2 bg-black/40 border border-white/10 rounded-lg p-2.5 mt-1 focus-within:border-blue-500/50">
-                          <MapPin size={14} className="text-slate-500" />
-                          <input 
-                            className="bg-transparent text-sm text-white w-full focus:outline-none"
-                            value={ticketData.location}
-                            onChange={e => setTicketData({...ticketData, location: e.target.value})}
-                          />
-                       </div>
-                    </div>
-                 </div>
-
-                 <button onClick={() => onSubmit(ticketData)} className="w-full py-3 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-lg shadow-lg shadow-blue-900/20 flex items-center justify-center gap-2 transition-all transform hover:scale-[1.02]">
-                    <Send size={16} /> Submit Ticket
-                 </button>
-              </div>
-           </div>
-        )}
-        
-        {step === 'resolved' && (
-           <div className="flex justify-center py-4 opacity-50">
-              <span className="text-xs text-slate-500 flex items-center gap-1"><CheckCircle size={12}/> Ticket automatically logged as Resolved</span>
-           </div>
-        )}
-
         <div ref={messagesEndRef} />
-      </GlassCard>
+      </div>
 
-      {/* INPUT BAR */}
-      {(step === 'greeting' || step === 'location') && (
-        <GlassCard className="p-2 flex gap-2">
+      {/* INPUT AREA (Hidden if form is open) */}
+      {!showForm && (
+        <div className="relative">
           <input 
-            type="text" 
             autoFocus
-            placeholder="Type your response..." 
-            className="flex-1 bg-transparent px-4 py-3 text-white focus:outline-none"
-            value={inputText}
-            onChange={e => setInputText(e.target.value)}
+            type="text" 
+            placeholder="Type your issue here (e.g. 'wifi not working')..."
+            className="w-full bg-[#1e293b] border border-white/10 rounded-xl pl-6 pr-14 py-4 text-white focus:outline-none focus:border-blue-500/50 shadow-xl"
+            value={description}
+            onChange={e => setDescription(e.target.value)}
             onKeyDown={e => e.key === 'Enter' && handleSend()}
           />
-          <button onClick={handleSend} className="p-3 bg-blue-600 hover:bg-blue-500 text-white rounded-xl transition-colors shadow-lg">
-            <Send size={20} />
+          <button 
+            onClick={handleSend}
+            disabled={!description.trim() || isTyping}
+            className="absolute right-3 top-1/2 -translate-y-1/2 p-2 bg-blue-600 hover:bg-blue-500 text-white rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+          >
+            <Send size={18} />
           </button>
+        </div>
+      )}
+
+      {/* TICKET FORM (Appears if bot fails) */}
+      {showForm && (
+        <GlassCard className="p-6 animate-in slide-in-from-bottom-8 duration-500 border-t-4 border-t-blue-500">
+          <div className="flex justify-between items-center mb-6">
+            <h3 className="font-bold text-lg text-white">Raise Official Ticket</h3>
+            <span className="text-xs text-slate-400 bg-white/5 px-2 py-1 rounded">Human Support</span>
+          </div>
+          
+          <div className="grid gap-4">
+             <div>
+               <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Subject</label>
+               <input type="text" className="w-full bg-black/30 border border-white/10 rounded-lg px-4 py-3 text-white focus:border-blue-500/50 outline-none" value={subject} onChange={e => setSubject(e.target.value)} />
+             </div>
+             
+             <div className="grid grid-cols-2 gap-4">
+                <div>
+                   <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Category</label>
+                   <select className="w-full bg-black/30 border border-white/10 rounded-lg px-4 py-3 text-white focus:border-blue-500/50 outline-none appearance-none" value={category} onChange={e => setCategory(e.target.value)}>
+                      <option value="">Select...</option>
+                      {categories.map(c => <option key={c.id} value={c.label}>{c.label}</option>)}
+                   </select>
+                </div>
+                <div>
+                   <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Priority</label>
+                   <select className="w-full bg-black/30 border border-white/10 rounded-lg px-4 py-3 text-white focus:border-blue-500/50 outline-none appearance-none" value={priority} onChange={e => setPriority(e.target.value)}>
+                      <option value="Low">Low</option>
+                      <option value="Medium">Medium</option>
+                      <option value="High">High</option>
+                      <option value="Critical">Critical</option>
+                   </select>
+                </div>
+             </div>
+
+             <button onClick={handleSubmitForm} className="mt-4 w-full py-3 bg-blue-600 hover:bg-blue-500 text-white rounded-xl font-bold text-sm shadow-lg shadow-blue-900/20 transition-all flex items-center justify-center gap-2">
+                Submit Ticket <ArrowRight size={16} />
+             </button>
+          </div>
         </GlassCard>
       )}
     </div>
+  );
+}
+
+// Simple Icon component needed for the replacement above
+function Wrench({ size, className }) {
+  return (
+    <svg 
+      xmlns="http://www.w3.org/2000/svg" 
+      width={size} 
+      height={size} 
+      viewBox="0 0 24 24" 
+      fill="none" 
+      stroke="currentColor" 
+      strokeWidth="2" 
+      strokeLinecap="round" 
+      strokeLinejoin="round" 
+      className={className}
+    >
+      <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"></path>
+    </svg>
   );
 }
