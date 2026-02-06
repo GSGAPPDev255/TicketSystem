@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Send, Bot, User, ThumbsUp, ThumbsDown, ArrowRight, Loader } from 'lucide-react';
+import { Send, Bot, User, ThumbsUp, ThumbsDown, ArrowRight, Loader, Wrench } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 
 export default function NewTicketView({ categories, kbArticles, onSubmit }) {
@@ -15,21 +15,18 @@ export default function NewTicketView({ categories, kbArticles, onSubmit }) {
   ]);
   const [isTyping, setIsTyping] = useState(false);
   const [showForm, setShowForm] = useState(false);
-  const [suggestedFix, setSuggestedFix] = useState(null);
+  
+  // OPTIMISTIC TRACKING
+  const [autoTicketId, setAutoTicketId] = useState(null); // Track the ticket we just auto-created
   
   // BOT IDENTITY
   const [botId, setBotId] = useState(null);
   const messagesEndRef = useRef(null);
 
-  // 1. FETCH BOT ID ON MOUNT
+  // 1. FETCH BOT ID
   useEffect(() => {
     async function getBotId() {
-      // Find the user we created earlier
-      const { data } = await supabase
-        .from('profiles')
-        .select('id')
-        .eq('email', 'bot@nexus.ai')
-        .single();
+      const { data } = await supabase.from('profiles').select('id').eq('email', 'bot@nexus.ai').single();
       if (data) setBotId(data.id);
     }
     getBotId();
@@ -49,18 +46,38 @@ export default function NewTicketView({ categories, kbArticles, onSubmit }) {
     setIsTyping(true);
 
     // AI/Keyword Matching Logic
-    setTimeout(() => {
+    setTimeout(async () => {
       const lowerDesc = description.toLowerCase();
-      // Simple keyword matching against KB articles
-      const match = kbArticles.find(article => 
-        lowerDesc.includes(article.title.toLowerCase()) || 
+      
+      // SAFETY CHECK: Ensure kbArticles is an array
+      const safeArticles = Array.isArray(kbArticles) ? kbArticles : [];
+      
+      const match = safeArticles.find(article => 
+        (article.title && lowerDesc.includes(article.title.toLowerCase())) || 
         (article.tags && article.tags.some(tag => lowerDesc.includes(tag.toLowerCase())))
       );
 
       setIsTyping(false);
 
       if (match) {
-        setSuggestedFix(match);
+        // --- OPTIMISTIC LOGGING START ---
+        // We assume it works immediately. If they leave, we have the stat.
+        if (botId) {
+            const { data: { user } } = await supabase.auth.getUser();
+            const { data: newTicket } = await supabase.from('tickets').insert({
+              subject: `[Bot Deflection] ${match.title}`,
+              description: `User Issue: "${description}"\n\nAuto-suggested fix: ${match.title}`,
+              category: 'Software', // Default
+              priority: 'Low',
+              status: 'Resolved', // <--- PRE-CLOSE IT
+              assignee_id: botId,
+              requester_id: user?.id
+            }).select().single();
+            
+            if (newTicket) setAutoTicketId(newTicket.id);
+        }
+        // --- OPTIMISTIC LOGGING END ---
+
         setMessages(prev => [...prev, { 
           id: Date.now() + 1, 
           type: 'bot', 
@@ -73,58 +90,39 @@ export default function NewTicketView({ categories, kbArticles, onSubmit }) {
         setMessages(prev => [...prev, { 
           id: Date.now() + 1, 
           type: 'bot', 
-          text: "I couldn't find an immediate fix in my database. Let's raise a ticket for a human engineer." 
+          text: "I couldn't find an immediate fix. Let's raise a ticket for a human engineer." 
         }]);
         setShowForm(true);
-        // Auto-fill subject if empty
         if (!subject) setSubject(description.substring(0, 50) + (description.length > 50 ? '...' : ''));
       }
     }, 1500);
   };
 
-  // 3. LOG THE WIN (Auto-Resolve)
-  const handleItWorked = async () => {
-    // A. Add success message to UI
+  // 3. CONFIRM SUCCESS (Just UI now, DB is already done)
+  const handleItWorked = () => {
     setMessages(prev => [...prev, { 
-      id: Date.now(), 
-      type: 'user', 
-      text: "It Worked", 
-      isAction: true 
+      id: Date.now(), type: 'user', text: "It Worked", isAction: true 
     }, {
-      id: Date.now() + 1,
-      type: 'bot',
-      text: "Glad I could help! I've logged this as a resolved incident."
+      id: Date.now() + 1, type: 'bot', text: "Excellent. I've kept the incident log for our records."
     }]);
-    setSuggestedFix(null);
-
-    // B. SAVE TO DB (The Missing Link)
-    const { data: { user } } = await supabase.auth.getUser();
-    
-    await supabase.from('tickets').insert({
-      subject: `Auto-Resolved: ${suggestedFix.title}`, // Clear title
-      description: `User Issue: "${description}"\n\nResolved by Nexus Bot using article: ${suggestedFix.title}`,
-      category: category || 'Software',
-      priority: 'Low',
-      status: 'Resolved', // <--- INSTANT CLOSE
-      assignee_id: botId, // <--- ASSIGNED TO BOT
-      requester_id: user?.id
-    });
-    
-    // Optional: Refresh or redirect? For now, we stay in chat to show success.
+    setAutoTicketId(null); // Clear tracker, job done.
   };
 
-  const handleStillBroken = () => {
+  // 4. ROLLBACK (If they say "Still Broken")
+  const handleStillBroken = async () => {
+    // We were too optimistic. Delete/Void the auto-ticket.
+    if (autoTicketId) {
+        await supabase.from('tickets').delete().eq('id', autoTicketId);
+        // Alternatively: update status to 'New' and reuse it, but deleting is cleaner for the stats.
+    }
+
     setMessages(prev => [...prev, { 
-      id: Date.now(), 
-      type: 'user', 
-      text: "Still Broken", 
-      isAction: true 
+      id: Date.now(), type: 'user', text: "Still Broken", isAction: true 
     }, {
-      id: Date.now() + 1,
-      type: 'bot',
-      text: "I understand. Let's get this to a human expert immediately."
+      id: Date.now() + 1, type: 'bot', text: "Understood. Creating a manual ticket now."
     }]);
-    setSuggestedFix(null);
+    
+    setAutoTicketId(null);
     setShowForm(true);
     if (!subject) setSubject(description.substring(0, 50) + (description.length > 50 ? '...' : ''));
   };
@@ -136,6 +134,13 @@ export default function NewTicketView({ categories, kbArticles, onSubmit }) {
       category: category || 'General',
       priority
     });
+  };
+
+  // SAFE CONTENT RENDERER
+  const getArticlePreview = (article) => {
+      // Crash Prevention: Check all possible text fields
+      const text = article.content || article.body || article.text || article.description || '';
+      return text.substring(0, 150) + '...';
   };
 
   return (
@@ -151,12 +156,10 @@ export default function NewTicketView({ categories, kbArticles, onSubmit }) {
         {messages.map((msg) => (
           <div key={msg.id} className={`flex gap-4 ${msg.type === 'user' ? 'flex-row-reverse' : ''}`}>
             
-            {/* AVATAR */}
             <div className={`w-10 h-10 rounded-full flex items-center justify-center shrink-0 ${msg.type === 'bot' ? 'bg-blue-600' : 'bg-slate-700'}`}>
               {msg.type === 'bot' ? <Bot size={20} className="text-white" /> : <User size={20} className="text-slate-300" />}
             </div>
 
-            {/* BUBBLE */}
             <div className={`flex flex-col gap-2 max-w-[80%] ${msg.type === 'user' ? 'items-end' : 'items-start'}`}>
               <div className={`px-5 py-3 rounded-2xl text-sm leading-relaxed ${
                 msg.type === 'bot' 
@@ -168,18 +171,19 @@ export default function NewTicketView({ categories, kbArticles, onSubmit }) {
                 {msg.text}
               </div>
 
-              {/* SUGGESTION CARD */}
+              {/* SUGGESTION CARD (CRASH PROOFED) */}
               {msg.isSuggestion && msg.article && (
                 <div className="bg-[#0f172a] border border-green-500/30 rounded-xl p-4 w-full mt-2 animate-in zoom-in-95 duration-300">
                   <div className="flex items-center gap-2 text-green-400 mb-2">
                     <Wrench size={16} />
-                    <span className="text-xs font-bold uppercase tracking-wider">Suggested Fix: {msg.article.title}</span>
+                    <span className="text-xs font-bold uppercase tracking-wider">Suggested Fix: {msg.article.title || 'Unknown Title'}</span>
                   </div>
-                  <p className="text-slate-300 text-sm mb-4">{msg.article.content.substring(0, 150)}...</p>
+                  <p className="text-slate-300 text-sm mb-4">{getArticlePreview(msg.article)}</p>
                   
-                  {!suggestedFix && <div className="text-xs text-slate-500 italic">Feedback recorded.</div>}
+                  {!autoTicketId && <div className="text-xs text-slate-500 italic">Feedback recorded.</div>}
                   
-                  {suggestedFix && (
+                  {/* Buttons only show if we are still deciding (ticket exists) */}
+                  {autoTicketId && (
                     <div className="flex gap-3">
                       <button onClick={handleItWorked} className="flex-1 py-2 bg-green-600 hover:bg-green-500 text-white rounded-lg text-sm font-medium transition-colors flex items-center justify-center gap-2">
                         <ThumbsUp size={16} /> It Worked
@@ -210,7 +214,6 @@ export default function NewTicketView({ categories, kbArticles, onSubmit }) {
         <div ref={messagesEndRef} />
       </div>
 
-      {/* INPUT AREA (Hidden if form is open) */}
       {!showForm && (
         <div className="relative">
           <input 
@@ -232,7 +235,6 @@ export default function NewTicketView({ categories, kbArticles, onSubmit }) {
         </div>
       )}
 
-      {/* TICKET FORM (Appears if bot fails) */}
       {showForm && (
         <GlassCard className="p-6 animate-in slide-in-from-bottom-8 duration-500 border-t-4 border-t-blue-500">
           <div className="flex justify-between items-center mb-6">
@@ -272,25 +274,5 @@ export default function NewTicketView({ categories, kbArticles, onSubmit }) {
         </GlassCard>
       )}
     </div>
-  );
-}
-
-// Simple Icon component needed for the replacement above
-function Wrench({ size, className }) {
-  return (
-    <svg 
-      xmlns="http://www.w3.org/2000/svg" 
-      width={size} 
-      height={size} 
-      viewBox="0 0 24 24" 
-      fill="none" 
-      stroke="currentColor" 
-      strokeWidth="2" 
-      strokeLinecap="round" 
-      strokeLinejoin="round" 
-      className={className}
-    >
-      <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"></path>
-    </svg>
   );
 }
