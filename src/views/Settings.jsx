@@ -2,9 +2,9 @@ import React, { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 import { 
   Building2, Search, Plus, Trash2, Save, 
-  Shield, Check, X, Filter, Users, Briefcase
+  Shield, Check, X, Filter, Users, Briefcase, Network
 } from 'lucide-react';
-import { GlassCard, getIcon } from '../components/ui'; // <--- Added getIcon import
+import { GlassCard, getIcon } from '../components/ui'; 
 
 export default function SettingsView({ categories, tenants, users, departments = [], onUpdate }) {
   // SEARCH & FILTER STATE
@@ -14,13 +14,14 @@ export default function SettingsView({ categories, tenants, users, departments =
 
   // CATEGORY EDIT STATE
   const [newCategory, setNewCategory] = useState('');
-  const [newCategoryIcon, setNewCategoryIcon] = useState('Briefcase'); // <--- RESTORED STATE
+  const [newCategoryIcon, setNewCategoryIcon] = useState('Briefcase'); 
+  const [newCategoryDept, setNewCategoryDept] = useState(''); // <--- NEW: Department Link
   const [isAddingCat, setIsAddingCat] = useState(false);
 
   // USER EDIT STATE
   const [editingUser, setEditingUser] = useState(null);
 
-  // 1. FETCH DEPARTMENT MEMBERSHIPS ON LOAD
+  // 1. FETCH DEPARTMENT MEMBERSHIPS
   useEffect(() => {
     fetchMemberships();
   }, []);
@@ -40,13 +41,17 @@ export default function SettingsView({ categories, tenants, users, departments =
   // --- CATEGORY LOGIC ---
   const handleAddCategory = async () => {
     if (!newCategory.trim()) return;
-    // Insert with Icon
+    
+    // Insert with Icon AND Default Department
     await supabase.from('categories').insert({ 
       label: newCategory, 
-      icon: newCategoryIcon 
+      icon: newCategoryIcon,
+      default_department_id: newCategoryDept || null // <--- SAVE THE LINK
     });
+    
     setNewCategory('');
     setNewCategoryIcon('Briefcase');
+    setNewCategoryDept('');
     setIsAddingCat(false);
     onUpdate();
   };
@@ -86,7 +91,6 @@ export default function SettingsView({ categories, tenants, users, departments =
     return matchesSearch && matchesDept;
   });
 
-  // Available Icons for the Picker
   const availableIcons = ['Briefcase', 'Monitor', 'Cpu', 'Wifi', 'ShieldAlert', 'Wrench', 'Zap', 'Globe', 'FileText'];
 
   return (
@@ -113,7 +117,6 @@ export default function SettingsView({ categories, tenants, users, departments =
              </div>
 
              <div className="space-y-2 max-h-[500px] overflow-y-auto custom-scrollbar pr-2">
-                {/* RESTORED: ICON PICKER UI */}
                 {isAddingCat && (
                   <div className="flex flex-col gap-2 animate-in fade-in slide-in-from-left-2 p-3 bg-white/5 rounded-lg border border-blue-500/30">
                      <input 
@@ -123,6 +126,16 @@ export default function SettingsView({ categories, tenants, users, departments =
                        value={newCategory}
                        onChange={e => setNewCategory(e.target.value)}
                      />
+                     
+                     {/* DEPARTMENT DROPDOWN */}
+                     <select 
+                        className="w-full bg-black/30 border border-white/10 rounded px-3 py-2 text-sm text-white focus:border-blue-500 outline-none appearance-none cursor-pointer"
+                        value={newCategoryDept}
+                        onChange={e => setNewCategoryDept(e.target.value)}
+                     >
+                        <option value="">(Optional) Auto-Assign to Team...</option>
+                        {departments.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
+                     </select>
                      
                      <div className="flex gap-2">
                         <div className="relative flex-1">
@@ -142,23 +155,34 @@ export default function SettingsView({ categories, tenants, users, departments =
                   </div>
                 )}
 
-                {/* CATEGORY LIST */}
-                {categories.map(cat => (
-                  <div key={cat.id} className="group flex justify-between items-center p-3 bg-white/5 rounded-lg border border-white/5 hover:border-white/10 transition-all">
-                     <div className="flex items-center gap-3">
-                        <div className="text-slate-500 group-hover:text-blue-400 transition-colors">
-                           {getIcon(cat.icon || 'Briefcase', 18)}
-                        </div>
-                        <span className="text-slate-200">{cat.label}</span>
-                     </div>
-                     <button onClick={() => handleDeleteCategory(cat.id)} className="opacity-0 group-hover:opacity-100 text-slate-500 hover:text-rose-400 transition-opacity"><Trash2 size={14} /></button>
-                  </div>
-                ))}
+                {categories.map(cat => {
+                   // Find linked department name for display
+                   const linkedDept = departments.find(d => d.id === cat.default_department_id);
+                   
+                   return (
+                    <div key={cat.id} className="group flex justify-between items-center p-3 bg-white/5 rounded-lg border border-white/5 hover:border-white/10 transition-all">
+                       <div className="flex items-center gap-3 overflow-hidden">
+                          <div className="text-slate-500 group-hover:text-blue-400 transition-colors shrink-0">
+                             {getIcon(cat.icon || 'Briefcase', 18)}
+                          </div>
+                          <div className="flex flex-col min-w-0">
+                             <span className="text-slate-200 truncate">{cat.label}</span>
+                             {linkedDept && (
+                               <span className="text-[10px] text-indigo-400 flex items-center gap-1">
+                                 <Network size={10} /> {linkedDept.name}
+                               </span>
+                             )}
+                          </div>
+                       </div>
+                       <button onClick={() => handleDeleteCategory(cat.id)} className="opacity-0 group-hover:opacity-100 text-slate-500 hover:text-rose-400 transition-opacity"><Trash2 size={14} /></button>
+                    </div>
+                   );
+                })}
              </div>
           </GlassCard>
         </div>
 
-        {/* RIGHT COL: USER MANAGEMENT (With Dept Filter) */}
+        {/* RIGHT COL: USER MANAGEMENT */}
         <div className="lg:col-span-2 space-y-6">
           <GlassCard className="p-6 border-t-4 border-t-indigo-500 min-h-[600px]">
              <div className="flex items-center gap-2 text-indigo-400 mb-6">
@@ -166,9 +190,8 @@ export default function SettingsView({ categories, tenants, users, departments =
                 <h3 className="font-bold text-lg text-white">User & Access Management</h3>
              </div>
 
-             {/* TOOLBAR: SEARCH + DEPARTMENT FILTER */}
+             {/* TOOLBAR */}
              <div className="flex gap-4 mb-6">
-                {/* Search Bar */}
                 <div className="relative flex-1">
                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 w-4 h-4" />
                    <input 
@@ -180,7 +203,6 @@ export default function SettingsView({ categories, tenants, users, departments =
                    />
                 </div>
 
-                {/* Department Dropdown */}
                 <div className="relative w-1/3">
                    <select 
                      className="w-full bg-black/30 border border-white/10 rounded-lg pl-9 pr-8 py-3 text-sm text-white focus:outline-none focus:border-indigo-500/50 appearance-none cursor-pointer"
@@ -224,18 +246,13 @@ export default function SettingsView({ categories, tenants, users, departments =
                                </div>
                             </div>
                          </div>
-
-                         {/* EDIT TOGGLE */}
                          <button onClick={() => setEditingUser(editingUser === user.id ? null : user.id)} className="text-xs text-slate-400 hover:text-white underline">
                             {editingUser === user.id ? 'Close' : 'Manage'}
                          </button>
                       </div>
 
-                      {/* EDIT PANEL */}
                       {editingUser === user.id && (
                         <div className="mt-4 pt-4 border-t border-white/5 animate-in slide-in-from-top-2">
-                           
-                           {/* ROLE SELECTOR */}
                            <div className="mb-4">
                               <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1 block">Global System Role</label>
                               <select 
@@ -243,15 +260,13 @@ export default function SettingsView({ categories, tenants, users, departments =
                                 value={user.role}
                                 onChange={(e) => handleUpdateUser(user.id, { role: e.target.value })}
                               >
-                                 <option value="user">Staff (User) - Can only raise tickets</option>
-                                 <option value="technician">Technician - Can resolve tickets</option>
-                                 <option value="manager">Manager - Can view reports</option>
-                                 <option value="admin">Admin - Can manage most settings</option>
-                                 <option value="super_admin">Super Admin - Full Control</option>
+                                 <option value="user">Staff (User)</option>
+                                 <option value="technician">Technician</option>
+                                 <option value="manager">Manager</option>
+                                 <option value="admin">Admin</option>
+                                 <option value="super_admin">Super Admin</option>
                               </select>
                            </div>
-
-                           {/* TENANT TOGGLES */}
                            <div>
                               <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-2 block">Tenant Access Scopes</label>
                               <div className="space-y-2">
