@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Send, Bot, User, ThumbsUp, ThumbsDown, ArrowRight, Loader, Wrench } from 'lucide-react';
 import { supabase } from '../lib/supabase';
-import { GlassCard } from '../components/ui'; // <--- THIS WAS MISSING!
+import { GlassCard } from '../components/ui';
 
 export default function NewTicketView({ categories, kbArticles, onSubmit }) {
   // FORM STATE
@@ -70,7 +70,8 @@ export default function NewTicketView({ categories, kbArticles, onSubmit }) {
               priority: 'Low',
               status: 'Resolved', 
               assignee_id: botId,
-              requester_id: user?.id
+              requester_id: user?.id,
+              resolved_at: new Date().toISOString() // <--- NEW: TIMESTAMP THE WIN
             }).select().single();
             
             if (newTicket) setAutoTicketId(newTicket.id);
