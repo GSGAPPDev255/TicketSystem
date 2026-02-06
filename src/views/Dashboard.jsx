@@ -3,13 +3,14 @@ import { LayoutDashboard, Clock, AlertCircle, TrendingUp, Filter, X, Check, Bot,
 import { GlassCard, StatCard, TicketRow } from '../components/ui';
 
 export default function DashboardView({ tickets = [], loading, role, onRefresh, onSelectTicket, onNewTicket, title = "Dashboard" }) {
-  const [filterMode, setFilterMode] = useState('active'); 
+  const [filterMode, setFilterMode] = useState('active'); // 'active', 'sla', 'critical', 'bot', 'resolved'
   const [monthFilter, setMonthFilter] = useState('ALL'); // 0-11 or 'ALL'
   const [yearFilter, setYearFilter] = useState(new Date().getFullYear().toString());
 
   const safeTickets = Array.isArray(tickets) ? tickets : [];
 
   // --- DATE FILTERING LOGIC ---
+  // We calculate this first, but we might ignore it for the "Active" view
   const dateFilteredTickets = safeTickets.filter(t => {
     const ticketDate = new Date(t.created_at);
     const matchesYear = ticketDate.getFullYear().toString() === yearFilter;
@@ -18,6 +19,7 @@ export default function DashboardView({ tickets = [], loading, role, onRefresh, 
   });
 
   // --- STATS CALCULATION (Based on Date Filter) ---
+  // This ensures the numbers on the cards match the selected time period
   const openTickets = dateFilteredTickets.filter(t => t.status !== 'Resolved' && t.status !== 'Closed').length;
   const criticalTickets = dateFilteredTickets.filter(t => t.priority === 'Critical' && t.status !== 'Resolved').length;
   const slaBreaches = dateFilteredTickets.filter(t => t.sla_due_at && new Date(t.sla_due_at) < new Date() && t.status !== 'Resolved').length;
@@ -47,19 +49,14 @@ export default function DashboardView({ tickets = [], loading, role, onRefresh, 
       break;
     case 'active':
     default:
-      // Active tickets usually ignore date filters (you want to see ALL active work), 
-      // but for consistency in this view, we can keep the date filter or ignore it.
-      // Let's IGNORE date filter for 'Active' so you don't lose old tickets that are still open.
-      if (filterMode === 'active') {
-          displayedTickets = safeTickets.filter(t => t.status !== 'Resolved' && t.status !== 'Closed' && t.assignee !== 'Nexus Bot');
-      } else {
-          displayedTickets = dateFilteredTickets; // Fallback
-      }
-      listTitle = filterMode === 'active' ? "Active Queue (All Time)" : `Filtered Records (${yearFilter})`;
+      // CRITICAL UX RULE: Active Queue should shows ALL open work, regardless of date filter.
+      // You don't want to hide a ticket from last month if it's still unresolved.
+      displayedTickets = safeTickets.filter(t => t.status !== 'Resolved' && t.status !== 'Closed' && t.assignee !== 'Nexus Bot');
+      listTitle = "Active Queue (All Time)";
       break;
   }
 
-  // --- CSV EXPORT FUNCTION ---
+  // --- CSV EXPORT FUNCTION (FIXED) ---
   const handleExportCSV = () => {
     if (displayedTickets.length === 0) {
       alert("No data to export in the current view.");
@@ -69,17 +66,24 @@ export default function DashboardView({ tickets = [], loading, role, onRefresh, 
     // Define headers
     const headers = ["ID", "Subject", "Status", "Priority", "Category", "Requester", "Assignee", "Created At", "Resolved At"];
     
+    // Helper to format dates safely
+    const formatDate = (dateStr) => {
+      if (!dateStr) return '';
+      const date = new Date(dateStr);
+      return isNaN(date.getTime()) ? '' : date.toLocaleDateString() + ' ' + date.toLocaleTimeString();
+    };
+
     // Convert data to CSV rows
     const rows = displayedTickets.map(t => [
       t.id,
-      `"${t.subject.replace(/"/g, '""')}"`, // Escape quotes
+      `"${t.subject.replace(/"/g, '""')}"`, // Escape quotes in subject
       t.status,
       t.priority || 'Medium',
       t.category || 'General',
       t.requester || 'Unknown',
       t.assignee || 'Unassigned',
-      new Date(t.created_at).toLocaleDateString(),
-      t.status === 'Resolved' ? new Date(t.updated_at).toLocaleDateString() : ''
+      formatDate(t.created_at),
+      formatDate(t.resolved_at) // <--- USES NEW COLUMN
     ]);
 
     // Build CSV string
@@ -103,7 +107,9 @@ export default function DashboardView({ tickets = [], loading, role, onRefresh, 
     "January", "February", "March", "April", "May", "June", 
     "July", "August", "September", "October", "November", "December"
   ];
-  const years = [2024, 2025, 2026, 2027]; // You can make this dynamic later
+  // Dynamic Year Generator (Current Year + Next Year)
+  const currentYear = new Date().getFullYear();
+  const years = [currentYear, currentYear + 1]; 
 
   return (
     <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4">
@@ -153,16 +159,18 @@ export default function DashboardView({ tickets = [], loading, role, onRefresh, 
 
       {/* STATS GRID */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+        {/* CARD 1: ACTIVE */}
         <div onClick={() => setFilterMode('active')} className={`cursor-pointer transition-transform active:scale-95 ${filterMode === 'active' ? 'ring-2 ring-blue-500 rounded-2xl' : ''}`}>
           <StatCard 
             label="Open Tickets" 
             value={openTickets} 
             icon={LayoutDashboard} 
             trend="Active Queue" 
-            trendUp={true} // Neutral
+            trendUp={true} 
           />
         </div>
 
+        {/* CARD 2: HISTORY */}
         <div onClick={() => setFilterMode('resolved')} className={`cursor-pointer transition-transform active:scale-95 ${filterMode === 'resolved' ? 'ring-2 ring-emerald-500 rounded-2xl' : ''}`}>
           <StatCard 
             label={`Resolved (${yearFilter})`} 
@@ -173,6 +181,7 @@ export default function DashboardView({ tickets = [], loading, role, onRefresh, 
           />
         </div>
 
+        {/* CARD 3: SLA */}
         <div onClick={() => setFilterMode('sla')} className={`cursor-pointer transition-transform active:scale-95 ${filterMode === 'sla' ? 'ring-2 ring-rose-500 rounded-2xl' : ''}`}>
           <StatCard 
             label="SLA Breaches" 
@@ -183,6 +192,7 @@ export default function DashboardView({ tickets = [], loading, role, onRefresh, 
           />
         </div>
 
+        {/* CARD 4: BOT */}
         <div onClick={() => setFilterMode('bot')} className={`cursor-pointer transition-transform active:scale-95 ${filterMode === 'bot' ? 'ring-2 ring-purple-500 rounded-2xl' : ''}`}>
           <StatCard 
             label="Bot Resolved" 
