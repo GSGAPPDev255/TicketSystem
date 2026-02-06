@@ -3,7 +3,7 @@ import { supabase } from '../lib/supabase';
 import { 
   ArrowLeft, Clock, Send, Users, 
   Briefcase, Monitor, Cpu, Wifi, ShieldAlert, Wrench, Zap, Globe, FileText, CheckCircle2,
-  TrendingUp, TrendingDown
+  TrendingUp, TrendingDown, Activity
 } from 'lucide-react';
 
 // --- HELPER: ICON MAPPER ---
@@ -150,7 +150,7 @@ export const Modal = ({ isOpen, onClose, title, children }) => {
   );
 };
 
-// --- TICKET DETAIL VIEW ---
+// --- TICKET DETAIL VIEW (FIXED AUDIT LOGGING) ---
 export const TicketDetailView = ({ ticket, onBack }) => {
   const [updates, setUpdates] = useState([]);
   const [newUpdate, setNewUpdate] = useState('');
@@ -158,12 +158,13 @@ export const TicketDetailView = ({ ticket, onBack }) => {
   const [assigneeId, setAssigneeId] = useState(ticket.assignee_id || '');
   const [staffMembers, setStaffMembers] = useState([]);
   const [loading, setLoading] = useState(false);
-  const [currentUser, setCurrentUser] = useState(null);
+  const [currentUser, setCurrentUser] = useState(null); 
 
+  // 1. Init Data
   useEffect(() => {
     fetchUpdates();
     fetchStaff();
-    getCurrentUser();
+    getCurrentUser(); 
   }, [ticket.id]);
 
   const getCurrentUser = async () => {
@@ -189,38 +190,63 @@ export const TicketDetailView = ({ ticket, onBack }) => {
     if (data) setStaffMembers(data);
   };
 
+  // 2. HELPER: LOG SYSTEM MESSAGE
+  const logSystemMessage = async (message) => {
+    if (!currentUser) return;
+    await supabase.from('ticket_updates').insert({
+      ticket_id: ticket.id,
+      user_id: currentUser.id,
+      content: message
+    });
+    fetchUpdates(); // Refresh log immediately
+  };
+
+  // 3. HANDLE ASSIGNMENT (AUTO-SAVE & LOG)
   const handleAssign = async (newId) => {
     setAssigneeId(newId);
+    
+    // DB Update
     await supabase.from('tickets').update({ assignee_id: newId || null }).eq('id', ticket.id);
+    
+    // Log it
+    const assigneeName = staffMembers.find(s => s.id === newId)?.full_name || 'Unassigned';
+    await logSystemMessage(`Changed assignee to: ${assigneeName}`);
+
+    // Auto-Status Logic
     if (newId && status === 'New') {
-      setStatus('In Progress');
-      await supabase.from('tickets').update({ status: 'In Progress' }).eq('id', ticket.id);
+      await handleStatusChange('In Progress'); // Re-use status logic
     }
   };
 
+  // 4. HANDLE STATUS CHANGE (AUTO-SAVE & LOG)
+  const handleStatusChange = async (newStatus) => {
+    setStatus(newStatus);
+    
+    // DB Update
+    await supabase.from('tickets').update({ status: newStatus }).eq('id', ticket.id);
+    
+    // Log it
+    await logSystemMessage(`Changed status to: ${newStatus}`);
+  };
+
+  // 5. "TAKE OWNERSHIP" SHORTCUT
   const assignToMe = async () => {
     if (!currentUser) return;
     await handleAssign(currentUser.id);
-    setAssigneeId(currentUser.id);
-    setStatus('In Progress'); 
   };
 
+  // 6. POST COMMENT (USER TYPED)
   const handlePostUpdate = async () => {
     if (!newUpdate.trim()) return;
     setLoading(true);
 
-    const { data: { session } } = await supabase.auth.getSession();
-    if (!session) return;
+    if (!currentUser) return;
 
     await supabase.from('ticket_updates').insert({
       ticket_id: ticket.id,
-      user_id: session.user.id,
+      user_id: currentUser.id,
       content: newUpdate
     });
-
-    if (status !== ticket.status) {
-      await supabase.from('tickets').update({ status }).eq('id', ticket.id);
-    }
 
     setNewUpdate('');
     fetchUpdates();
@@ -272,7 +298,9 @@ export const TicketDetailView = ({ ticket, onBack }) => {
         </GlassCard>
 
         <div className="flex-1 overflow-y-auto space-y-4 pr-2 custom-scrollbar mt-2">
-           <div className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-4">Activity Log</div>
+           <div className="flex items-center gap-2 text-xs font-bold text-slate-500 uppercase tracking-wider mb-4">
+             <Activity size={12} /> Activity Log
+           </div>
            {updates.length === 0 && <div className="text-center py-8 text-slate-500 italic text-sm border border-white/5 rounded-xl border-dashed">No updates yet.</div>}
            {updates.map(update => (
              <div key={update.id} className="flex gap-4 group">
@@ -284,7 +312,7 @@ export const TicketDetailView = ({ ticket, onBack }) => {
                 </div>
                 <div className="flex-1 pb-6">
                    <div className="flex items-baseline justify-between mb-1">
-                      <span className="text-sm font-semibold text-slate-300">{update.profile?.full_name || 'Unknown'}</span>
+                      <span className="text-sm font-semibold text-slate-300">{update.profile?.full_name || 'System'}</span>
                       <span className="text-xs text-slate-500">{new Date(update.created_at).toLocaleString()}</span>
                    </div>
                    <div className="text-slate-300 text-sm bg-white/5 p-3 rounded-lg rounded-tl-none border border-white/5 shadow-sm">
@@ -304,7 +332,7 @@ export const TicketDetailView = ({ ticket, onBack }) => {
               <select 
                 className="w-full bg-black/30 border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-blue-500/50"
                 value={status}
-                onChange={(e) => setStatus(e.target.value)}
+                onChange={(e) => handleStatusChange(e.target.value)}
               >
                  {['New', 'In Progress', 'Pending Vendor', 'Resolved', 'Closed'].map(s => <option key={s} value={s}>{s}</option>)}
               </select>
