@@ -78,6 +78,7 @@ export default function App() {
     if (cats.data) setCategories(cats.data);
     
     // --- SECURE TENANT FILTERING ---
+    // 1. Filter the list of available tenants based on permissions
     if (tens.data) {
       let visibleTenants = tens.data;
       if (currentUserProfile.role !== 'super_admin') {
@@ -86,8 +87,9 @@ export default function App() {
       }
       setTenants(visibleTenants);
       
-      // Smart Default
+      // 2. Set Smart Default (Preserve selection if valid, else pick first available)
       if (visibleTenants.length > 0) {
+        // If we don't have a selection, OR our current selection is no longer valid (revoked access)
         if (!currentTenant || !visibleTenants.find(t => t.id === currentTenant.id)) {
            setCurrentTenant(visibleTenants[0]);
         }
@@ -142,24 +144,23 @@ export default function App() {
     return now.toISOString();
   };
 
-  // --- HANDLE NEW TICKET (NOW WITH ROUTING) ---
+  // --- HANDLE NEW TICKET (WITH ROUTING & TENANT TAGGING) ---
   const handleCreateTicket = async (formData) => {
     const requesterId = session?.user?.id;
     const priority = formData.priority || 'Medium';
     const dueAt = calculateDueDate(priority);
 
     // 1. AUTO-ROUTING LOGIC
-    // Find the category object to see if it has a default department
     const selectedCategory = categories.find(c => c.label === formData.category);
     const autoDeptId = selectedCategory?.default_department_id || null;
 
     const { error } = await supabase.from('tickets').insert({ 
       ...formData, 
       requester_id: requesterId,
-      tenant_id: currentTenant?.id,
+      tenant_id: currentTenant?.id, // <--- CRITICAL: Tags ticket to current tenant
       priority: priority,
       sla_due_at: dueAt,
-      department_id: autoDeptId // <--- THE MAGIC LINK
+      department_id: autoDeptId 
     });
     
     if (!error) { 
@@ -190,6 +191,7 @@ export default function App() {
       <aside className={`fixed md:relative z-20 h-full transition-all duration-300 ease-in-out ${sidebarOpen ? 'w-64 translate-x-0' : 'w-20 md:w-20 -translate-x-full md:translate-x-0'} border-r border-white/5 bg-[#0f172a]/80 backdrop-blur-xl flex flex-col`}>
         <div className="h-16 flex items-center justify-between px-4 border-b border-white/5"><div className={`flex items-center gap-3 ${!sidebarOpen && 'justify-center w-full'}`}><Monitor className="w-5 h-5 text-white" />{sidebarOpen && <span className="font-bold text-lg tracking-tight">Nexus</span>}</div><button onClick={() => setSidebarOpen(!sidebarOpen)} className="md:hidden text-slate-400"><X size={20} /></button></div>
         
+        {/* TENANT SWITCHER */}
         {sidebarOpen && currentTenant && (
           <div className="px-4 pt-4 relative">
              <button onClick={() => setTenantMenuOpen(!tenantMenuOpen)} className="w-full bg-white/5 hover:bg-white/10 rounded-lg border border-white/10 p-2 flex items-center gap-2 text-sm font-medium text-white transition-colors">
@@ -212,10 +214,11 @@ export default function App() {
 
         <nav className="flex-1 py-6 px-2 space-y-1">
           <NavItem icon={LayoutDashboard} label="Dashboard" active={activeTab === 'dashboard'} onClick={() => handleNavClick('dashboard')} collapsed={!sidebarOpen} />
+          {/* Note: The 'count' here also respects strict filtering */}
           <NavItem 
             icon={Clock} 
             label="My Queue" 
-            count={tickets.filter(t => t.status !== 'Resolved' && (t.requester === profile?.full_name || t.assignee === profile?.full_name)).length} 
+            count={tickets.filter(t => t.tenant_id === currentTenant?.id && t.status !== 'Resolved' && (t.requester === profile?.full_name || t.assignee === profile?.full_name)).length} 
             active={activeTab === 'queue'}
             onClick={() => handleNavClick('queue')} 
             collapsed={!sidebarOpen} 
@@ -248,10 +251,26 @@ export default function App() {
 
         <div className="p-4 md:p-8 max-w-7xl mx-auto w-full">
           {activeTab === 'new' && <NewTicketView categories={categories} kbArticles={kbArticles} onSubmit={handleCreateTicket} />}
-          {activeTab === 'dashboard' && !selectedTicket && <DashboardView tickets={tickets} loading={loading} role={profile?.role} onRefresh={() => fetchAllData(profile)} onSelectTicket={setSelectedTicket} onNewTicket={() => handleNavClick('new')} />}
+          
+          {/* --- STRICT TENANT ISOLATION: DASHBOARD --- */}
+          {activeTab === 'dashboard' && !selectedTicket && (
+            <DashboardView 
+              tickets={tickets.filter(t => t.tenant_id === currentTenant?.id)} 
+              loading={loading} 
+              role={profile?.role} 
+              onRefresh={() => fetchAllData(profile)} 
+              onSelectTicket={setSelectedTicket} 
+              onNewTicket={() => handleNavClick('new')} 
+            />
+          )}
+
+          {/* --- STRICT TENANT ISOLATION: MY QUEUE --- */}
           {activeTab === 'queue' && !selectedTicket && (
              <DashboardView 
-               tickets={tickets.filter(t => t.requester === profile?.full_name || t.assignee === profile?.full_name)} 
+               tickets={tickets.filter(t => 
+                 t.tenant_id === currentTenant?.id && 
+                 (t.requester === profile?.full_name || t.assignee === profile?.full_name)
+               )} 
                loading={loading} 
                role={profile?.role} 
                onRefresh={() => fetchAllData(profile)} 
@@ -260,6 +279,7 @@ export default function App() {
                title="My Active Tickets"
              />
           )}
+
           {selectedTicket && <TicketDetailView ticket={selectedTicket} onBack={() => { setSelectedTicket(null); fetchAllData(profile); }} />}
           
           {activeTab === 'teams' && isTech && <TeamsView departments={departments} />}
