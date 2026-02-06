@@ -150,7 +150,7 @@ export const Modal = ({ isOpen, onClose, title, children }) => {
   );
 };
 
-// --- TICKET DETAIL VIEW (FIXED AUDIT LOGGING) ---
+// --- TICKET DETAIL VIEW ---
 export const TicketDetailView = ({ ticket, onBack }) => {
   const [updates, setUpdates] = useState([]);
   const [newUpdate, setNewUpdate] = useState('');
@@ -201,41 +201,39 @@ export const TicketDetailView = ({ ticket, onBack }) => {
     fetchUpdates(); // Refresh log immediately
   };
 
-  // 3. HANDLE ASSIGNMENT (AUTO-SAVE & LOG)
+  // 3. HANDLE ASSIGNMENT
   const handleAssign = async (newId) => {
     setAssigneeId(newId);
-    
-    // DB Update
     await supabase.from('tickets').update({ assignee_id: newId || null }).eq('id', ticket.id);
-    
-    // Log it
     const assigneeName = staffMembers.find(s => s.id === newId)?.full_name || 'Unassigned';
     await logSystemMessage(`Changed assignee to: ${assigneeName}`);
 
-    // Auto-Status Logic
     if (newId && status === 'New') {
-      await handleStatusChange('In Progress'); // Re-use status logic
+      await handleStatusChange('In Progress');
     }
   };
 
-  // 4. HANDLE STATUS CHANGE (AUTO-SAVE & LOG)
+  // 4. HANDLE STATUS CHANGE (WITH RESOLVED_AT TIMESTAMP)
   const handleStatusChange = async (newStatus) => {
     setStatus(newStatus);
     
-    // DB Update
-    await supabase.from('tickets').update({ status: newStatus }).eq('id', ticket.id);
+    const updates = { status: newStatus };
+    // --- NEW: SET TIMESTAMP IF RESOLVED ---
+    if (newStatus === 'Resolved' || newStatus === 'Closed') {
+      updates.resolved_at = new Date().toISOString();
+    }
     
-    // Log it
+    await supabase.from('tickets').update(updates).eq('id', ticket.id);
     await logSystemMessage(`Changed status to: ${newStatus}`);
   };
 
-  // 5. "TAKE OWNERSHIP" SHORTCUT
+  // 5. "TAKE OWNERSHIP"
   const assignToMe = async () => {
     if (!currentUser) return;
     await handleAssign(currentUser.id);
   };
 
-  // 6. POST COMMENT (USER TYPED)
+  // 6. POST COMMENT
   const handlePostUpdate = async () => {
     if (!newUpdate.trim()) return;
     setLoading(true);
