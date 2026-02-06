@@ -17,7 +17,7 @@ export default function NewTicketView({ categories, kbArticles, onSubmit }) {
   const [showForm, setShowForm] = useState(false);
   
   // OPTIMISTIC TRACKING
-  const [autoTicketId, setAutoTicketId] = useState(null); // Track the ticket we just auto-created
+  const [autoTicketId, setAutoTicketId] = useState(null); 
   
   // BOT IDENTITY
   const [botId, setBotId] = useState(null);
@@ -49,7 +49,6 @@ export default function NewTicketView({ categories, kbArticles, onSubmit }) {
     setTimeout(async () => {
       const lowerDesc = description.toLowerCase();
       
-      // SAFETY CHECK: Ensure kbArticles is an array
       const safeArticles = Array.isArray(kbArticles) ? kbArticles : [];
       
       const match = safeArticles.find(article => 
@@ -61,15 +60,14 @@ export default function NewTicketView({ categories, kbArticles, onSubmit }) {
 
       if (match) {
         // --- OPTIMISTIC LOGGING START ---
-        // We assume it works immediately. If they leave, we have the stat.
         if (botId) {
             const { data: { user } } = await supabase.auth.getUser();
             const { data: newTicket } = await supabase.from('tickets').insert({
               subject: `[Bot Deflection] ${match.title}`,
               description: `User Issue: "${description}"\n\nAuto-suggested fix: ${match.title}`,
-              category: 'Software', // Default
+              category: 'Software',
               priority: 'Low',
-              status: 'Resolved', // <--- PRE-CLOSE IT
+              status: 'Resolved', 
               assignee_id: botId,
               requester_id: user?.id
             }).select().single();
@@ -98,22 +96,20 @@ export default function NewTicketView({ categories, kbArticles, onSubmit }) {
     }, 1500);
   };
 
-  // 3. CONFIRM SUCCESS (Just UI now, DB is already done)
+  // 3. CONFIRM SUCCESS
   const handleItWorked = () => {
     setMessages(prev => [...prev, { 
       id: Date.now(), type: 'user', text: "It Worked", isAction: true 
     }, {
       id: Date.now() + 1, type: 'bot', text: "Excellent. I've kept the incident log for our records."
     }]);
-    setAutoTicketId(null); // Clear tracker, job done.
+    setAutoTicketId(null); 
   };
 
-  // 4. ROLLBACK (If they say "Still Broken")
+  // 4. ROLLBACK
   const handleStillBroken = async () => {
-    // We were too optimistic. Delete/Void the auto-ticket.
     if (autoTicketId) {
         await supabase.from('tickets').delete().eq('id', autoTicketId);
-        // Alternatively: update status to 'New' and reuse it, but deleting is cleaner for the stats.
     }
 
     setMessages(prev => [...prev, { 
@@ -138,7 +134,7 @@ export default function NewTicketView({ categories, kbArticles, onSubmit }) {
 
   // SAFE CONTENT RENDERER
   const getArticlePreview = (article) => {
-      // Crash Prevention: Check all possible text fields
+      if (!article) return '';
       const text = article.content || article.body || article.text || article.description || '';
       return text.substring(0, 150) + '...';
   };
@@ -171,7 +167,7 @@ export default function NewTicketView({ categories, kbArticles, onSubmit }) {
                 {msg.text}
               </div>
 
-              {/* SUGGESTION CARD (CRASH PROOFED) */}
+              {/* SUGGESTION CARD */}
               {msg.isSuggestion && msg.article && (
                 <div className="bg-[#0f172a] border border-green-500/30 rounded-xl p-4 w-full mt-2 animate-in zoom-in-95 duration-300">
                   <div className="flex items-center gap-2 text-green-400 mb-2">
@@ -182,7 +178,6 @@ export default function NewTicketView({ categories, kbArticles, onSubmit }) {
                   
                   {!autoTicketId && <div className="text-xs text-slate-500 italic">Feedback recorded.</div>}
                   
-                  {/* Buttons only show if we are still deciding (ticket exists) */}
                   {autoTicketId && (
                     <div className="flex gap-3">
                       <button onClick={handleItWorked} className="flex-1 py-2 bg-green-600 hover:bg-green-500 text-white rounded-lg text-sm font-medium transition-colors flex items-center justify-center gap-2">
