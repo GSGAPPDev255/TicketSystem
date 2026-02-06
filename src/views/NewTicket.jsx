@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Send, Bot, User, ThumbsUp, ThumbsDown, ArrowRight, Loader, Wrench } from 'lucide-react';
 import { supabase } from '../lib/supabase';
+import { GlassCard } from '../components/ui'; // <--- THIS WAS MISSING!
 
 export default function NewTicketView({ categories, kbArticles, onSubmit }) {
   // FORM STATE
