@@ -1,16 +1,30 @@
 import React, { useState, useEffect } from 'react';
-import { LayoutDashboard, Clock, AlertCircle, TrendingUp, Filter, X, Check, Bot, Archive, Calendar, Download } from 'lucide-react';
-import { GlassCard, StatCard, TicketRow } from '../components/ui';
+import { supabase } from '../lib/supabase'; // Needed to find "My Issues"
+import { 
+  LayoutDashboard, Clock, AlertCircle, TrendingUp, Filter, X, Check, Bot, Archive, 
+  Calendar, Download, FileText, ChevronDown 
+} from 'lucide-react';
+import { StatCard, TicketRow } from '../components/ui';
 
 export default function DashboardView({ tickets = [], loading, role, onRefresh, onSelectTicket, onNewTicket, title = "Dashboard" }) {
-  const [filterMode, setFilterMode] = useState('active'); // 'active', 'sla', 'critical', 'bot', 'resolved'
-  const [monthFilter, setMonthFilter] = useState('ALL'); // 0-11 or 'ALL'
+  const [filterMode, setFilterMode] = useState('active'); 
+  const [monthFilter, setMonthFilter] = useState('ALL'); 
   const [yearFilter, setYearFilter] = useState(new Date().getFullYear().toString());
+  
+  // REPORTING STATE
+  const [showReportMenu, setShowReportMenu] = useState(false);
+  const [currentUserEmail, setCurrentUserEmail] = useState(null);
+
+  // 1. IDENTIFY USER (For "My Issues" Report)
+  useEffect(() => {
+    supabase.auth.getUser().then(({ data }) => {
+      if (data?.user) setCurrentUserEmail(data.user.email);
+    });
+  }, []);
 
   const safeTickets = Array.isArray(tickets) ? tickets : [];
 
-  // --- DATE FILTERING LOGIC ---
-  // We calculate this first, but we might ignore it for the "Active" view
+  // --- DASHBOARD FILTERING (Visual only) ---
   const dateFilteredTickets = safeTickets.filter(t => {
     const ticketDate = new Date(t.created_at);
     const matchesYear = ticketDate.getFullYear().toString() === yearFilter;
@@ -18,15 +32,14 @@ export default function DashboardView({ tickets = [], loading, role, onRefresh, 
     return matchesYear && matchesMonth;
   });
 
-  // --- STATS CALCULATION (Based on Date Filter) ---
-  // This ensures the numbers on the cards match the selected time period
+  // --- STATS ENGINE ---
   const openTickets = dateFilteredTickets.filter(t => t.status !== 'Resolved' && t.status !== 'Closed').length;
   const criticalTickets = dateFilteredTickets.filter(t => t.priority === 'Critical' && t.status !== 'Resolved').length;
   const slaBreaches = dateFilteredTickets.filter(t => t.sla_due_at && new Date(t.sla_due_at) < new Date() && t.status !== 'Resolved').length;
   const botResolved = dateFilteredTickets.filter(t => t.assignee === 'Nexus Bot').length;
   const myResolved = dateFilteredTickets.filter(t => t.status === 'Resolved' || t.status === 'Closed').length;
 
-  // --- MODE FILTERING LOGIC ---
+  // --- VIEW LOGIC ---
   let displayedTickets = [];
   let listTitle = "";
 
@@ -49,70 +62,104 @@ export default function DashboardView({ tickets = [], loading, role, onRefresh, 
       break;
     case 'active':
     default:
-      // CRITICAL UX RULE: Active Queue should shows ALL open work, regardless of date filter.
-      // You don't want to hide a ticket from last month if it's still unresolved.
       displayedTickets = safeTickets.filter(t => t.status !== 'Resolved' && t.status !== 'Closed' && t.assignee !== 'Nexus Bot');
       listTitle = "Active Queue (All Time)";
       break;
   }
 
-  // --- CSV EXPORT FUNCTION (FIXED) ---
-  const handleExportCSV = () => {
-    if (displayedTickets.length === 0) {
-      alert("No data to export in the current view.");
+  // --- REPORTING ENGINE (The Logic) ---
+  const generateReport = (type) => {
+    let dataToExport = [];
+    let fileName = `nexus_report_${type.toLowerCase()}_${new Date().toISOString().slice(0,10)}`;
+    let isSimplified = false;
+
+    // A. FILTER DATA
+    switch (type) {
+      case 'MY_ISSUES':
+        // Filter by email (fuzzy match)
+        dataToExport = safeTickets.filter(t => 
+           (t.requester && currentUserEmail && t.requester.toLowerCase().includes(currentUserEmail.split('@')[0])) ||
+           (t.assignee && currentUserEmail && t.assignee.toLowerCase().includes(currentUserEmail.split('@')[0]))
+        );
+        break;
+        
+      case 'OPEN':
+        dataToExport = safeTickets.filter(t => t.status !== 'Resolved' && t.status !== 'Closed');
+        break;
+        
+      case 'OPEN_SIMPLIFIED':
+        dataToExport = safeTickets.filter(t => t.status !== 'Resolved' && t.status !== 'Closed');
+        isSimplified = true;
+        break;
+
+      case 'CLOSED':
+        dataToExport = safeTickets.filter(t => t.status === 'Resolved' || t.status === 'Closed');
+        break;
+
+      case 'ALL':
+      default:
+        dataToExport = safeTickets;
+        break;
+    }
+
+    if (dataToExport.length === 0) {
+      alert("No records found for this report type.");
+      setShowReportMenu(false);
       return;
     }
 
-    // Define headers
-    const headers = ["ID", "Subject", "Status", "Priority", "Category", "Requester", "Assignee", "Created At", "Resolved At"];
-    
-    // Helper to format dates safely
-    const formatDate = (dateStr) => {
-      if (!dateStr) return '';
-      const date = new Date(dateStr);
-      return isNaN(date.getTime()) ? '' : date.toLocaleDateString() + ' ' + date.toLocaleTimeString();
-    };
+    // B. DEFINE COLUMNS
+    let headers = [];
+    let rowMapper = null;
 
-    // Convert data to CSV rows
-    const rows = displayedTickets.map(t => [
-      t.id,
-      `"${t.subject.replace(/"/g, '""')}"`, // Escape quotes in subject
-      t.status,
-      t.priority || 'Medium',
-      t.category || 'General',
-      t.requester || 'Unknown',
-      t.assignee || 'Unassigned',
-      formatDate(t.created_at),
-      formatDate(t.resolved_at) // <--- USES NEW COLUMN
-    ]);
+    if (isSimplified) {
+      headers = ["ID", "Subject", "Status", "Priority", "Assignee"];
+      rowMapper = (t) => [
+        t.id,
+        `"${t.subject.replace(/"/g, '""')}"`,
+        t.status,
+        t.priority,
+        t.assignee || 'Unassigned'
+      ];
+    } else {
+      headers = ["ID", "Subject", "Description", "Status", "Priority", "Category", "Requester", "Assignee", "Created At", "Resolved At"];
+      rowMapper = (t) => [
+        t.id,
+        `"${t.subject.replace(/"/g, '""')}"`,
+        `"${(t.description || '').replace(/"/g, '""')}"`,
+        t.status,
+        t.priority || 'Medium',
+        t.category || 'General',
+        t.requester || 'Unknown',
+        t.assignee || 'Unassigned',
+        t.created_at ? new Date(t.created_at).toLocaleDateString() + ' ' + new Date(t.created_at).toLocaleTimeString() : '',
+        t.resolved_at ? new Date(t.resolved_at).toLocaleDateString() + ' ' + new Date(t.resolved_at).toLocaleTimeString() : ''
+      ];
+    }
 
-    // Build CSV string
+    // C. GENERATE CSV
     const csvContent = [
       headers.join(','), 
-      ...rows.map(row => row.join(','))
+      ...dataToExport.map(row => rowMapper(row).join(','))
     ].join('\n');
 
-    // Create Download Link
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.setAttribute("href", url);
-    link.setAttribute("download", `nexus_export_${filterMode}_${yearFilter}.csv`);
+    link.setAttribute("download", `${fileName}.csv`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+    setShowReportMenu(false);
   };
 
-  const months = [
-    "January", "February", "March", "April", "May", "June", 
-    "July", "August", "September", "October", "November", "December"
-  ];
-  // Dynamic Year Generator (Current Year + Next Year)
+  const months = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
   const currentYear = new Date().getFullYear();
   const years = [currentYear, currentYear + 1]; 
 
   return (
-    <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4">
+    <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4" onClick={() => showReportMenu && setShowReportMenu(false)}>
       {/* HEADER & CONTROLS */}
       <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
         <div>
@@ -141,10 +188,39 @@ export default function DashboardView({ tickets = [], loading, role, onRefresh, 
               </select>
            </div>
 
-           {/* EXPORT BUTTON */}
-           <button onClick={handleExportCSV} className="p-2 bg-[#1e293b] hover:bg-[#2d3748] text-slate-300 hover:text-white rounded-lg border border-white/10 transition-colors flex items-center gap-2 text-sm font-medium">
-             <Download size={16} /> <span>Export CSV</span>
-           </button>
+           {/* REPORTS DROPDOWN (This replaces the old Export button) */}
+           <div className="relative">
+             <button 
+               onClick={(e) => { e.stopPropagation(); setShowReportMenu(!showReportMenu); }}
+               className={`p-2 bg-[#1e293b] hover:bg-[#2d3748] hover:text-white rounded-lg border border-white/10 transition-colors flex items-center gap-2 text-sm font-medium ${showReportMenu ? 'text-white border-blue-500' : 'text-slate-300'}`}
+             >
+               <FileText size={16} /> <span>Reports</span> <ChevronDown size={14} />
+             </button>
+
+             {showReportMenu && (
+               <div className="absolute top-full right-0 mt-2 w-56 bg-[#1e293b] border border-white/10 rounded-xl shadow-2xl z-50 overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+                  <div className="py-1">
+                    <button onClick={() => generateReport('MY_ISSUES')} className="w-full text-left px-4 py-2.5 text-sm text-slate-300 hover:bg-blue-600 hover:text-white transition-colors flex items-center gap-2">
+                      <Bot size={14} /> My Issues
+                    </button>
+                    <div className="h-px bg-white/10 my-1"></div>
+                    <button onClick={() => generateReport('OPEN')} className="w-full text-left px-4 py-2.5 text-sm text-slate-300 hover:bg-blue-600 hover:text-white transition-colors flex items-center gap-2">
+                      <TrendingUp size={14} /> All Open Issues
+                    </button>
+                    <button onClick={() => generateReport('OPEN_SIMPLIFIED')} className="w-full text-left px-4 py-2.5 text-sm text-slate-300 hover:bg-blue-600 hover:text-white transition-colors flex items-center gap-2">
+                      <FileText size={14} /> All Open (Simplified)
+                    </button>
+                    <button onClick={() => generateReport('CLOSED')} className="w-full text-left px-4 py-2.5 text-sm text-slate-300 hover:bg-blue-600 hover:text-white transition-colors flex items-center gap-2">
+                      <Archive size={14} /> All Closed Issues
+                    </button>
+                    <div className="h-px bg-white/10 my-1"></div>
+                    <button onClick={() => generateReport('ALL')} className="w-full text-left px-4 py-2.5 text-sm text-slate-300 hover:bg-blue-600 hover:text-white transition-colors flex items-center gap-2">
+                      <Download size={14} /> Full Data Dump (csv)
+                    </button>
+                  </div>
+               </div>
+             )}
+           </div>
 
            <div className="w-px h-8 bg-white/10 mx-2 hidden md:block"></div>
 
@@ -161,46 +237,22 @@ export default function DashboardView({ tickets = [], loading, role, onRefresh, 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
         {/* CARD 1: ACTIVE */}
         <div onClick={() => setFilterMode('active')} className={`cursor-pointer transition-transform active:scale-95 ${filterMode === 'active' ? 'ring-2 ring-blue-500 rounded-2xl' : ''}`}>
-          <StatCard 
-            label="Open Tickets" 
-            value={openTickets} 
-            icon={LayoutDashboard} 
-            trend="Active Queue" 
-            trendUp={true} 
-          />
+          <StatCard label="Open Tickets" value={openTickets} icon={LayoutDashboard} trend="Active Queue" trendUp={true} />
         </div>
 
         {/* CARD 2: HISTORY */}
         <div onClick={() => setFilterMode('resolved')} className={`cursor-pointer transition-transform active:scale-95 ${filterMode === 'resolved' ? 'ring-2 ring-emerald-500 rounded-2xl' : ''}`}>
-          <StatCard 
-            label={`Resolved (${yearFilter})`} 
-            value={myResolved} 
-            icon={Archive} 
-            trend={monthFilter !== 'ALL' ? `In ${months[parseInt(monthFilter)]}` : "Total this year"}
-            trendUp={true}
-          />
+          <StatCard label={`Resolved (${yearFilter})`} value={myResolved} icon={Archive} trend={monthFilter !== 'ALL' ? `In ${months[parseInt(monthFilter)]}` : "Total this year"} trendUp={true} />
         </div>
 
         {/* CARD 3: SLA */}
         <div onClick={() => setFilterMode('sla')} className={`cursor-pointer transition-transform active:scale-95 ${filterMode === 'sla' ? 'ring-2 ring-rose-500 rounded-2xl' : ''}`}>
-          <StatCard 
-            label="SLA Breaches" 
-            value={slaBreaches} 
-            icon={AlertCircle} 
-            trend="Target Missed"
-            trendUp={slaBreaches === 0}
-          />
+          <StatCard label="SLA Breaches" value={slaBreaches} icon={AlertCircle} trend="Target Missed" trendUp={slaBreaches === 0} />
         </div>
 
         {/* CARD 4: BOT */}
         <div onClick={() => setFilterMode('bot')} className={`cursor-pointer transition-transform active:scale-95 ${filterMode === 'bot' ? 'ring-2 ring-purple-500 rounded-2xl' : ''}`}>
-          <StatCard 
-            label="Bot Resolved" 
-            value={botResolved} 
-            icon={Bot} 
-            trend="AI Deflection"
-            trendUp={true}
-          />
+          <StatCard label="Bot Resolved" value={botResolved} icon={Bot} trend="AI Deflection" trendUp={true} />
         </div>
       </div>
 
@@ -234,11 +286,7 @@ export default function DashboardView({ tickets = [], loading, role, onRefresh, 
              </div>
            ) : (
              displayedTickets.map(ticket => (
-               <TicketRow 
-                 key={ticket.id} 
-                 ticket={ticket} 
-                 onClick={() => onSelectTicket(ticket)} 
-               />
+               <TicketRow key={ticket.id} ticket={ticket} onClick={() => onSelectTicket(ticket)} />
              ))
            )}
         </div>
