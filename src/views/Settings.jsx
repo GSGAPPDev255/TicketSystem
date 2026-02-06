@@ -2,18 +2,19 @@ import React, { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 import { 
   Building2, Search, Plus, Trash2, Save, 
-  Shield, Check, X, Filter, Users 
+  Shield, Check, X, Filter, Users, Briefcase
 } from 'lucide-react';
-import { GlassCard } from '../components/ui';
+import { GlassCard, getIcon } from '../components/ui'; // <--- Added getIcon import
 
 export default function SettingsView({ categories, tenants, users, departments = [], onUpdate }) {
   // SEARCH & FILTER STATE
   const [searchTerm, setSearchTerm] = useState('');
-  const [deptFilter, setDeptFilter] = useState('ALL'); // 'ALL' or UUID
-  const [userDeptMap, setUserDeptMap] = useState({}); // Map: userID -> [deptID, deptID]
+  const [deptFilter, setDeptFilter] = useState('ALL'); 
+  const [userDeptMap, setUserDeptMap] = useState({}); 
 
   // CATEGORY EDIT STATE
   const [newCategory, setNewCategory] = useState('');
+  const [newCategoryIcon, setNewCategoryIcon] = useState('Briefcase'); // <--- RESTORED STATE
   const [isAddingCat, setIsAddingCat] = useState(false);
 
   // USER EDIT STATE
@@ -25,11 +26,8 @@ export default function SettingsView({ categories, tenants, users, departments =
   }, []);
 
   const fetchMemberships = async () => {
-    // Get all links between users and departments
     const { data } = await supabase.from('department_members').select('user_id, department_id');
-    
     if (data) {
-      // Transform into a quick lookup map: { 'user_123': ['dept_A', 'dept_B'] }
       const map = {};
       data.forEach(link => {
         if (!map[link.user_id]) map[link.user_id] = [];
@@ -42,8 +40,13 @@ export default function SettingsView({ categories, tenants, users, departments =
   // --- CATEGORY LOGIC ---
   const handleAddCategory = async () => {
     if (!newCategory.trim()) return;
-    await supabase.from('categories').insert({ label: newCategory });
+    // Insert with Icon
+    await supabase.from('categories').insert({ 
+      label: newCategory, 
+      icon: newCategoryIcon 
+    });
     setNewCategory('');
+    setNewCategoryIcon('Briefcase');
     setIsAddingCat(false);
     onUpdate();
   };
@@ -83,6 +86,9 @@ export default function SettingsView({ categories, tenants, users, departments =
     return matchesSearch && matchesDept;
   });
 
+  // Available Icons for the Picker
+  const availableIcons = ['Briefcase', 'Monitor', 'Cpu', 'Wifi', 'ShieldAlert', 'Wrench', 'Zap', 'Globe', 'FileText'];
+
   return (
     <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4">
       
@@ -100,29 +106,51 @@ export default function SettingsView({ categories, tenants, users, departments =
           <GlassCard className="p-6 border-t-4 border-t-blue-500 h-full">
              <div className="flex justify-between items-center mb-6">
                 <div className="flex items-center gap-2 text-blue-400">
-                   <Filter size={20} />
+                   <Briefcase size={20} />
                    <h3 className="font-bold text-lg text-white">Issue Categories</h3>
                 </div>
                 <button onClick={() => setIsAddingCat(true)} className="p-2 hover:bg-white/10 rounded-lg text-slate-400 hover:text-white transition-colors"><Plus size={18} /></button>
              </div>
 
              <div className="space-y-2 max-h-[500px] overflow-y-auto custom-scrollbar pr-2">
+                {/* RESTORED: ICON PICKER UI */}
                 {isAddingCat && (
-                  <div className="flex gap-2 animate-in fade-in slide-in-from-left-2">
+                  <div className="flex flex-col gap-2 animate-in fade-in slide-in-from-left-2 p-3 bg-white/5 rounded-lg border border-blue-500/30">
                      <input 
                        autoFocus
-                       className="flex-1 bg-black/30 border border-white/10 rounded px-3 py-2 text-sm text-white focus:border-blue-500 outline-none" 
+                       className="w-full bg-black/30 border border-white/10 rounded px-3 py-2 text-sm text-white focus:border-blue-500 outline-none" 
                        placeholder="Category Name"
                        value={newCategory}
                        onChange={e => setNewCategory(e.target.value)}
-                       onKeyDown={e => e.key === 'Enter' && handleAddCategory()}
                      />
-                     <button onClick={handleAddCategory} className="p-2 bg-blue-600 text-white rounded"><Check size={16} /></button>
+                     
+                     <div className="flex gap-2">
+                        <div className="relative flex-1">
+                          <select 
+                            className="w-full bg-black/30 border border-white/10 rounded px-2 py-2 text-sm text-white focus:border-blue-500 outline-none appearance-none pl-8 cursor-pointer"
+                            value={newCategoryIcon}
+                            onChange={e => setNewCategoryIcon(e.target.value)}
+                          >
+                             {availableIcons.map(icon => <option key={icon} value={icon}>{icon}</option>)}
+                          </select>
+                          <div className="absolute left-2 top-1/2 -translate-y-1/2 pointer-events-none text-blue-400">
+                             {getIcon(newCategoryIcon, 14)}
+                          </div>
+                        </div>
+                        <button onClick={handleAddCategory} className="p-2 bg-blue-600 hover:bg-blue-500 text-white rounded transition-colors"><Check size={16} /></button>
+                     </div>
                   </div>
                 )}
+
+                {/* CATEGORY LIST */}
                 {categories.map(cat => (
                   <div key={cat.id} className="group flex justify-between items-center p-3 bg-white/5 rounded-lg border border-white/5 hover:border-white/10 transition-all">
-                     <span className="text-slate-200">{cat.label}</span>
+                     <div className="flex items-center gap-3">
+                        <div className="text-slate-500 group-hover:text-blue-400 transition-colors">
+                           {getIcon(cat.icon || 'Briefcase', 18)}
+                        </div>
+                        <span className="text-slate-200">{cat.label}</span>
+                     </div>
                      <button onClick={() => handleDeleteCategory(cat.id)} className="opacity-0 group-hover:opacity-100 text-slate-500 hover:text-rose-400 transition-opacity"><Trash2 size={14} /></button>
                   </div>
                 ))}
@@ -130,7 +158,7 @@ export default function SettingsView({ categories, tenants, users, departments =
           </GlassCard>
         </div>
 
-        {/* RIGHT COL: USER MANAGEMENT */}
+        {/* RIGHT COL: USER MANAGEMENT (With Dept Filter) */}
         <div className="lg:col-span-2 space-y-6">
           <GlassCard className="p-6 border-t-4 border-t-indigo-500 min-h-[600px]">
              <div className="flex items-center gap-2 text-indigo-400 mb-6">
@@ -152,7 +180,7 @@ export default function SettingsView({ categories, tenants, users, departments =
                    />
                 </div>
 
-                {/* Department Dropdown (NEW) */}
+                {/* Department Dropdown */}
                 <div className="relative w-1/3">
                    <select 
                      className="w-full bg-black/30 border border-white/10 rounded-lg pl-9 pr-8 py-3 text-sm text-white focus:outline-none focus:border-indigo-500/50 appearance-none cursor-pointer"
