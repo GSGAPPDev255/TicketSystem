@@ -28,7 +28,7 @@ export default function App() {
   const [tickets, setTickets] = useState([]);
   const [tenants, setTenants] = useState([]);
   const [categories, setCategories] = useState([]);
-  const [departments, setDepartments] = useState([]); // <--- WE NEED THIS FOR SETTINGS
+  const [departments, setDepartments] = useState([]); 
   const [kbArticles, setKbArticles] = useState([]);
   const [users, setUsers] = useState([]);
   
@@ -142,17 +142,24 @@ export default function App() {
     return now.toISOString();
   };
 
+  // --- HANDLE NEW TICKET (NOW WITH ROUTING) ---
   const handleCreateTicket = async (formData) => {
     const requesterId = session?.user?.id;
     const priority = formData.priority || 'Medium';
     const dueAt = calculateDueDate(priority);
+
+    // 1. AUTO-ROUTING LOGIC
+    // Find the category object to see if it has a default department
+    const selectedCategory = categories.find(c => c.label === formData.category);
+    const autoDeptId = selectedCategory?.default_department_id || null;
 
     const { error } = await supabase.from('tickets').insert({ 
       ...formData, 
       requester_id: requesterId,
       tenant_id: currentTenant?.id,
       priority: priority,
-      sla_due_at: dueAt
+      sla_due_at: dueAt,
+      department_id: autoDeptId // <--- THE MAGIC LINK
     });
     
     if (!error) { 
@@ -259,7 +266,6 @@ export default function App() {
           {activeTab === 'tenants' && isAdmin && <TenantsView tenants={tenants} />}
           {activeTab === 'knowledge' && isTech && <KnowledgeView articles={kbArticles} categories={categories} onUpdate={() => fetchAllData(profile)} />}
           
-          {/* UPDATED: Passing 'departments' prop here */}
           {activeTab === 'settings' && isAdmin && <SettingsView categories={categories} tenants={tenants} users={users} departments={departments} onUpdate={() => fetchAllData(profile)} />}
         </div>
       </main>
