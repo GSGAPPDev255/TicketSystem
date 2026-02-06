@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Send, Bot, User, ThumbsUp, ThumbsDown, ArrowRight, Loader, Wrench } from 'lucide-react';
 import { supabase } from '../lib/supabase';
-import { GlassCard } from '../components/ui';
+import { GlassCard } from '../components/ui'; 
 
 export default function NewTicketView({ categories, kbArticles, onSubmit }) {
   // FORM STATE
@@ -37,6 +37,52 @@ export default function NewTicketView({ categories, kbArticles, onSubmit }) {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
+  // --- NEW: SMART MATCHING ENGINE ---
+  const findBestMatch = (userInput, articles) => {
+    if (!userInput || !articles || articles.length === 0) return null;
+
+    // 1. Clean the input (lowercase, remove punctuation)
+    const normalize = (str) => str.toLowerCase().replace(/[^\w\s]/g, '');
+    const cleanInput = normalize(userInput);
+    
+    // 2. Tokenize (break into words, ignore short words like "is", "the")
+    const userWords = cleanInput.split(/\s+/).filter(w => w.length > 2); 
+
+    let bestArticle = null;
+    let maxScore = 0;
+
+    articles.forEach(article => {
+      let score = 0;
+      const title = normalize(article.title || '');
+      const content = normalize(article.content || '');
+      const tags = (article.tags || []).map(t => normalize(t));
+
+      // Rule A: Exact Phrase Match (Jackpot)
+      if (title.includes(cleanInput)) score += 50;
+
+      // Rule B: Keyword Scoring
+      userWords.forEach(word => {
+        // High value: Word appears in Title
+        if (title.includes(word)) score += 10;
+        
+        // High value: Word appears in Tags
+        if (tags.includes(word)) score += 10;
+        
+        // Low value: Word appears in Body content
+        if (content.includes(word)) score += 1;
+      });
+
+      // Update Winner if this article is the new highest score
+      if (score > maxScore) {
+        maxScore = score;
+        bestArticle = article;
+      }
+    });
+
+    // Threshold: Only return if score is decent (at least one title/tag keyword match)
+    return maxScore >= 5 ? bestArticle : null;
+  };
+
   // 2. HANDLE USER TYPING
   const handleSend = async () => {
     if (!description.trim()) return;
@@ -46,16 +92,12 @@ export default function NewTicketView({ categories, kbArticles, onSubmit }) {
     setMessages(prev => [...prev, userMsg]);
     setIsTyping(true);
 
-    // AI/Keyword Matching Logic
+    // AI Logic
     setTimeout(async () => {
-      const lowerDesc = description.toLowerCase();
-      
       const safeArticles = Array.isArray(kbArticles) ? kbArticles : [];
       
-      const match = safeArticles.find(article => 
-        (article.title && lowerDesc.includes(article.title.toLowerCase())) || 
-        (article.tags && article.tags.some(tag => lowerDesc.includes(tag.toLowerCase())))
-      );
+      // USE NEW ENGINE
+      const match = findBestMatch(description, safeArticles);
 
       setIsTyping(false);
 
@@ -71,7 +113,7 @@ export default function NewTicketView({ categories, kbArticles, onSubmit }) {
               status: 'Resolved', 
               assignee_id: botId,
               requester_id: user?.id,
-              resolved_at: new Date().toISOString() // <--- NEW: TIMESTAMP THE WIN
+              resolved_at: new Date().toISOString() // Timestamp
             }).select().single();
             
             if (newTicket) setAutoTicketId(newTicket.id);
@@ -216,7 +258,7 @@ export default function NewTicketView({ categories, kbArticles, onSubmit }) {
           <input 
             autoFocus
             type="text" 
-            placeholder="Type your issue here (e.g. 'wifi not working')..."
+            placeholder="Type your issue here (e.g. 'my wifi is broken')..."
             className="w-full bg-[#1e293b] border border-white/10 rounded-xl pl-6 pr-14 py-4 text-white focus:outline-none focus:border-blue-500/50 shadow-xl"
             value={description}
             onChange={e => setDescription(e.target.value)}
