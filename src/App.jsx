@@ -28,7 +28,7 @@ export default function App() {
   const [tickets, setTickets] = useState([]);
   const [tenants, setTenants] = useState([]);
   const [categories, setCategories] = useState([]);
-  const [departments, setDepartments] = useState([]);
+  const [departments, setDepartments] = useState([]); // <--- WE NEED THIS FOR SETTINGS
   const [kbArticles, setKbArticles] = useState([]);
   const [users, setUsers] = useState([]);
   
@@ -62,7 +62,7 @@ export default function App() {
   }
 
   async function fetchAllData(currentUserProfile) {
-    setLoading(true); // Visual feedback that "Reload" is happening
+    setLoading(true); 
     const [cats, tens, depts, kb, tix, myAccess] = await Promise.all([
       supabase.from('categories').select('*').order('label'),
       supabase.from('tenants').select('*').order('name'),
@@ -77,6 +77,7 @@ export default function App() {
 
     if (cats.data) setCategories(cats.data);
     
+    // --- SECURE TENANT FILTERING ---
     if (tens.data) {
       let visibleTenants = tens.data;
       if (currentUserProfile.role !== 'super_admin') {
@@ -84,6 +85,8 @@ export default function App() {
         visibleTenants = tens.data.filter(t => allowedIds.includes(t.id));
       }
       setTenants(visibleTenants);
+      
+      // Smart Default
       if (visibleTenants.length > 0) {
         if (!currentTenant || !visibleTenants.find(t => t.id === currentTenant.id)) {
            setCurrentTenant(visibleTenants[0]);
@@ -96,6 +99,7 @@ export default function App() {
     if (depts.data) setDepartments(depts.data);
     if (kb.data) setKbArticles(kb.data);
     
+    // Process Tickets (Flattening for UI)
     if (tix.data) {
       setTickets(tix.data.map(t => ({ 
         ...t, 
@@ -103,11 +107,12 @@ export default function App() {
         assignee: t.assignee_profile?.full_name || null,
         assignee_id: t.assignee_id,
         status: t.status || 'New',
-        priority: t.priority || 'Medium', // Default for UI
+        priority: t.priority || 'Medium',
         sla_due_at: t.sla_due_at
       })));
     }
 
+    // Fetch Users (For Admin Settings only)
     if (currentUserProfile.role === 'super_admin' || currentUserProfile.role === 'admin') {
         const { data: userData } = await supabase.from('profiles').select('*').order('full_name');
         const { data: accessData } = await supabase.from('tenant_access').select('*');
@@ -118,21 +123,16 @@ export default function App() {
     setLoading(false);
   }
 
-  // --- NEW: FORCED RELOAD ON NAV CLICK ---
+  // --- FORCED RELOAD ON NAV CLICK ---
   const handleNavClick = (tabName) => {
     setActiveTab(tabName);
     setSelectedTicket(null);
-    if (profile) fetchAllData(profile); // <--- Triggers the refresh!
+    if (profile) fetchAllData(profile);
   };
 
   // --- SLA CALCULATOR ---
   const calculateDueDate = (priority) => {
     const now = new Date();
-    // SLA Rules:
-    // Critical = 4 Hours
-    // High = 8 Hours
-    // Medium = 24 Hours
-    // Low = 72 Hours
     const hours = 
       priority === 'Critical' ? 4 : 
       priority === 'High' ? 8 : 
@@ -144,7 +144,6 @@ export default function App() {
 
   const handleCreateTicket = async (formData) => {
     const requesterId = session?.user?.id;
-    // Calculate SLA based on priority (Defaulting to Medium if not set)
     const priority = formData.priority || 'Medium';
     const dueAt = calculateDueDate(priority);
 
@@ -152,8 +151,8 @@ export default function App() {
       ...formData, 
       requester_id: requesterId,
       tenant_id: currentTenant?.id,
-      priority: priority, // Save Priority
-      sla_due_at: dueAt   // Save Deadline
+      priority: priority,
+      sla_due_at: dueAt
     });
     
     if (!error) { 
@@ -205,7 +204,6 @@ export default function App() {
         )}
 
         <nav className="flex-1 py-6 px-2 space-y-1">
-          {/* USES NEW HANDLER FOR REFRESH */}
           <NavItem icon={LayoutDashboard} label="Dashboard" active={activeTab === 'dashboard'} onClick={() => handleNavClick('dashboard')} collapsed={!sidebarOpen} />
           <NavItem 
             icon={Clock} 
@@ -260,7 +258,9 @@ export default function App() {
           {activeTab === 'teams' && isTech && <TeamsView departments={departments} />}
           {activeTab === 'tenants' && isAdmin && <TenantsView tenants={tenants} />}
           {activeTab === 'knowledge' && isTech && <KnowledgeView articles={kbArticles} categories={categories} onUpdate={() => fetchAllData(profile)} />}
-          {activeTab === 'settings' && isAdmin && <SettingsView categories={categories} tenants={tenants} users={users} onUpdate={() => fetchAllData(profile)} />}
+          
+          {/* UPDATED: Passing 'departments' prop here */}
+          {activeTab === 'settings' && isAdmin && <SettingsView categories={categories} tenants={tenants} users={users} departments={departments} onUpdate={() => fetchAllData(profile)} />}
         </div>
       </main>
     </div>
