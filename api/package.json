@@ -1,0 +1,8 @@
+{
+  "name": "nexus-api",
+  "version": "1.0.0",
+  "description": "Nexus Backend API",
+  "scripts": {
+    "start": "func start"
+  }
+}
