@@ -39,7 +39,7 @@ export default function TeamsView({ departments = [] }) {
     setLoading(false);
   };
 
-  // 3. LIVE AZURE SEARCH (The Magic)
+  // 3. LIVE AZURE SEARCH
   useEffect(() => {
     const delayDebounceFn = setTimeout(async () => {
       if (searchQuery.length < 3) {
@@ -49,7 +49,6 @@ export default function TeamsView({ departments = [] }) {
 
       setIsSearching(true);
       try {
-        // CALL YOUR NEW AZURE BACKEND
         const res = await fetch(`/api/users?q=${searchQuery}`);
         const data = await res.json();
         if (data.users) setSearchResults(data.users);
@@ -57,14 +56,16 @@ export default function TeamsView({ departments = [] }) {
         console.error("Azure Search Error:", error);
       }
       setIsSearching(false);
-    }, 500); // Wait 500ms after typing stops
+    }, 500); 
 
     return () => clearTimeout(delayDebounceFn);
   }, [searchQuery]);
 
-  // 4. ADD MEMBER (With "Ghost Profile" Handling)
+  // 4. ADD MEMBER + SEND INVITE
   const handleAddMember = async (azureUser) => {
     if (!selectedDept) return;
+    
+    // Optimistic UI update
     setSearchQuery(''); 
     setSearchResults([]);
     setIsAdding(false);
@@ -81,15 +82,12 @@ export default function TeamsView({ departments = [] }) {
 
       // Step B: If not, create a "Ghost" Profile
       if (!userId) {
-        // We generate a random ID for now. 
-        // Note: When they actually log in with SSO later, Supabase might create a duplicate 
-        // depending on your auth config, but this solves the "Pre-Assign" problem instantly.
         const { data: newUser, error: createError } = await supabase
           .from('profiles')
           .insert({
             email: azureUser.email,
             full_name: azureUser.name,
-            role: 'user', // Default role
+            role: 'user', 
             avatar_initials: azureUser.name.substring(0, 2).toUpperCase()
           })
           .select()
@@ -111,12 +109,39 @@ export default function TeamsView({ departments = [] }) {
          if (linkError.code === '23505') alert('User is already in this team!');
          else throw linkError;
       } else {
+         // Step D: Send Email Invite (The New Logic)
+         await sendInviteEmail(azureUser.email, azureUser.name, selectedDept.name);
+         
          // Refresh list
          handleSelectDept(selectedDept);
       }
 
     } catch (err) {
       alert('Error adding member: ' + err.message);
+    }
+  };
+
+  const sendInviteEmail = async (email, name, deptName) => {
+    try {
+      await fetch('/api/email', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          to: email,
+          subject: `Welcome to the ${deptName} Team on Nexus`,
+          body: `
+            <h3>Hello ${name},</h3>
+            <p>You have been added to the <b>${deptName}</b> team on the Nexus Support Portal.</p>
+            <p>You can now access your dashboard to view and manage tickets.</p>
+            <br/>
+            <a href="${window.location.origin}" style="background-color: #2563eb; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px;">Go to Dashboard</a>
+            <br/><br/>
+            <p>Best regards,<br/>Nexus System</p>
+          `
+        })
+      });
+    } catch (e) {
+      console.error("Failed to send invite email", e);
     }
   };
 
