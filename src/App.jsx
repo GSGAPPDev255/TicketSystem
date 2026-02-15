@@ -11,10 +11,10 @@ import { TicketDetailView } from './components/ui';
 import { TenantProvider, useTenant } from './contexts/TenantContext';
 
 // --- SIDEBAR COMPONENT ---
-function Sidebar({ activeView, setActiveView, session, profile, myTicketCount, isMobile, isOpen, setIsOpen }) {
+// NOW ACCEPTS: onNavigate (instead of just setActiveView)
+function Sidebar({ activeView, onNavigate, session, profile, myTicketCount, isMobile, isOpen, setIsOpen }) {
   const { currentTenant, tenants, setCurrentTenant } = useTenant();
 
-  // Role Check
   const role = profile?.role || 'user'; 
   const isAdmin = role === 'super_admin' || role === 'admin';
   const isTech = ['super_admin', 'admin', 'manager', 'technician'].includes(role);
@@ -68,7 +68,7 @@ function Sidebar({ activeView, setActiveView, session, profile, myTicketCount, i
           return (
             <button
               key={item.id}
-              onClick={() => { setActiveView(item.id); if (isMobile) setIsOpen(false); }}
+              onClick={() => onNavigate(item.id)} // <--- FIX: Uses new handler
               className={`w-full flex items-center justify-between px-4 py-3 rounded-xl transition-all duration-200 group ${
                 activeView === item.id 
                   ? 'bg-blue-600 text-white shadow-lg shadow-blue-900/20' 
@@ -129,20 +129,20 @@ function AppContent({ session }) {
   const [selectedTicket, setSelectedTicket] = useState(null);
   const [users, setUsers] = useState([]);
 
-  // 1. FETCH REAL PROFILE FROM DB
+  // --- NEW: NAVIGATION HANDLER ---
+  // This clears the selected ticket when you switch tabs
+  const handleNavigation = (viewName) => {
+    setActiveView(viewName);
+    setSelectedTicket(null); // <--- THE FIX
+    if (isMobile) setSidebarOpen(false);
+  };
+
+  // 1. FETCH PROFILE
   useEffect(() => {
     if (!session?.user?.id) return;
-    
     const fetchProfile = async () => {
-      const { data, error } = await supabase
-        .from('profiles')
-        .select('*')
-        .eq('id', session.user.id)
-        .single();
-      
-      if (data) {
-        setProfile(data);
-      }
+      const { data } = await supabase.from('profiles').select('*').eq('id', session.user.id).single();
+      if (data) setProfile(data);
     };
     fetchProfile();
   }, [session]);
@@ -181,7 +181,7 @@ function AppContent({ session }) {
     fetchGlobals();
   }, []);
 
-  // 4. FETCH TICKETS (RE-FETCHES ON TAB CHANGE NOW)
+  // 4. FETCH TICKETS (Re-fetches on tab change or tenant switch)
   const fetchTickets = async () => {
     if (!currentTenant) return;
     setLoading(true);
@@ -203,7 +203,6 @@ function AppContent({ session }) {
     setLoading(false);
   };
 
-  // --- THE FIX IS HERE: Added 'activeView' dependency ---
   useEffect(() => {
     fetchTickets();
   }, [currentTenant, activeView]); 
@@ -225,23 +224,20 @@ function AppContent({ session }) {
     return () => supabase.removeChannel(sub);
   }, [session]);
 
-  // 6. HANDLE TICKET CREATION (DUAL NOTIFICATION LOGIC)
+  // 6. HANDLE TICKET CREATION
   const handleCreateTicket = async (formData) => {
-    // 1. Setup Data
     const requesterId = session?.user?.id;
     const requesterName = profile?.full_name || session?.user?.user_metadata?.full_name || 'User'; 
     const requesterEmail = profile?.email || session?.user?.email;
-
     const priority = formData.priority || 'Medium';
+    
     const now = new Date();
     const hours = priority === 'Critical' ? 4 : priority === 'High' ? 8 : priority === 'Low' ? 72 : 24; 
     now.setHours(now.getHours() + hours);
 
-    // 2. Auto Routing
     const selectedCategory = categories.find(c => c.label === formData.category);
     const autoDeptId = selectedCategory?.default_department_id || null;
 
-    // 3. Insert Ticket
     const { data: newTicket, error } = await supabase.from('tickets').insert({ 
       ...formData, 
       requester_id: requesterId,
@@ -256,14 +252,10 @@ function AppContent({ session }) {
       return;
     }
 
-    // 4. EMAIL LOGIC
     const emailPromises = [];
-
-    // A. Notify IT Department
     if (autoDeptId) {
         const targetDept = departments.find(d => d.id === autoDeptId);
         if (targetDept?.team_email) {
-            console.log(`📤 Notifying Team: ${targetDept.team_email}`);
             emailPromises.push(fetch('/api/email', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -286,9 +278,7 @@ function AppContent({ session }) {
         }
     }
 
-    // B. Notify Requester (Receipt)
     if (requesterEmail) {
-        console.log(`📤 Sending Receipt to: ${requesterEmail}`);
         emailPromises.push(fetch('/api/email', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -310,20 +300,24 @@ function AppContent({ session }) {
         }));
     }
 
-    Promise.allSettled(emailPromises).then(() => console.log("✅ All emails processed"));
-
+    Promise.allSettled(emailPromises).then(() => console.log("Emails processed"));
     await fetchTickets(); 
     setActiveView('dashboard'); 
   };
 
   const role = profile?.role || 'user'; 
 
+  // ROUTING VIEW
   const renderView = () => {
-    if (selectedTicket) return <TicketDetailView ticket={selectedTicket} onBack={() => { setSelectedTicket(null); fetchTickets(); }} />;
+    // If ticket selected, show details
+    if (selectedTicket) {
+      return <TicketDetailView ticket={selectedTicket} onBack={() => { setSelectedTicket(null); fetchTickets(); }} />;
+    }
 
+    // Otherwise show active tab
     switch (activeView) {
       case 'dashboard': 
-        return <DashboardView tickets={tickets} loading={loading} role={role} onRefresh={fetchTickets} onSelectTicket={setSelectedTicket} onNewTicket={() => setActiveView('new-ticket')} />;
+        return <DashboardView tickets={tickets} loading={loading} role={role} onRefresh={fetchTickets} onSelectTicket={setSelectedTicket} onNewTicket={() => handleNavigation('new-ticket')} />;
       case 'my-queue': 
         return <DashboardView title="My Active Tickets" tickets={tickets.filter(t => t.assignee_id === session.user.id && t.status !== 'Resolved' && t.status !== 'Closed')} loading={loading} role={role} onRefresh={fetchTickets} onSelectTicket={setSelectedTicket} />; 
       case 'new-ticket': 
@@ -344,7 +338,7 @@ function AppContent({ session }) {
     <div className="flex h-screen bg-slate-950 text-slate-200 overflow-hidden font-sans selection:bg-blue-500/30">
       <Sidebar 
         activeView={activeView} 
-        setActiveView={setActiveView} 
+        onNavigate={handleNavigation} // <--- Pass the new handler
         session={session} 
         profile={profile} 
         myTicketCount={myTicketCount}
