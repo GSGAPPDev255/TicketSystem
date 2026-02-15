@@ -9,19 +9,19 @@ export default function NewTicketView({ categories, kbArticles, onSubmit }) {
   const [description, setDescription] = useState('');
   const [category, setCategory] = useState('');
   const [priority, setPriority] = useState('Medium');
-  const [file, setFile] = useState(null); // <--- NEW FILE STATE
+  const [file, setFile] = useState(null);
   const [uploading, setUploading] = useState(false);
-  
+   
   // CHAT STATE
   const [messages, setMessages] = useState([
     { id: 1, type: 'bot', text: "Good day! I'm Nexus, your 1st line support bot. Please describe your issue." }
   ]);
   const [isTyping, setIsTyping] = useState(false);
   const [showForm, setShowForm] = useState(false);
-  
+   
   // OPTIMISTIC TRACKING
   const [autoTicketId, setAutoTicketId] = useState(null); 
-  
+   
   // BOT IDENTITY
   const [botId, setBotId] = useState(null);
   const messagesEndRef = useRef(null);
@@ -80,9 +80,17 @@ export default function NewTicketView({ categories, kbArticles, onSubmit }) {
     setMessages(prev => [...prev, userMsg]);
     setIsTyping(true);
 
+    // Hide input temporarily while bot thinks
+    // We intentionally DON'T clear description here if we are showing the form later,
+    // but typically chat interfaces clear input. 
+    // However, for the 'Show Form' transition, we want to keep the text.
+    // Let's clear it for the chat flow, but restore it if manual form triggers.
+    const currentDescription = description; 
+    setDescription(''); 
+
     setTimeout(async () => {
       const safeArticles = Array.isArray(kbArticles) ? kbArticles : [];
-      const match = findBestMatch(description, safeArticles);
+      const match = findBestMatch(currentDescription, safeArticles);
       setIsTyping(false);
 
       if (match) {
@@ -90,7 +98,7 @@ export default function NewTicketView({ categories, kbArticles, onSubmit }) {
             const { data: { user } } = await supabase.auth.getUser();
             const { data: newTicket } = await supabase.from('tickets').insert({
               subject: `[Bot Deflection] ${match.title}`,
-              description: `User Issue: "${description}"\n\nAuto-suggested fix: ${match.title}`,
+              description: `User Issue: "${currentDescription}"\n\nAuto-suggested fix: ${match.title}`,
               category: 'Software',
               priority: 'Low',
               status: 'Resolved', 
@@ -108,8 +116,11 @@ export default function NewTicketView({ categories, kbArticles, onSubmit }) {
         setMessages(prev => [...prev, { 
           id: Date.now() + 1, type: 'bot', text: "I couldn't find an immediate fix. Let's raise a ticket for a human engineer." 
         }]);
+        
+        // Restore description for the manual form so user doesn't have to re-type
+        setDescription(currentDescription);
         setShowForm(true);
-        if (!subject) setSubject(description.substring(0, 50) + (description.length > 50 ? '...' : ''));
+        if (!subject) setSubject(currentDescription.substring(0, 50) + (currentDescription.length > 50 ? '...' : ''));
       }
     }, 1500);
   };
@@ -124,7 +135,8 @@ export default function NewTicketView({ categories, kbArticles, onSubmit }) {
     setMessages(prev => [...prev, { id: Date.now(), type: 'user', text: "Still Broken", isAction: true }, { id: Date.now() + 1, type: 'bot', text: "Understood. Creating a manual ticket now." }]);
     setAutoTicketId(null);
     setShowForm(true);
-    if (!subject) setSubject(description.substring(0, 50) + (description.length > 50 ? '...' : ''));
+    // Ensure description is ready for the form
+    if (!subject && description) setSubject(description.substring(0, 50) + (description.length > 50 ? '...' : ''));
   };
 
   // --- FILE UPLOAD LOGIC ---
@@ -158,7 +170,7 @@ export default function NewTicketView({ categories, kbArticles, onSubmit }) {
       const { data: { publicUrl } } = supabase.storage
         .from('ticket-attachments')
         .getPublicUrl(filePath);
-      
+       
       attachmentUrl = publicUrl;
     }
 
@@ -168,7 +180,7 @@ export default function NewTicketView({ categories, kbArticles, onSubmit }) {
       description,
       category: category || 'General',
       priority,
-      attachment_url: attachmentUrl // <--- SAVE URL TO DB
+      attachment_url: attachmentUrl
     });
     setUploading(false);
   };
@@ -221,7 +233,15 @@ export default function NewTicketView({ categories, kbArticles, onSubmit }) {
 
       {!showForm && (
         <div className="relative">
-          <input autoFocus type="text" placeholder="Type your issue here..." className="w-full bg-[#1e293b] border border-white/10 rounded-xl pl-6 pr-14 py-4 text-white focus:outline-none focus:border-blue-500/50 shadow-xl" value={description} onChange={e => setDescription(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleSend()} />
+          <input 
+            autoFocus 
+            type="text" 
+            placeholder="Type your issue here..." 
+            className="w-full bg-[#1e293b] border border-white/10 rounded-xl pl-6 pr-14 py-4 text-white focus:outline-none focus:border-blue-500/50 shadow-xl" 
+            value={description} 
+            onChange={e => setDescription(e.target.value)} 
+            onKeyDown={e => e.key === 'Enter' && handleSend()} 
+          />
           <button onClick={handleSend} disabled={!description.trim() || isTyping} className="absolute right-3 top-1/2 -translate-y-1/2 p-2 bg-blue-600 hover:bg-blue-500 text-white rounded-lg disabled:opacity-50 transition-colors"><Send size={18} /></button>
         </div>
       )}
@@ -233,35 +253,56 @@ export default function NewTicketView({ categories, kbArticles, onSubmit }) {
             <span className="text-xs text-slate-400 bg-white/5 px-2 py-1 rounded">Human Support</span>
           </div>
           <div className="grid gap-4">
-             <div><label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Subject</label><input type="text" className="w-full bg-black/30 border border-white/10 rounded-lg px-4 py-3 text-white focus:border-blue-500/50 outline-none" value={subject} onChange={e => setSubject(e.target.value)} /></div>
-             <div className="grid grid-cols-2 gap-4">
-                <div><label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Category</label><select className="w-full bg-black/30 border border-white/10 rounded-lg px-4 py-3 text-white focus:border-blue-500/50 outline-none appearance-none" value={category} onChange={e => setCategory(e.target.value)}><option value="">Select...</option>{categories.map(c => <option key={c.id} value={c.label}>{c.label}</option>)}</select></div>
-                <div><label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Priority</label><select className="w-full bg-black/30 border border-white/10 rounded-lg px-4 py-3 text-white focus:border-blue-500/50 outline-none appearance-none" value={priority} onChange={e => setPriority(e.target.value)}><option value="Low">Low</option><option value="Medium">Medium</option><option value="High">High</option><option value="Critical">Critical</option></select></div>
-             </div>
-             
-             {/* --- NEW FILE ATTACHMENT AREA --- */}
-             <div>
-                <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Attachment (Optional)</label>
-                {!file ? (
-                  <label className="flex items-center gap-3 w-full bg-black/30 border border-dashed border-white/20 hover:border-blue-500/50 rounded-lg px-4 py-3 cursor-pointer transition-colors group">
-                    <Paperclip size={18} className="text-slate-400 group-hover:text-blue-400" />
-                    <span className="text-sm text-slate-400 group-hover:text-slate-200">Click to attach screenshot...</span>
-                    <input type="file" className="hidden" accept="image/*" onChange={handleFileChange} />
-                  </label>
-                ) : (
-                  <div className="flex items-center justify-between w-full bg-blue-500/10 border border-blue-500/30 rounded-lg px-4 py-3">
-                    <div className="flex items-center gap-3">
-                       <Paperclip size={18} className="text-blue-400" />
-                       <span className="text-sm text-blue-100 truncate max-w-[200px]">{file.name}</span>
-                    </div>
-                    <button onClick={() => setFile(null)} className="text-blue-300 hover:text-white"><X size={16} /></button>
-                  </div>
-                )}
-             </div>
+              <div>
+                <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Subject</label>
+                <input type="text" className="w-full bg-black/30 border border-white/10 rounded-lg px-4 py-3 text-white focus:border-blue-500/50 outline-none" value={subject} onChange={e => setSubject(e.target.value)} />
+              </div>
 
-             <button onClick={handleSubmitForm} disabled={uploading} className="mt-4 w-full py-3 bg-blue-600 hover:bg-blue-500 text-white rounded-xl font-bold text-sm shadow-lg shadow-blue-900/20 transition-all flex items-center justify-center gap-2">
-                {uploading ? 'Uploading...' : 'Submit Ticket'} <ArrowRight size={16} />
-             </button>
+              {/* RE-INSTATED DESCRIPTION BOX */}
+              <div>
+                <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Description</label>
+                <textarea 
+                  className="w-full bg-black/30 border border-white/10 rounded-lg px-4 py-3 text-white focus:border-blue-500/50 outline-none resize-none h-32" 
+                  value={description} 
+                  onChange={e => setDescription(e.target.value)} 
+                  placeholder="Provide more details about the issue..."
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Category</label>
+                  <select className="w-full bg-black/30 border border-white/10 rounded-lg px-4 py-3 text-white focus:border-blue-500/50 outline-none appearance-none" value={category} onChange={e => setCategory(e.target.value)}><option value="">Select...</option>{categories.map(c => <option key={c.id} value={c.label}>{c.label}</option>)}</select>
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Priority</label>
+                  <select className="w-full bg-black/30 border border-white/10 rounded-lg px-4 py-3 text-white focus:border-blue-500/50 outline-none appearance-none" value={priority} onChange={e => setPriority(e.target.value)}><option value="Low">Low</option><option value="Medium">Medium</option><option value="High">High</option><option value="Critical">Critical</option></select>
+                </div>
+              </div>
+              
+              {/* --- FILE ATTACHMENT AREA --- */}
+              <div>
+                 <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Attachment (Optional)</label>
+                 {!file ? (
+                   <label className="flex items-center gap-3 w-full bg-black/30 border border-dashed border-white/20 hover:border-blue-500/50 rounded-lg px-4 py-3 cursor-pointer transition-colors group">
+                     <Paperclip size={18} className="text-slate-400 group-hover:text-blue-400" />
+                     <span className="text-sm text-slate-400 group-hover:text-slate-200">Click to attach screenshot...</span>
+                     <input type="file" className="hidden" accept="image/*" onChange={handleFileChange} />
+                   </label>
+                 ) : (
+                   <div className="flex items-center justify-between w-full bg-blue-500/10 border border-blue-500/30 rounded-lg px-4 py-3">
+                     <div className="flex items-center gap-3">
+                        <Paperclip size={18} className="text-blue-400" />
+                        <span className="text-sm text-blue-100 truncate max-w-[200px]">{file.name}</span>
+                     </div>
+                     <button onClick={() => setFile(null)} className="text-blue-300 hover:text-white"><X size={16} /></button>
+                   </div>
+                 )}
+              </div>
+
+              <button onClick={handleSubmitForm} disabled={uploading} className="mt-4 w-full py-3 bg-blue-600 hover:bg-blue-500 text-white rounded-xl font-bold text-sm shadow-lg shadow-blue-900/20 transition-all flex items-center justify-center gap-2">
+                 {uploading ? 'Uploading...' : 'Submit Ticket'} <ArrowRight size={16} />
+              </button>
           </div>
         </GlassCard>
       )}
