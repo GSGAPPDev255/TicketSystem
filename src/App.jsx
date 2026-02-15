@@ -181,7 +181,7 @@ function AppContent({ session }) {
     fetchGlobals();
   }, []);
 
-  // 4. FETCH TICKETS
+  // 4. FETCH TICKETS (RE-FETCHES ON TAB CHANGE NOW)
   const fetchTickets = async () => {
     if (!currentTenant) return;
     setLoading(true);
@@ -203,9 +203,10 @@ function AppContent({ session }) {
     setLoading(false);
   };
 
+  // --- THE FIX IS HERE: Added 'activeView' dependency ---
   useEffect(() => {
     fetchTickets();
-  }, [currentTenant]); 
+  }, [currentTenant, activeView]); 
 
   // 5. BADGE COUNTER
   useEffect(() => {
@@ -318,7 +319,7 @@ function AppContent({ session }) {
   const role = profile?.role || 'user'; 
 
   const renderView = () => {
-    if (selectedTicket) return <TicketDetailView ticket={selectedTicket} onBack={() => setSelectedTicket(null)} />;
+    if (selectedTicket) return <TicketDetailView ticket={selectedTicket} onBack={() => { setSelectedTicket(null); fetchTickets(); }} />;
 
     switch (activeView) {
       case 'dashboard': 
