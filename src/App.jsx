@@ -1,294 +1,326 @@
 import React, { useState, useEffect } from 'react';
+import { LayoutDashboard, Ticket, PlusCircle, Users, Settings, Book, Building, LogOut, Bell, Menu, X, Search } from 'lucide-react';
 import { supabase } from './lib/supabase';
-
-// VIEWS
 import DashboardView from './views/Dashboard';
-import TeamsView from './views/Teams';
-import TenantsView from './views/Tenants';
-import SettingsView from './views/Settings';
-import KnowledgeView from './views/Knowledge';
 import NewTicketView from './views/NewTicket';
+import TeamsView from './views/Teams';
+import KnowledgeBaseView from './views/Knowledge';
+import SettingsView from './views/Settings';
+import TenantsView from './views/Tenants';
+import TicketDetailView from './components/ui/TicketDetailView'; // Assuming you have this
+import { TenantProvider, useTenant } from './contexts/TenantContext';
 
-// UI
-import { GlassCard, NavItem, TicketDetailView } from './components/ui';
-import { 
-  LayoutDashboard, Plus, Search, Bell, Settings, LogOut, Monitor, Menu, X, 
-  Building2, Users, Book, ChevronDown, Clock, Check
-} from 'lucide-react';
+// --- SIDEBAR COMPONENT ---
+function Sidebar({ activeView, setActiveView, session, myTicketCount, isMobile, isOpen, setIsOpen }) {
+  const { currentTenant, tenants, setCurrentTenant } = useTenant();
 
-export default function App() {
-  const [session, setSession] = useState(null);
-  const [profile, setProfile] = useState(null);
-  const [activeTab, setActiveTab] = useState('dashboard');
-  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const menuItems = [
+    { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
+    { id: 'my-queue', label: 'My Queue', icon: Ticket, badge: myTicketCount },
+    { id: 'new-ticket', label: 'New Ticket', icon: PlusCircle },
+    { id: 'teams', label: 'Teams', icon: Users },
+    { id: 'knowledge', label: 'Knowledge Base', icon: Book },
+    { id: 'tenants', label: 'Tenants', icon: Building, adminOnly: true },
+    { id: 'settings', label: 'Settings', icon: Settings, adminOnly: true },
+  ];
+
+  const role = session?.user?.user_metadata?.role || 'user';
+  const isAdmin = role === 'super_admin' || role === 'admin';
+  const isTech = ['super_admin', 'admin', 'manager', 'technician'].includes(role);
+
+  const sidebarClasses = isMobile
+    ? `fixed inset-y-0 left-0 z-50 w-64 bg-slate-900/95 backdrop-blur-xl border-r border-white/10 transform transition-transform duration-300 ${isOpen ? 'translate-x-0' : '-translate-x-full'}`
+    : 'w-64 bg-slate-900/50 backdrop-blur-xl border-r border-white/10 flex flex-col shrink-0';
+
+  return (
+    <div className={sidebarClasses}>
+      <div className="p-6 flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center font-bold text-white shadow-lg shadow-blue-500/20">
+            N
+          </div>
+          <span className="font-bold text-xl tracking-tight text-white">Nexus</span>
+        </div>
+        {isMobile && <button onClick={() => setIsOpen(false)} className="text-slate-400"><X size={24} /></button>}
+      </div>
+
+      {/* TENANT SELECTOR */}
+      <div className="px-4 mb-6">
+        <select 
+          className="w-full bg-black/20 border border-white/10 rounded-lg px-3 py-2 text-sm text-slate-300 focus:outline-none focus:border-blue-500/50"
+          value={currentTenant?.id || ''}
+          onChange={(e) => {
+            const t = tenants.find(t => t.id === e.target.value);
+            if (t) setCurrentTenant(t);
+          }}
+        >
+          {tenants.map(t => (
+            <option key={t.id} value={t.id}>{t.name}</option>
+          ))}
+        </select>
+      </div>
+
+      <nav className="flex-1 px-4 space-y-1 overflow-y-auto custom-scrollbar">
+        {menuItems.map((item) => {
+          if (item.adminOnly && !isAdmin) return null;
+          if ((item.id === 'teams' || item.id === 'knowledge') && !isTech) return null;
+
+          return (
+            <button
+              key={item.id}
+              onClick={() => { setActiveView(item.id); if (isMobile) setIsOpen(false); }}
+              className={`w-full flex items-center justify-between px-4 py-3 rounded-xl transition-all duration-200 group ${
+                activeView === item.id 
+                  ? 'bg-blue-600 text-white shadow-lg shadow-blue-900/20' 
+                  : 'text-slate-400 hover:bg-white/5 hover:text-white'
+              }`}
+            >
+              <div className="flex items-center gap-3">
+                <item.icon size={20} className={activeView === item.id ? 'text-white' : 'text-slate-500 group-hover:text-blue-400'} />
+                <span className="font-medium">{item.label}</span>
+              </div>
+              {item.badge > 0 && (
+                <span className="bg-blue-500 text-white text-xs font-bold px-2 py-0.5 rounded-full shadow-sm">
+                  {item.badge}
+                </span>
+              )}
+            </button>
+          )
+        })}
+      </nav>
+
+      <div className="p-4 border-t border-white/5">
+        <div className="flex items-center gap-3 px-4 py-3 rounded-xl bg-white/5 border border-white/5">
+          <div className="w-10 h-10 rounded-full bg-slate-700 flex items-center justify-center overflow-hidden shrink-0 text-white font-bold text-xs">
+             {session?.user?.user_metadata?.avatar_url ? (
+               <img src={session.user.user_metadata.avatar_url} alt="Profile" className="w-full h-full object-cover" />
+             ) : (
+               (session?.user?.user_metadata?.full_name || 'US').split(' ').map(n=>n[0]).join('').substring(0,2).toUpperCase()
+             )}
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-medium text-white truncate">{session?.user?.user_metadata?.full_name || 'User'}</p>
+            <p className="text-xs text-slate-400 truncate capitalize">{session?.user?.user_metadata?.role || 'Staff'}</p>
+          </div>
+          <button onClick={() => supabase.auth.signOut()} className="text-slate-400 hover:text-white transition-colors">
+            <LogOut size={18} />
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// --- MAIN CONTENT LOGIC (Wrapped in Provider) ---
+function AppContent({ session }) {
+  const { currentTenant, tenants } = useTenant();
+  const [activeView, setActiveView] = useState('dashboard');
+  const [myTicketCount, setMyTicketCount] = useState(0);
+  const [isMobile, setIsMobile] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
   const [loading, setLoading] = useState(false);
+  
+  // Data State
+  const [tickets, setTickets] = useState([]);
+  const [categories, setCategories] = useState([]);
+  const [departments, setDepartments] = useState([]);
+  const [kbArticles, setKbArticles] = useState([]);
   const [selectedTicket, setSelectedTicket] = useState(null);
 
-  // DATA
-  const [tickets, setTickets] = useState([]);
-  const [tenants, setTenants] = useState([]);
-  const [categories, setCategories] = useState([]);
-  const [departments, setDepartments] = useState([]); 
-  const [kbArticles, setKbArticles] = useState([]);
-  const [users, setUsers] = useState([]);
-  
-  // TENANT STATE
-  const [currentTenant, setCurrentTenant] = useState(null);
-  const [tenantMenuOpen, setTenantMenuOpen] = useState(false);
-
+  // 1. MOBILE CHECK
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setSession(session);
-      if (session) initializeApp(session.user.id);
-    });
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      setSession(session);
-      if (session) initializeApp(session.user.id);
-    });
-    return () => subscription.unsubscribe();
+    const checkMobile = () => setIsMobile(window.innerWidth < 1024);
+    checkMobile();
+    window.addEventListener('resize', checkMobile);
+    return () => window.removeEventListener('resize', checkMobile);
   }, []);
 
-  async function initializeApp(userId) {
+  // 2. FETCH GLOBAL DATA (Categories, Depts, KB)
+  useEffect(() => {
+    const fetchGlobals = async () => {
+      const [cats, depts, kb] = await Promise.all([
+        supabase.from('categories').select('*').order('label'),
+        supabase.from('departments').select('*').order('name'),
+        supabase.from('kb_articles').select('*').order('title'),
+      ]);
+      if (cats.data) setCategories(cats.data);
+      if (depts.data) setDepartments(depts.data);
+      if (kb.data) setKbArticles(kb.data);
+    };
+    fetchGlobals();
+  }, []);
+
+  // 3. FETCH TICKETS (Scoped to Tenant)
+  const fetchTickets = async () => {
+    if (!currentTenant) return;
     setLoading(true);
-    const userProfile = await fetchProfile(userId);
-    if (userProfile) await fetchAllData(userProfile);
-    setLoading(false);
-  }
-
-  async function fetchProfile(userId) {
-    const { data } = await supabase.from('profiles').select('*').eq('id', userId).single();
-    if (data) { setProfile(data); return data; }
-    return null;
-  }
-
-  async function fetchAllData(currentUserProfile) {
-    setLoading(true); 
-    const [cats, tens, depts, kb, tix, myAccess] = await Promise.all([
-      supabase.from('categories').select('*').order('label'),
-      supabase.from('tenants').select('*').order('name'),
-      supabase.from('departments').select('*').order('name'),
-      supabase.from('kb_articles').select('*').order('title'),
-      supabase
-        .from('tickets')
-        .select('*, requester:profiles!requester_id(full_name), assignee_profile:profiles!assignee_id(full_name)')
-        .order('created_at', { ascending: false }),
-      supabase.from('tenant_access').select('tenant_id').eq('user_id', currentUserProfile.id)
-    ]);
-
-    if (cats.data) setCategories(cats.data);
     
-    // --- SECURE TENANT FILTERING ---
-    // 1. Filter the list of available tenants based on permissions
-    if (tens.data) {
-      let visibleTenants = tens.data;
-      if (currentUserProfile.role !== 'super_admin') {
-        const allowedIds = myAccess.data ? myAccess.data.map(a => a.tenant_id) : [];
-        visibleTenants = tens.data.filter(t => allowedIds.includes(t.id));
-      }
-      setTenants(visibleTenants);
-      
-      // 2. Set Smart Default (Preserve selection if valid, else pick first available)
-      if (visibleTenants.length > 0) {
-        // If we don't have a selection, OR our current selection is no longer valid (revoked access)
-        if (!currentTenant || !visibleTenants.find(t => t.id === currentTenant.id)) {
-           setCurrentTenant(visibleTenants[0]);
-        }
-      } else {
-        setCurrentTenant(null);
-      }
-    }
+    // Fetch tickets for THIS tenant only
+    const { data, error } = await supabase
+      .from('tickets')
+      .select('*, requester:profiles!requester_id(full_name), assignee_profile:profiles!assignee_id(full_name)')
+      .eq('tenant_id', currentTenant.id)
+      .order('created_at', { ascending: false });
 
-    if (depts.data) setDepartments(depts.data);
-    if (kb.data) setKbArticles(kb.data);
-    
-    // Process Tickets (Flattening for UI)
-    if (tix.data) {
-      setTickets(tix.data.map(t => ({ 
+    if (!error && data) {
+      const formatted = data.map(t => ({ 
         ...t, 
         requester: t.requester?.full_name || 'Unknown', 
-        assignee: t.assignee_profile?.full_name || null,
-        assignee_id: t.assignee_id,
-        status: t.status || 'New',
-        priority: t.priority || 'Medium',
-        sla_due_at: t.sla_due_at
-      })));
-    }
-
-    // Fetch Users (For Admin Settings only)
-    if (currentUserProfile.role === 'super_admin' || currentUserProfile.role === 'admin') {
-        const { data: userData } = await supabase.from('profiles').select('*').order('full_name');
-        const { data: accessData } = await supabase.from('tenant_access').select('*');
-        if (userData && accessData) {
-          setUsers(userData.map(u => ({ ...u, access_list: accessData.filter(a => a.user_id === u.id).map(a => a.tenant_id) })));
-        }
+        assignee: t.assignee_profile?.full_name || null 
+      }));
+      setTickets(formatted);
     }
     setLoading(false);
-  }
-
-  // --- FORCED RELOAD ON NAV CLICK ---
-  const handleNavClick = (tabName) => {
-    setActiveTab(tabName);
-    setSelectedTicket(null);
-    if (profile) fetchAllData(profile);
   };
 
-  // --- SLA CALCULATOR ---
-  const calculateDueDate = (priority) => {
-    const now = new Date();
-    const hours = 
-      priority === 'Critical' ? 4 : 
-      priority === 'High' ? 8 : 
-      priority === 'Low' ? 72 : 24; 
+  useEffect(() => {
+    fetchTickets();
+  }, [currentTenant]); // Re-fetch when tenant changes
 
-    now.setHours(now.getHours() + hours);
-    return now.toISOString();
-  };
+  // 4. BADGE COUNTER (The Ghost Fix)
+  useEffect(() => {
+    if (!session?.user?.id) return;
+    const fetchBadge = async () => {
+      const { count } = await supabase
+        .from('tickets')
+        .select('*', { count: 'exact', head: true })
+        .eq('assignee_id', session.user.id)
+        .neq('status', 'Resolved') // Fix Ghost
+        .neq('status', 'Closed');  // Fix Ghost
+      setMyTicketCount(count || 0);
+    };
+    fetchBadge();
+    const sub = supabase.channel('badge').on('postgres_changes', { event: '*', schema: 'public', table: 'tickets' }, fetchBadge).subscribe();
+    return () => supabase.removeChannel(sub);
+  }, [session]);
 
-  // --- HANDLE NEW TICKET (WITH ROUTING & TENANT TAGGING) ---
+  // 5. HANDLE TICKET CREATION
   const handleCreateTicket = async (formData) => {
     const requesterId = session?.user?.id;
     const priority = formData.priority || 'Medium';
-    const dueAt = calculateDueDate(priority);
+    
+    // SLA Calc
+    const now = new Date();
+    const hours = priority === 'Critical' ? 4 : priority === 'High' ? 8 : priority === 'Low' ? 72 : 24; 
+    now.setHours(now.getHours() + hours);
 
-    // 1. AUTO-ROUTING LOGIC
+    // Auto Routing
     const selectedCategory = categories.find(c => c.label === formData.category);
     const autoDeptId = selectedCategory?.default_department_id || null;
 
     const { error } = await supabase.from('tickets').insert({ 
       ...formData, 
       requester_id: requesterId,
-      tenant_id: currentTenant?.id, // <--- CRITICAL: Tags ticket to current tenant
+      tenant_id: currentTenant?.id, // Use Context Tenant
       priority: priority,
-      sla_due_at: dueAt,
+      sla_due_at: now.toISOString(),
       department_id: autoDeptId 
     });
     
     if (!error) { 
-      await fetchAllData(profile); 
-      setActiveTab('dashboard'); 
+      await fetchTickets(); 
+      setActiveView('dashboard'); 
     } else { 
       alert(error.message); 
     }
   };
 
-  const handleLogout = async () => { await supabase.auth.signOut(); setSession(null); };
+  const role = session?.user?.user_metadata?.role;
 
-  // --- PERMISSION CHECKER ---
-  const hasRole = (requiredRoles) => {
-    if (!profile?.role) return false;
-    return requiredRoles.includes(profile.role);
+  // ROUTING
+  const renderView = () => {
+    if (selectedTicket) return <TicketDetailView ticket={selectedTicket} onBack={() => setSelectedTicket(null)} />;
+
+    switch (activeView) {
+      case 'dashboard': 
+        return <DashboardView tickets={tickets} loading={loading} role={role} onRefresh={fetchTickets} onSelectTicket={setSelectedTicket} onNewTicket={() => setActiveView('new-ticket')} />;
+      case 'my-queue': 
+        return <DashboardView title="My Active Tickets" tickets={tickets.filter(t => t.assignee_id === session.user.id && t.status !== 'Resolved' && t.status !== 'Closed')} loading={loading} role={role} onRefresh={fetchTickets} onSelectTicket={setSelectedTicket} />; 
+      case 'new-ticket': 
+        return <NewTicketView categories={categories} kbArticles={kbArticles} onSubmit={handleCreateTicket} />;
+      case 'teams': 
+        return <TeamsView departments={departments} />;
+      case 'knowledge': 
+        return <KnowledgeBaseView articles={kbArticles} categories={categories} onUpdate={fetchTickets} />;
+      case 'settings': 
+        return <SettingsView categories={categories} tenants={tenants} departments={departments} onUpdate={fetchTickets} />;
+      case 'tenants': 
+        return <TenantsView tenants={tenants} />;
+      default: return <DashboardView tickets={tickets} />;
+    }
   };
 
-  const isAdmin = hasRole(['super_admin', 'admin']);
-  const isTech = hasRole(['super_admin', 'admin', 'manager', 'technician']);
-
-  if (!session) return <div className="min-h-screen w-full bg-[#0f172a] flex items-center justify-center font-sans text-slate-200"><GlassCard className="w-full max-w-md p-8 flex flex-col items-center gap-6"><h1 className="text-3xl font-bold text-blue-200">Nexus ESM</h1><button onClick={async () => await supabase.auth.signInWithOAuth({ provider: 'azure', options: { scopes: 'email', redirectTo: window.location.origin } })} className="w-full px-4 py-3 bg-[#2f2f2f] hover:bg-[#3f3f3f] text-white rounded-lg border border-white/5 flex items-center justify-center gap-3"><img src="https://img.icons8.com/color/48/000000/microsoft.png" className="w-5 h-5"/><span>Sign in with Microsoft</span></button></GlassCard></div>;
-
   return (
-    <div className="min-h-screen w-full bg-[#0f172a] text-slate-200 font-sans flex overflow-hidden relative selection:bg-blue-500/30">
-      <div className="fixed top-0 left-0 w-full h-full pointer-events-none z-0"><div className="absolute top-[-20%] left-[20%] w-[800px] h-[800px] bg-blue-900/20 rounded-full blur-[120px]"></div><div className="absolute bottom-[-20%] right-[10%] w-[600px] h-[600px] bg-purple-900/20 rounded-full blur-[120px]"></div></div>
+    <div className="flex h-screen bg-slate-950 text-slate-200 overflow-hidden font-sans selection:bg-blue-500/30">
+      <Sidebar 
+        activeView={activeView} 
+        setActiveView={setActiveView} 
+        session={session} 
+        myTicketCount={myTicketCount}
+        isMobile={isMobile}
+        isOpen={sidebarOpen}
+        setIsOpen={setSidebarOpen}
+      />
 
-      <aside className={`fixed md:relative z-20 h-full transition-all duration-300 ease-in-out ${sidebarOpen ? 'w-64 translate-x-0' : 'w-20 md:w-20 -translate-x-full md:translate-x-0'} border-r border-white/5 bg-[#0f172a]/80 backdrop-blur-xl flex flex-col`}>
-        <div className="h-16 flex items-center justify-between px-4 border-b border-white/5"><div className={`flex items-center gap-3 ${!sidebarOpen && 'justify-center w-full'}`}><Monitor className="w-5 h-5 text-white" />{sidebarOpen && <span className="font-bold text-lg tracking-tight">Nexus</span>}</div><button onClick={() => setSidebarOpen(!sidebarOpen)} className="md:hidden text-slate-400"><X size={20} /></button></div>
-        
-        {/* TENANT SWITCHER */}
-        {sidebarOpen && currentTenant && (
-          <div className="px-4 pt-4 relative">
-             <button onClick={() => setTenantMenuOpen(!tenantMenuOpen)} className="w-full bg-white/5 hover:bg-white/10 rounded-lg border border-white/10 p-2 flex items-center gap-2 text-sm font-medium text-white transition-colors">
-                <Building2 size={16} />
-                <span className="truncate flex-1 text-left">{currentTenant.name}</span>
-                <ChevronDown size={14} className="text-slate-500" />
-             </button>
-             {tenantMenuOpen && (
-               <div className="absolute top-full left-4 right-4 mt-2 bg-[#1e293b] border border-white/10 rounded-lg shadow-xl z-50 overflow-hidden">
-                 {tenants.map(t => (
-                   <div key={t.id} onClick={() => { setCurrentTenant(t); setTenantMenuOpen(false); }} className="px-3 py-2 text-sm hover:bg-blue-600 hover:text-white cursor-pointer flex items-center justify-between group">
-                      <span className={t.id === currentTenant.id ? 'text-white' : 'text-slate-400 group-hover:text-white'}>{t.name}</span>
-                      {t.id === currentTenant.id && <Check size={14} className="text-blue-400 group-hover:text-white"/>}
-                   </div>
-                 ))}
-               </div>
-             )}
+      <div className="flex-1 flex flex-col min-w-0 relative">
+        {isMobile && (
+          <div className="flex items-center justify-between p-4 bg-slate-900 border-b border-white/5">
+            <span className="font-bold text-white">Nexus</span>
+            <button onClick={() => setSidebarOpen(true)} className="text-white"><Menu size={24} /></button>
           </div>
         )}
-
-        <nav className="flex-1 py-6 px-2 space-y-1">
-          <NavItem icon={LayoutDashboard} label="Dashboard" active={activeTab === 'dashboard'} onClick={() => handleNavClick('dashboard')} collapsed={!sidebarOpen} />
-          {/* Note: The 'count' here also respects strict filtering */}
-          <NavItem 
-            icon={Clock} 
-            label="My Queue" 
-            count={tickets.filter(t => t.tenant_id === currentTenant?.id && t.status !== 'Resolved' && (t.requester === profile?.full_name || t.assignee === profile?.full_name)).length} 
-            active={activeTab === 'queue'}
-            onClick={() => handleNavClick('queue')} 
-            collapsed={!sidebarOpen} 
-          />
-          <NavItem icon={Plus} label="New Ticket" active={activeTab === 'new'} onClick={() => handleNavClick('new')} collapsed={!sidebarOpen} />
-          
-          {isTech && (
-            <>
-              <NavItem icon={Users} label="Teams" active={activeTab === 'teams'} onClick={() => handleNavClick('teams')} collapsed={!sidebarOpen} />
-              <NavItem icon={Book} label="Knowledge Base" active={activeTab === 'knowledge'} onClick={() => handleNavClick('knowledge')} collapsed={!sidebarOpen} />
-            </>
-          )}
-
-          {isAdmin && (
-            <>
-               {profile?.role === 'super_admin' && <NavItem icon={Building2} label="Tenants" active={activeTab === 'tenants'} onClick={() => handleNavClick('tenants')} collapsed={!sidebarOpen} />}
-               <NavItem icon={Settings} label="Settings" active={activeTab === 'settings'} onClick={() => handleNavClick('settings')} collapsed={!sidebarOpen} />
-            </>
-          )}
-        </nav>
-
-        <div className="p-4 border-t border-white/5"><div className={`flex items-center gap-3 ${!sidebarOpen && 'justify-center'}`}><div className="w-9 h-9 rounded-full bg-emerald-600 flex items-center justify-center text-sm font-bold">{profile?.avatar_initials}</div>{sidebarOpen && <div className="flex-1 min-w-0"><p className="text-sm font-medium truncate">{profile?.full_name}</p><p className="text-xs text-slate-400 truncate capitalize">{profile?.role}</p></div>}{sidebarOpen && <button onClick={handleLogout} className="p-1.5 text-slate-400 hover:text-white"><LogOut size={16} /></button>}</div></div>
-      </aside>
-
-      <main className="flex-1 h-screen overflow-y-auto relative z-10 flex flex-col">
+        
+        {/* TOP BAR */}
         <header className="h-16 border-b border-white/5 bg-[#0f172a]/50 backdrop-blur-md sticky top-0 z-30 flex items-center justify-between px-4 md:px-8">
-           <div className="flex items-center gap-4"><button onClick={() => setSidebarOpen(!sidebarOpen)} className="md:hidden text-slate-400"><Menu size={20} /></button><h2 className="text-xl font-semibold text-white/90 capitalize">{activeTab === 'queue' ? 'My Queue' : activeTab}</h2></div>
-           <div className="flex items-center gap-4"><div className="relative hidden md:block"><Search className="absolute left-3 top-2 text-slate-500 w-4 h-4" /><input type="text" placeholder="Search..." className="bg-black/20 border border-white/5 rounded-full pl-9 pr-4 py-1.5 text-sm w-64 text-slate-200" /></div><button className="p-2 text-slate-400"><Bell size={20} /></button></div>
+           <h2 className="text-xl font-semibold text-white/90 capitalize">{activeView.replace('-', ' ')}</h2>
+           <div className="flex items-center gap-4">
+             <div className="relative hidden md:block">
+               <Search className="absolute left-3 top-2 text-slate-500 w-4 h-4" />
+               <input type="text" placeholder="Search..." className="bg-black/20 border border-white/5 rounded-full pl-9 pr-4 py-1.5 text-sm w-64 text-slate-200 focus:outline-none focus:border-blue-500/50" />
+             </div>
+             <button className="p-2 text-slate-400 hover:text-white"><Bell size={20} /></button>
+           </div>
         </header>
 
-        <div className="p-4 md:p-8 max-w-7xl mx-auto w-full">
-          {activeTab === 'new' && <NewTicketView categories={categories} kbArticles={kbArticles} onSubmit={handleCreateTicket} />}
-          
-          {/* --- STRICT TENANT ISOLATION: DASHBOARD --- */}
-          {activeTab === 'dashboard' && !selectedTicket && (
-            <DashboardView 
-              tickets={tickets.filter(t => t.tenant_id === currentTenant?.id)} 
-              loading={loading} 
-              role={profile?.role} 
-              onRefresh={() => fetchAllData(profile)} 
-              onSelectTicket={setSelectedTicket} 
-              onNewTicket={() => handleNavClick('new')} 
-            />
-          )}
-
-          {/* --- STRICT TENANT ISOLATION: MY QUEUE --- */}
-          {activeTab === 'queue' && !selectedTicket && (
-             <DashboardView 
-               tickets={tickets.filter(t => 
-                 t.tenant_id === currentTenant?.id && 
-                 (t.requester === profile?.full_name || t.assignee === profile?.full_name)
-               )} 
-               loading={loading} 
-               role={profile?.role} 
-               onRefresh={() => fetchAllData(profile)} 
-               onSelectTicket={setSelectedTicket} 
-               onNewTicket={() => handleNavClick('new')}
-               title="My Active Tickets"
-             />
-          )}
-
-          {selectedTicket && <TicketDetailView ticket={selectedTicket} onBack={() => { setSelectedTicket(null); fetchAllData(profile); }} />}
-          
-          {activeTab === 'teams' && isTech && <TeamsView departments={departments} />}
-          {activeTab === 'tenants' && isAdmin && <TenantsView tenants={tenants} />}
-          {activeTab === 'knowledge' && isTech && <KnowledgeView articles={kbArticles} categories={categories} onUpdate={() => fetchAllData(profile)} />}
-          
-          {activeTab === 'settings' && isAdmin && <SettingsView categories={categories} tenants={tenants} users={users} departments={departments} onUpdate={() => fetchAllData(profile)} />}
-        </div>
-      </main>
+        <main className="flex-1 overflow-y-auto custom-scrollbar p-4 lg:p-8 relative">
+           {renderView()}
+        </main>
+      </div>
+      
+      {isMobile && sidebarOpen && (
+        <div className="fixed inset-0 bg-black/50 z-40 backdrop-blur-sm" onClick={() => setSidebarOpen(false)} />
+      )}
     </div>
+  );
+}
+
+// --- ROOT APP (Providers) ---
+export default function App() {
+  const [session, setSession] = useState(null);
+
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data: { session } }) => setSession(session));
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => setSession(session));
+    return () => subscription.unsubscribe();
+  }, []);
+
+  if (!session) {
+    return (
+      <div className="min-h-screen w-full bg-[#0f172a] flex items-center justify-center font-sans text-slate-200">
+        <div className="w-full max-w-md p-8 flex flex-col items-center gap-6 bg-slate-900/50 border border-white/10 rounded-2xl backdrop-blur-xl">
+          <h1 className="text-3xl font-bold text-blue-200">Nexus ESM</h1>
+          <button onClick={() => supabase.auth.signInWithOAuth({ provider: 'azure', options: { scopes: 'email', redirectTo: window.location.origin } })} className="w-full px-4 py-3 bg-[#2f2f2f] hover:bg-[#3f3f3f] text-white rounded-lg border border-white/5 flex items-center justify-center gap-3">
+            <img src="https://img.icons8.com/color/48/000000/microsoft.png" className="w-5 h-5" alt="MS"/>
+            <span>Sign in with Microsoft</span>
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <TenantProvider>
+      <AppContent session={session} />
+    </TenantProvider>
   );
 }
