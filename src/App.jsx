@@ -7,7 +7,7 @@ import TeamsView from './views/Teams';
 import KnowledgeBaseView from './views/Knowledge';
 import SettingsView from './views/Settings';
 import TenantsView from './views/Tenants';
-import { TicketDetailView } from './components/ui'; // <--- FIX: Named import from ui.jsx
+import { TicketDetailView } from './components/ui'; // <--- FIX: Correct Import
 import { TenantProvider, useTenant } from './contexts/TenantContext';
 
 // --- SIDEBAR COMPONENT ---
@@ -126,6 +126,9 @@ function AppContent({ session }) {
   const [departments, setDepartments] = useState([]);
   const [kbArticles, setKbArticles] = useState([]);
   const [selectedTicket, setSelectedTicket] = useState(null);
+  
+  // Admin Data State
+  const [users, setUsers] = useState([]); // <--- NEW: Store users here
 
   // 1. MOBILE CHECK
   useEffect(() => {
@@ -135,17 +138,29 @@ function AppContent({ session }) {
     return () => window.removeEventListener('resize', checkMobile);
   }, []);
 
-  // 2. FETCH GLOBAL DATA (Categories, Depts, KB)
+  // 2. FETCH GLOBAL DATA (Categories, Depts, KB, Users)
   useEffect(() => {
     const fetchGlobals = async () => {
-      const [cats, depts, kb] = await Promise.all([
+      const [cats, depts, kb, allUsers, allAccess] = await Promise.all([
         supabase.from('categories').select('*').order('label'),
         supabase.from('departments').select('*').order('name'),
         supabase.from('kb_articles').select('*').order('title'),
+        supabase.from('profiles').select('*').order('full_name'), // Fetch Users
+        supabase.from('tenant_access').select('*') // Fetch Access
       ]);
+      
       if (cats.data) setCategories(cats.data);
       if (depts.data) setDepartments(depts.data);
       if (kb.data) setKbArticles(kb.data);
+      
+      // Process Users with Access List
+      if (allUsers.data && allAccess.data) {
+          const processedUsers = allUsers.data.map(u => ({
+              ...u,
+              access_list: allAccess.data.filter(a => a.user_id === u.id).map(a => a.tenant_id)
+          }));
+          setUsers(processedUsers);
+      }
     };
     fetchGlobals();
   }, []);
@@ -175,7 +190,7 @@ function AppContent({ session }) {
 
   useEffect(() => {
     fetchTickets();
-  }, [currentTenant]); // Re-fetch when tenant changes
+  }, [currentTenant]); 
 
   // 4. BADGE COUNTER (The Ghost Fix)
   useEffect(() => {
@@ -185,8 +200,8 @@ function AppContent({ session }) {
         .from('tickets')
         .select('*', { count: 'exact', head: true })
         .eq('assignee_id', session.user.id)
-        .neq('status', 'Resolved') // Fix Ghost
-        .neq('status', 'Closed');  // Fix Ghost
+        .neq('status', 'Resolved') 
+        .neq('status', 'Closed');  
       setMyTicketCount(count || 0);
     };
     fetchBadge();
@@ -211,7 +226,7 @@ function AppContent({ session }) {
     const { error } = await supabase.from('tickets').insert({ 
       ...formData, 
       requester_id: requesterId,
-      tenant_id: currentTenant?.id, // Use Context Tenant
+      tenant_id: currentTenant?.id, 
       priority: priority,
       sla_due_at: now.toISOString(),
       department_id: autoDeptId 
@@ -243,7 +258,8 @@ function AppContent({ session }) {
       case 'knowledge': 
         return <KnowledgeBaseView articles={kbArticles} categories={categories} onUpdate={fetchTickets} />;
       case 'settings': 
-        return <SettingsView categories={categories} tenants={tenants} departments={departments} users={[]} onUpdate={fetchTickets} />;
+        // FIX: Pass 'users' to SettingsView
+        return <SettingsView categories={categories} tenants={tenants} departments={departments} users={users} onUpdate={fetchTickets} />;
       case 'tenants': 
         return <TenantsView tenants={tenants} />;
       default: return <DashboardView tickets={tickets} />;
