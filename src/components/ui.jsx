@@ -159,17 +159,35 @@ export const TicketDetailView = ({ ticket, onBack }) => {
   const [staffMembers, setStaffMembers] = useState([]);
   const [loading, setLoading] = useState(false);
   const [currentUser, setCurrentUser] = useState(null); 
+  
+  // -- EMAIL CONTEXT DATA --
+  const [requesterEmail, setRequesterEmail] = useState('');
+  const [departmentEmail, setDepartmentEmail] = useState('');
 
   // 1. Init Data
   useEffect(() => {
     fetchUpdates();
     fetchStaff();
     getCurrentUser(); 
+    fetchEmailContext();
   }, [ticket.id]);
 
   const getCurrentUser = async () => {
     const { data: { user } } = await supabase.auth.getUser();
     setCurrentUser(user);
+  };
+
+  const fetchEmailContext = async () => {
+    // Get Requester Email
+    if (ticket.requester_id) {
+        const { data } = await supabase.from('profiles').select('email').eq('id', ticket.requester_id).single();
+        if (data) setRequesterEmail(data.email);
+    }
+    // Get Department Email
+    if (ticket.department_id) {
+        const { data } = await supabase.from('departments').select('team_email').eq('id', ticket.department_id).single();
+        if (data) setDepartmentEmail(data.team_email);
+    }
   };
 
   const fetchUpdates = async () => {
@@ -190,7 +208,22 @@ export const TicketDetailView = ({ ticket, onBack }) => {
     if (data) setStaffMembers(data);
   };
 
-  // 2. HELPER: LOG SYSTEM MESSAGE
+  // 2. HELPER: SEND EMAIL NOTIFICATION
+  const sendUpdateEmail = async (subject, htmlBody, recipient) => {
+      if (!recipient) return;
+      console.log(`📧 Sending Update Email to ${recipient}`);
+      await fetch('/api/email', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+              to: recipient,
+              subject: subject,
+              body: htmlBody
+          })
+      }).catch(e => console.error("Email fail", e));
+  };
+
+  // 3. HELPER: LOG SYSTEM MESSAGE
   const logSystemMessage = async (message) => {
     if (!currentUser) return;
     await supabase.from('ticket_updates').insert({
@@ -198,10 +231,10 @@ export const TicketDetailView = ({ ticket, onBack }) => {
       user_id: currentUser.id,
       content: message
     });
-    fetchUpdates(); // Refresh log immediately
+    fetchUpdates(); 
   };
 
-  // 3. HANDLE ASSIGNMENT
+  // 4. HANDLE ASSIGNMENT
   const handleAssign = async (newId) => {
     setAssigneeId(newId);
     await supabase.from('tickets').update({ assignee_id: newId || null }).eq('id', ticket.id);
@@ -213,38 +246,64 @@ export const TicketDetailView = ({ ticket, onBack }) => {
     }
   };
 
-  // 4. HANDLE STATUS CHANGE (WITH RESOLVED_AT TIMESTAMP)
+  // 5. HANDLE STATUS CHANGE (WITH EMAIL NOTIFICATION)
   const handleStatusChange = async (newStatus) => {
     setStatus(newStatus);
     
     const updates = { status: newStatus };
-    // --- NEW: SET TIMESTAMP IF RESOLVED ---
     if (newStatus === 'Resolved' || newStatus === 'Closed') {
       updates.resolved_at = new Date().toISOString();
     }
     
     await supabase.from('tickets').update(updates).eq('id', ticket.id);
     await logSystemMessage(`Changed status to: ${newStatus}`);
+
+    // --- EMAIL NOTIFICATION FOR RESOLUTION ---
+    if (newStatus === 'Resolved' || newStatus === 'Closed') {
+        const emailBody = `
+            <h3>Ticket ${newStatus}</h3>
+            <p>Your ticket <b>#${ticket.id}</b> has been marked as <b>${newStatus}</b>.</p>
+            <p>If you disagree with this, please reply to this ticket in the dashboard.</p>
+            <br/><a href="${window.location.origin}">View Ticket</a>
+        `;
+        await sendUpdateEmail(`Ticket Updated: #${ticket.id} is ${newStatus}`, emailBody, requesterEmail);
+    }
   };
 
-  // 5. "TAKE OWNERSHIP"
+  // 6. "TAKE OWNERSHIP"
   const assignToMe = async () => {
     if (!currentUser) return;
     await handleAssign(currentUser.id);
   };
 
-  // 6. POST COMMENT
+  // 7. POST COMMENT (WITH INTELLIGENT ROUTING)
   const handlePostUpdate = async () => {
     if (!newUpdate.trim()) return;
     setLoading(true);
 
     if (!currentUser) return;
 
+    // A. Save to DB
     await supabase.from('ticket_updates').insert({
       ticket_id: ticket.id,
       user_id: currentUser.id,
       content: newUpdate
     });
+
+    // B. Determine Email Recipient
+    const isRequester = currentUser.id === ticket.requester_id;
+    const recipient = isRequester ? departmentEmail : requesterEmail;
+    
+    if (recipient) {
+        const senderName = isRequester ? (ticket.requester || 'User') : 'IT Support';
+        const emailBody = `
+            <h3>New Reply on Ticket #${ticket.id}</h3>
+            <p><b>${senderName} wrote:</b></p>
+            <p style="background: #f4f4f5; padding: 10px; border-radius: 5px;">${newUpdate}</p>
+            <br/><a href="${window.location.origin}">View Conversation</a>
+        `;
+        await sendUpdateEmail(`[Update] Ticket #${ticket.id}`, emailBody, recipient);
+    }
 
     setNewUpdate('');
     fetchUpdates();
