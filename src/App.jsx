@@ -114,7 +114,7 @@ function Sidebar({ activeView, setActiveView, session, profile, myTicketCount, i
 // --- MAIN CONTENT LOGIC ---
 function AppContent({ session }) {
   const { currentTenant, tenants } = useTenant();
-  const [profile, setProfile] = useState(null); // <--- RESTORED PROFILE STATE
+  const [profile, setProfile] = useState(null); 
   const [activeView, setActiveView] = useState('dashboard');
   const [myTicketCount, setMyTicketCount] = useState(0);
   const [isMobile, setIsMobile] = useState(false);
@@ -129,12 +129,11 @@ function AppContent({ session }) {
   const [selectedTicket, setSelectedTicket] = useState(null);
   const [users, setUsers] = useState([]);
 
-  // 1. FETCH REAL PROFILE FROM DB (The Fix)
+  // 1. FETCH REAL PROFILE FROM DB
   useEffect(() => {
     if (!session?.user?.id) return;
     
     const fetchProfile = async () => {
-      // We explicitly fetch the role from the 'profiles' table
       const { data, error } = await supabase
         .from('profiles')
         .select('*')
@@ -225,7 +224,7 @@ function AppContent({ session }) {
     return () => supabase.removeChannel(sub);
   }, [session]);
 
-  // 6. HANDLE TICKET CREATION
+  // 6. HANDLE TICKET CREATION (WITH EMAIL NOTIFICATION)
   const handleCreateTicket = async (formData) => {
     const requesterId = session?.user?.id;
     const priority = formData.priority || 'Medium';
@@ -237,24 +236,51 @@ function AppContent({ session }) {
     const selectedCategory = categories.find(c => c.label === formData.category);
     const autoDeptId = selectedCategory?.default_department_id || null;
 
-    const { error } = await supabase.from('tickets').insert({ 
+    // 1. Insert Ticket
+    const { data: newTicket, error } = await supabase.from('tickets').insert({ 
       ...formData, 
       requester_id: requesterId,
       tenant_id: currentTenant?.id, 
       priority: priority,
       sla_due_at: now.toISOString(),
       department_id: autoDeptId 
-    });
+    }).select().single(); // <--- Important: Get ID back
     
-    if (!error) { 
-      await fetchTickets(); 
-      setActiveView('dashboard'); 
-    } else { 
-      alert(error.message); 
+    if (error) { 
+      alert(error.message);
+      return;
     }
+
+    // 2. Email Logic
+    if (autoDeptId) {
+        const targetDept = departments.find(d => d.id === autoDeptId);
+        if (targetDept?.team_email) {
+            console.log(`Sending email to ${targetDept.team_email}`);
+            fetch('/api/email', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    to: targetDept.team_email,
+                    subject: `[New Ticket] #${newTicket.id} - ${formData.subject}`,
+                    body: `
+                        <h3>New Ticket Received</h3>
+                        <p><b>Requester:</b> ${session?.user?.user_metadata?.full_name}</p>
+                        <p><b>Priority:</b> ${priority}</p>
+                        <hr/>
+                        <p>${formData.description}</p>
+                        <br/>
+                        <a href="${window.location.origin}">View Ticket</a>
+                    `
+                })
+            }).catch(e => console.error("Email failed", e));
+        }
+    }
+
+    await fetchTickets(); 
+    setActiveView('dashboard'); 
   };
 
-  const role = profile?.role || 'user'; // FIX: Use real DB role
+  const role = profile?.role || 'user'; 
 
   const renderView = () => {
     if (selectedTicket) return <TicketDetailView ticket={selectedTicket} onBack={() => setSelectedTicket(null)} />;
@@ -284,7 +310,7 @@ function AppContent({ session }) {
         activeView={activeView} 
         setActiveView={setActiveView} 
         session={session} 
-        profile={profile} // FIX: Pass profile to sidebar
+        profile={profile} 
         myTicketCount={myTicketCount}
         isMobile={isMobile}
         isOpen={sidebarOpen}
