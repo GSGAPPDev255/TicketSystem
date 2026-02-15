@@ -67,7 +67,7 @@ export const TicketRow = ({ ticket, onClick }) => (
       <div>
         <h4 className="font-semibold text-slate-200 group-hover:text-white transition-colors">{ticket.subject}</h4>
         <div className="flex items-center gap-3 text-xs text-slate-500 mt-1">
-          <span className="font-mono">#{ticket.id.slice(0,4)}</span>
+          <span className="font-mono">{ticket.ticket_number ? `${new Date(ticket.created_at).toLocaleString('default', { month: 'short', year: '2-digit' }).toUpperCase()}-${ticket.ticket_number}` : `#${ticket.id.slice(0,4)}`}</span>
           <span>•</span>
           <span>{ticket.requester}</span>
           <span>•</span>
@@ -178,12 +178,10 @@ export const TicketDetailView = ({ ticket, onBack }) => {
   };
 
   const fetchEmailContext = async () => {
-    // Get Requester Email
     if (ticket.requester_id) {
         const { data } = await supabase.from('profiles').select('email').eq('id', ticket.requester_id).single();
         if (data) setRequesterEmail(data.email);
     }
-    // Get Department Email
     if (ticket.department_id) {
         const { data } = await supabase.from('departments').select('team_email').eq('id', ticket.department_id).single();
         if (data) setDepartmentEmail(data.team_email);
@@ -246,7 +244,7 @@ export const TicketDetailView = ({ ticket, onBack }) => {
     }
   };
 
-  // 5. HANDLE STATUS CHANGE (WITH EMAIL NOTIFICATION)
+  // 5. HANDLE STATUS CHANGE (NOTIFY BOTH PARTIES)
   const handleStatusChange = async (newStatus) => {
     setStatus(newStatus);
     
@@ -260,13 +258,26 @@ export const TicketDetailView = ({ ticket, onBack }) => {
 
     // --- EMAIL NOTIFICATION FOR RESOLUTION ---
     if (newStatus === 'Resolved' || newStatus === 'Closed') {
+        const friendlyId = ticket.ticket_number 
+            ? `${new Date().toLocaleString('default', { month: 'short', year: '2-digit' }).toUpperCase()}-${ticket.ticket_number}`
+            : `#${ticket.id.slice(0,8)}`;
+
         const emailBody = `
-            <h3>Ticket ${newStatus}</h3>
-            <p>Your ticket <b>#${ticket.id}</b> has been marked as <b>${newStatus}</b>.</p>
-            <p>If you disagree with this, please reply to this ticket in the dashboard.</p>
-            <br/><a href="${window.location.origin}">View Ticket</a>
+            <div style="font-family: Arial, sans-serif; color: #333; line-height: 1.6;">
+                <h3 style="color: #2563eb;">Ticket ${newStatus}</h3>
+                <p>Ticket <b>${friendlyId}</b> ("${ticket.subject}") has been marked as <b>${newStatus}</b>.</p>
+                <hr style="border: 0; border-top: 1px solid #ddd; margin: 20px 0;" />
+                <p>If you disagree with this, please reply to this ticket in the dashboard.</p>
+                <br/>
+                <a href="${window.location.origin}" style="background-color: #2563eb; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px;">View Ticket</a>
+            </div>
         `;
-        await sendUpdateEmail(`Ticket Updated: #${ticket.id} is ${newStatus}`, emailBody, requesterEmail);
+        
+        // Notify Requester
+        if (requesterEmail) await sendUpdateEmail(`Ticket Updated: ${friendlyId} is ${newStatus}`, emailBody, requesterEmail);
+        
+        // Notify Department (NEW)
+        if (departmentEmail) await sendUpdateEmail(`[Team Alert] Ticket ${friendlyId} Closed`, emailBody, departmentEmail);
     }
   };
 
@@ -276,7 +287,7 @@ export const TicketDetailView = ({ ticket, onBack }) => {
     await handleAssign(currentUser.id);
   };
 
-  // 7. POST COMMENT (WITH INTELLIGENT ROUTING)
+  // 7. POST COMMENT (WITH INTELLIGENT ROUTING & STYLING)
   const handlePostUpdate = async () => {
     if (!newUpdate.trim()) return;
     setLoading(true);
@@ -295,14 +306,23 @@ export const TicketDetailView = ({ ticket, onBack }) => {
     const recipient = isRequester ? departmentEmail : requesterEmail;
     
     if (recipient) {
+        const friendlyId = ticket.ticket_number 
+            ? `${new Date().toLocaleString('default', { month: 'short', year: '2-digit' }).toUpperCase()}-${ticket.ticket_number}`
+            : `#${ticket.id.slice(0,8)}`;
+            
         const senderName = isRequester ? (ticket.requester || 'User') : 'IT Support';
+        
         const emailBody = `
-            <h3>New Reply on Ticket #${ticket.id}</h3>
-            <p><b>${senderName} wrote:</b></p>
-            <p style="background: #f4f4f5; padding: 10px; border-radius: 5px;">${newUpdate}</p>
-            <br/><a href="${window.location.origin}">View Conversation</a>
+            <div style="font-family: Arial, sans-serif; color: #333; line-height: 1.6;">
+                <h3 style="color: #2563eb;">New Reply on Ticket ${friendlyId}</h3>
+                <p><b>${senderName} wrote:</b></p>
+                <div style="background-color: #f8fafc; border-left: 4px solid #2563eb; padding: 15px; border-radius: 4px; margin: 20px 0;">
+                    ${newUpdate}
+                </div>
+                <a href="${window.location.origin}" style="background-color: #2563eb; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px;">View Conversation</a>
+            </div>
         `;
-        await sendUpdateEmail(`[Update] Ticket #${ticket.id}`, emailBody, recipient);
+        await sendUpdateEmail(`[Update] Ticket ${friendlyId}`, emailBody, recipient);
     }
 
     setNewUpdate('');
@@ -332,7 +352,9 @@ export const TicketDetailView = ({ ticket, onBack }) => {
                 )}
              </div>
              <div className="flex items-center gap-3 mt-2 text-sm text-slate-400">
-               <span className="font-mono bg-white/5 px-1.5 rounded text-xs">#{ticket.id.slice(0,4)}</span>
+               <span className="font-mono bg-white/5 px-1.5 rounded text-xs">
+                 {ticket.ticket_number ? `${new Date(ticket.created_at).toLocaleString('default', { month: 'short', year: '2-digit' }).toUpperCase()}-${ticket.ticket_number}` : `#${ticket.id.slice(0,4)}`}
+               </span>
                <span className="w-1 h-1 bg-slate-600 rounded-full"></span>
                <span>{new Date(ticket.created_at).toLocaleDateString()}</span>
                <span className="w-1 h-1 bg-slate-600 rounded-full"></span>
