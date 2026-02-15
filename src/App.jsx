@@ -11,7 +11,6 @@ import { TicketDetailView } from './components/ui';
 import { TenantProvider, useTenant } from './contexts/TenantContext';
 
 // --- SIDEBAR COMPONENT ---
-// NOW ACCEPTS: onNavigate (instead of just setActiveView)
 function Sidebar({ activeView, onNavigate, session, profile, myTicketCount, isMobile, isOpen, setIsOpen }) {
   const { currentTenant, tenants, setCurrentTenant } = useTenant();
 
@@ -68,7 +67,7 @@ function Sidebar({ activeView, onNavigate, session, profile, myTicketCount, isMo
           return (
             <button
               key={item.id}
-              onClick={() => onNavigate(item.id)} // <--- FIX: Uses new handler
+              onClick={() => onNavigate(item.id)}
               className={`w-full flex items-center justify-between px-4 py-3 rounded-xl transition-all duration-200 group ${
                 activeView === item.id 
                   ? 'bg-blue-600 text-white shadow-lg shadow-blue-900/20' 
@@ -129,11 +128,10 @@ function AppContent({ session }) {
   const [selectedTicket, setSelectedTicket] = useState(null);
   const [users, setUsers] = useState([]);
 
-  // --- NEW: NAVIGATION HANDLER ---
-  // This clears the selected ticket when you switch tabs
+  // Navigation Handler
   const handleNavigation = (viewName) => {
     setActiveView(viewName);
-    setSelectedTicket(null); // <--- THE FIX
+    setSelectedTicket(null);
     if (isMobile) setSidebarOpen(false);
   };
 
@@ -181,7 +179,7 @@ function AppContent({ session }) {
     fetchGlobals();
   }, []);
 
-  // 4. FETCH TICKETS (Re-fetches on tab change or tenant switch)
+  // 4. FETCH TICKETS
   const fetchTickets = async () => {
     if (!currentTenant) return;
     setLoading(true);
@@ -224,20 +222,31 @@ function AppContent({ session }) {
     return () => supabase.removeChannel(sub);
   }, [session]);
 
-  // 6. HANDLE TICKET CREATION
+  // 6. HANDLE TICKET CREATION (PROFESSIONAL EMAIL + FRIENDLY ID)
   const handleCreateTicket = async (formData) => {
     const requesterId = session?.user?.id;
     const requesterName = profile?.full_name || session?.user?.user_metadata?.full_name || 'User'; 
     const requesterEmail = profile?.email || session?.user?.email;
+    const tenantName = currentTenant?.name || 'Nexus Portal';
+
     const priority = formData.priority || 'Medium';
-    
     const now = new Date();
+    
+    // FORMAT: "Fri, 15 Feb 2026 at 14:30"
+    const formattedDate = now.toLocaleString('en-GB', { 
+        weekday: 'short', day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' 
+    });
+    
+    // FORMAT: "FEB26"
+    const monthYear = now.toLocaleString('en-GB', { month: 'short', year: '2-digit' }).toUpperCase().replace(' ','');
+
     const hours = priority === 'Critical' ? 4 : priority === 'High' ? 8 : priority === 'Low' ? 72 : 24; 
     now.setHours(now.getHours() + hours);
 
     const selectedCategory = categories.find(c => c.label === formData.category);
     const autoDeptId = selectedCategory?.default_department_id || null;
 
+    // INSERT TICKET
     const { data: newTicket, error } = await supabase.from('tickets').insert({ 
       ...formData, 
       requester_id: requesterId,
@@ -252,25 +261,59 @@ function AppContent({ session }) {
       return;
     }
 
+    // --- GENERATE FRIENDLY ID ---
+    // If ticket_number exists (DB sequence), use "FEB26-1001". If not, fallback to UUID.
+    const friendlyId = newTicket.ticket_number 
+        ? `${monthYear}-${newTicket.ticket_number}` 
+        : `#${newTicket.id.slice(0,8)}`;
+
     const emailPromises = [];
+
+    // A. PROFESSIONAL ALERT (To IT Dept)
     if (autoDeptId) {
         const targetDept = departments.find(d => d.id === autoDeptId);
         if (targetDept?.team_email) {
+            console.log(`📤 Notifying Team: ${targetDept.team_email}`);
             emailPromises.push(fetch('/api/email', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     to: targetDept.team_email,
-                    subject: `[New Ticket] #${newTicket.id} - ${formData.subject}`,
+                    subject: `[${priority}] ${formData.subject} (${friendlyId})`,
                     body: `
-                        <div style="font-family: sans-serif; color: #333;">
-                           <h3 style="color: #2563eb;">New Ticket Assigned</h3>
-                           <p><b>Requester:</b> ${requesterName}</p>
-                           <p><b>Priority:</b> ${priority}</p>
-                           <hr style="border: 0; border-top: 1px solid #eee; margin: 15px 0;" />
-                           <p style="background: #f8fafc; padding: 15px; border-radius: 8px;">${formData.description}</p>
-                           <br/>
-                           <a href="${window.location.origin}" style="background: #2563eb; color: white; padding: 10px 20px; text-decoration: none; border-radius: 6px;">View Ticket</a>
+                        <div style="font-family: Arial, sans-serif; color: #333; line-height: 1.6; max-width: 600px;">
+                           <p style="font-size: 16px;">
+                             A new issue has been assigned to you by <strong>${requesterName}</strong> from <strong>${tenantName}</strong>.
+                           </p>
+                           <hr style="border: 0; border-top: 1px solid #ddd; margin: 20px 0;" />
+                           
+                           <table style="width: 100%; border-collapse: collapse; margin-bottom: 20px;">
+                             <tr>
+                               <td style="font-weight: bold; width: 100px; padding: 4px 0; color: #666;">Issue ID:</td>
+                               <td>${friendlyId}</td>
+                             </tr>
+                             <tr>
+                               <td style="font-weight: bold; padding: 4px 0; color: #666;">Title:</td>
+                               <td>${formData.subject}</td>
+                             </tr>
+                             <tr>
+                               <td style="font-weight: bold; padding: 4px 0; color: #666;">Priority:</td>
+                               <td style="color: ${priority === 'Critical' ? '#e11d48' : 'inherit'}; font-weight: bold;">${priority}</td>
+                             </tr>
+                             <tr>
+                               <td style="font-weight: bold; padding: 4px 0; color: #666;">Logged:</td>
+                               <td>${formattedDate}</td>
+                             </tr>
+                           </table>
+
+                           <div style="background-color: #f8fafc; border-left: 4px solid #2563eb; padding: 15px; border-radius: 4px; margin-bottom: 30px;">
+                             <strong>Description:</strong><br/>
+                             <span style="white-space: pre-wrap;">${formData.description}</span>
+                           </div>
+
+                           <a href="${window.location.origin}" style="background-color: #2563eb; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; font-weight: bold; font-size: 14px;">Respond to Issue</a>
+                           
+                           <p style="margin-top: 40px; font-size: 12px; color: #999;">Nexus ESM Automation</p>
                         </div>
                     `
                 })
@@ -278,22 +321,22 @@ function AppContent({ session }) {
         }
     }
 
+    // B. RECEIPT (To User)
     if (requesterEmail) {
         emailPromises.push(fetch('/api/email', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
                 to: requesterEmail,
-                subject: `Ticket Received: #${newTicket.id}`,
+                subject: `Ticket Logged: ${friendlyId}`,
                 body: `
-                    <div style="font-family: sans-serif; color: #333;">
-                       <h3>We received your request</h3>
+                    <div style="font-family: Arial, sans-serif; color: #333;">
+                       <h3>Request Received</h3>
                        <p>Hello ${requesterName},</p>
-                       <p>Your ticket <b>#${newTicket.id}</b> has been logged successfully.</p>
-                       <p><b>Subject:</b> ${formData.subject}</p>
-                       <p>Our team will review it shortly.</p>
+                       <p>Your ticket <b>${friendlyId}</b> regarding "<b>${formData.subject}</b>" has been logged with ${tenantName} IT Support.</p>
+                       <p>We will review it shortly.</p>
                        <br/>
-                       <a href="${window.location.origin}" style="color: #2563eb;">View Status</a>
+                       <a href="${window.location.origin}" style="color: #2563eb;">Check Status</a>
                     </div>
                 `
             })
@@ -309,12 +352,10 @@ function AppContent({ session }) {
 
   // ROUTING VIEW
   const renderView = () => {
-    // If ticket selected, show details
     if (selectedTicket) {
       return <TicketDetailView ticket={selectedTicket} onBack={() => { setSelectedTicket(null); fetchTickets(); }} />;
     }
 
-    // Otherwise show active tab
     switch (activeView) {
       case 'dashboard': 
         return <DashboardView tickets={tickets} loading={loading} role={role} onRefresh={fetchTickets} onSelectTicket={setSelectedTicket} onNewTicket={() => handleNavigation('new-ticket')} />;
@@ -338,7 +379,7 @@ function AppContent({ session }) {
     <div className="flex h-screen bg-slate-950 text-slate-200 overflow-hidden font-sans selection:bg-blue-500/30">
       <Sidebar 
         activeView={activeView} 
-        onNavigate={handleNavigation} // <--- Pass the new handler
+        onNavigate={handleNavigation} 
         session={session} 
         profile={profile} 
         myTicketCount={myTicketCount}
