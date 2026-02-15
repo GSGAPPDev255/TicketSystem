@@ -224,17 +224,24 @@ function AppContent({ session }) {
     return () => supabase.removeChannel(sub);
   }, [session]);
 
-  // 6. HANDLE TICKET CREATION (WITH EMAIL NOTIFICATION)
+  // 6. HANDLE TICKET CREATION (DEBUG MODE)
   const handleCreateTicket = async (formData) => {
     const requesterId = session?.user?.id;
     const priority = formData.priority || 'Medium';
-    
     const now = new Date();
     const hours = priority === 'Critical' ? 4 : priority === 'High' ? 8 : priority === 'Low' ? 72 : 24; 
     now.setHours(now.getHours() + hours);
 
+    // DEBUG LOGS START
+    console.log("🔍 DEBUG: Starting Ticket Creation...");
+    console.log("Selected Category Label:", formData.category);
+
+    // Auto Routing
     const selectedCategory = categories.find(c => c.label === formData.category);
+    console.log("Found Category Object:", selectedCategory);
+    
     const autoDeptId = selectedCategory?.default_department_id || null;
+    console.log("Auto-Assign Dept ID:", autoDeptId);
 
     // 1. Insert Ticket
     const { data: newTicket, error } = await supabase.from('tickets').insert({ 
@@ -244,18 +251,23 @@ function AppContent({ session }) {
       priority: priority,
       sla_due_at: now.toISOString(),
       department_id: autoDeptId 
-    }).select().single(); // <--- Important: Get ID back
+    }).select().single();
     
     if (error) { 
       alert(error.message);
       return;
     }
+    console.log("✅ Ticket Created in DB:", newTicket.id);
 
     // 2. Email Logic
     if (autoDeptId) {
         const targetDept = departments.find(d => d.id === autoDeptId);
+        console.log("Target Dept Object:", targetDept);
+        console.log("Target Dept Email:", targetDept?.team_email);
+
         if (targetDept?.team_email) {
-            console.log(`Sending email to ${targetDept.team_email}`);
+            console.log(`🚀 ATTEMPTING EMAIL to: ${targetDept.team_email}`);
+            
             fetch('/api/email', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -272,8 +284,17 @@ function AppContent({ session }) {
                         <a href="${window.location.origin}">View Ticket</a>
                     `
                 })
-            }).catch(e => console.error("Email failed", e));
+            })
+            .then(res => {
+                if (res.ok) console.log("✅ Email sent successfully!");
+                else res.text().then(t => console.error("❌ Email Failed:", t));
+            })
+            .catch(e => console.error("❌ Network Error:", e));
+        } else {
+            console.warn("⚠️ Dept found, but NO EMAIL configured.");
         }
+    } else {
+        console.warn("⚠️ No Default Department linked to this category.");
     }
 
     await fetchTickets(); 
