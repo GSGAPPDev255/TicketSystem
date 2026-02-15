@@ -1,10 +1,14 @@
 import React, { useState, useEffect } from 'react';
-import { supabase } from '../lib/supabase'; // Needed to find "My Issues"
+import { supabase } from '../lib/supabase';
 import { 
   LayoutDashboard, Clock, AlertCircle, TrendingUp, Filter, X, Check, Bot, Archive, 
-  Calendar, Download, FileText, ChevronDown 
+  Calendar, Download, FileText, ChevronDown, CheckCircle2, BarChart3, PieChart as PieIcon 
 } from 'lucide-react';
-import { StatCard, TicketRow } from '../components/ui';
+import { 
+  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, 
+  PieChart, Pie, Cell, AreaChart, Area 
+} from 'recharts';
+import { StatCard, TicketRow, GlassCard } from '../components/ui';
 
 export default function DashboardView({ tickets = [], loading, role, onRefresh, onSelectTicket, onNewTicket, title = "Dashboard" }) {
   const [filterMode, setFilterMode] = useState('active'); 
@@ -15,7 +19,7 @@ export default function DashboardView({ tickets = [], loading, role, onRefresh, 
   const [showReportMenu, setShowReportMenu] = useState(false);
   const [currentUserEmail, setCurrentUserEmail] = useState(null);
 
-  // 1. IDENTIFY USER (For "My Issues" Report)
+  // 1. IDENTIFY USER
   useEffect(() => {
     supabase.auth.getUser().then(({ data }) => {
       if (data?.user) setCurrentUserEmail(data.user.email);
@@ -33,11 +37,38 @@ export default function DashboardView({ tickets = [], loading, role, onRefresh, 
   });
 
   // --- STATS ENGINE ---
-  const openTickets = dateFilteredTickets.filter(t => t.status !== 'Resolved' && t.status !== 'Closed').length;
-  const criticalTickets = dateFilteredTickets.filter(t => t.priority === 'Critical' && t.status !== 'Resolved').length;
-  const slaBreaches = dateFilteredTickets.filter(t => t.sla_due_at && new Date(t.sla_due_at) < new Date() && t.status !== 'Resolved').length;
-  const botResolved = dateFilteredTickets.filter(t => t.assignee === 'Nexus Bot').length;
-  const myResolved = dateFilteredTickets.filter(t => t.status === 'Resolved' || t.status === 'Closed').length;
+  const openTickets = dateFilteredTickets.filter(t => t.status !== 'Resolved' && t.status !== 'Closed');
+  const criticalTickets = dateFilteredTickets.filter(t => t.priority === 'Critical' && t.status !== 'Resolved');
+  const slaBreaches = dateFilteredTickets.filter(t => t.sla_breached); // Uses the DB flag we added in Phase 4
+  const botResolved = dateFilteredTickets.filter(t => t.assignee === 'Nexus Bot' || t.assignee === 'GSG Bot');
+  const myResolved = dateFilteredTickets.filter(t => t.status === 'Resolved' || t.status === 'Closed');
+
+  // --- CHART DATA PREP (New Feature) ---
+  
+  // A. Category Distribution
+  const categoryCount = dateFilteredTickets.reduce((acc, t) => {
+    acc[t.category] = (acc[t.category] || 0) + 1;
+    return acc;
+  }, {});
+  const categoryData = Object.keys(categoryCount).map(key => ({ name: key, count: categoryCount[key] }));
+
+  // B. Volume Last 7 Days
+  const last7Days = [...Array(7)].map((_, i) => {
+    const d = new Date();
+    d.setDate(d.getDate() - (6 - i));
+    return d.toISOString().split('T')[0];
+  });
+  
+  const volumeData = last7Days.map(date => ({
+    date: new Date(date).toLocaleDateString('en-GB', { weekday: 'short' }),
+    tickets: safeTickets.filter(t => t.created_at.startsWith(date)).length
+  }));
+
+  // C. Status Pie Chart
+  const pieData = [
+    { name: 'Open', value: openTickets.length, color: '#3b82f6' }, // Blue
+    { name: 'Resolved', value: myResolved.length, color: '#10b981' }, // Green
+  ];
 
   // --- VIEW LOGIC ---
   let displayedTickets = [];
@@ -45,57 +76,51 @@ export default function DashboardView({ tickets = [], loading, role, onRefresh, 
 
   switch (filterMode) {
     case 'bot':
-      displayedTickets = dateFilteredTickets.filter(t => t.assignee === 'Nexus Bot');
+      displayedTickets = botResolved;
       listTitle = "🤖 Auto-Resolved by Bot";
       break;
     case 'critical':
-      displayedTickets = dateFilteredTickets.filter(t => t.priority === 'Critical' && t.status !== 'Resolved');
+      displayedTickets = criticalTickets;
       listTitle = "🔥 Critical Issues";
       break;
     case 'sla':
-      displayedTickets = dateFilteredTickets.filter(t => t.sla_due_at && new Date(t.sla_due_at) < new Date() && t.status !== 'Resolved');
+      displayedTickets = slaBreaches;
       listTitle = "🚨 SLA Breaches";
       break;
     case 'resolved':
-      displayedTickets = dateFilteredTickets.filter(t => t.status === 'Resolved' || t.status === 'Closed');
+      displayedTickets = myResolved;
       listTitle = "✅ Resolved History";
       break;
     case 'active':
     default:
-      displayedTickets = safeTickets.filter(t => t.status !== 'Resolved' && t.status !== 'Closed' && t.assignee !== 'Nexus Bot');
-      listTitle = "Active Queue (All Time)";
+      displayedTickets = safeTickets.filter(t => t.status !== 'Resolved' && t.status !== 'Closed');
+      listTitle = "Active Queue";
       break;
   }
 
-  // --- REPORTING ENGINE (The Logic) ---
+  // --- REPORTING ENGINE (Kept original logic) ---
   const generateReport = (type) => {
     let dataToExport = [];
     let fileName = `nexus_report_${type.toLowerCase()}_${new Date().toISOString().slice(0,10)}`;
     let isSimplified = false;
 
-    // A. FILTER DATA
     switch (type) {
       case 'MY_ISSUES':
-        // Filter by email (fuzzy match)
         dataToExport = safeTickets.filter(t => 
            (t.requester && currentUserEmail && t.requester.toLowerCase().includes(currentUserEmail.split('@')[0])) ||
            (t.assignee && currentUserEmail && t.assignee.toLowerCase().includes(currentUserEmail.split('@')[0]))
         );
         break;
-        
       case 'OPEN':
         dataToExport = safeTickets.filter(t => t.status !== 'Resolved' && t.status !== 'Closed');
         break;
-        
       case 'OPEN_SIMPLIFIED':
         dataToExport = safeTickets.filter(t => t.status !== 'Resolved' && t.status !== 'Closed');
         isSimplified = true;
         break;
-
       case 'CLOSED':
         dataToExport = safeTickets.filter(t => t.status === 'Resolved' || t.status === 'Closed');
         break;
-
       case 'ALL':
       default:
         dataToExport = safeTickets;
@@ -108,7 +133,6 @@ export default function DashboardView({ tickets = [], loading, role, onRefresh, 
       return;
     }
 
-    // B. DEFINE COLUMNS
     let headers = [];
     let rowMapper = null;
 
@@ -137,7 +161,6 @@ export default function DashboardView({ tickets = [], loading, role, onRefresh, 
       ];
     }
 
-    // C. GENERATE CSV
     const csvContent = [
       headers.join(','), 
       ...dataToExport.map(row => rowMapper(row).join(','))
@@ -156,7 +179,7 @@ export default function DashboardView({ tickets = [], loading, role, onRefresh, 
 
   const months = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
   const currentYear = new Date().getFullYear();
-  const years = [currentYear, currentYear + 1]; 
+  const years = [currentYear, currentYear - 1]; 
 
   return (
     <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4" onClick={() => showReportMenu && setShowReportMenu(false)}>
@@ -188,7 +211,7 @@ export default function DashboardView({ tickets = [], loading, role, onRefresh, 
               </select>
            </div>
 
-           {/* REPORTS DROPDOWN (This replaces the old Export button) */}
+           {/* REPORTS DROPDOWN */}
            <div className="relative">
              <button 
                onClick={(e) => { e.stopPropagation(); setShowReportMenu(!showReportMenu); }}
@@ -206,9 +229,6 @@ export default function DashboardView({ tickets = [], loading, role, onRefresh, 
                     <div className="h-px bg-white/10 my-1"></div>
                     <button onClick={() => generateReport('OPEN')} className="w-full text-left px-4 py-2.5 text-sm text-slate-300 hover:bg-blue-600 hover:text-white transition-colors flex items-center gap-2">
                       <TrendingUp size={14} /> All Open Issues
-                    </button>
-                    <button onClick={() => generateReport('OPEN_SIMPLIFIED')} className="w-full text-left px-4 py-2.5 text-sm text-slate-300 hover:bg-blue-600 hover:text-white transition-colors flex items-center gap-2">
-                      <FileText size={14} /> All Open (Simplified)
                     </button>
                     <button onClick={() => generateReport('CLOSED')} className="w-full text-left px-4 py-2.5 text-sm text-slate-300 hover:bg-blue-600 hover:text-white transition-colors flex items-center gap-2">
                       <Archive size={14} /> All Closed Issues
@@ -237,24 +257,89 @@ export default function DashboardView({ tickets = [], loading, role, onRefresh, 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
         {/* CARD 1: ACTIVE */}
         <div onClick={() => setFilterMode('active')} className={`cursor-pointer transition-transform active:scale-95 ${filterMode === 'active' ? 'ring-2 ring-blue-500 rounded-2xl' : ''}`}>
-          <StatCard label="Open Tickets" value={openTickets} icon={LayoutDashboard} trend="Active Queue" trendUp={true} />
+          <StatCard label="Open Tickets" value={openTickets.length} icon={LayoutDashboard} trend="Active Queue" trendUp={true} />
         </div>
 
         {/* CARD 2: HISTORY */}
         <div onClick={() => setFilterMode('resolved')} className={`cursor-pointer transition-transform active:scale-95 ${filterMode === 'resolved' ? 'ring-2 ring-emerald-500 rounded-2xl' : ''}`}>
-          <StatCard label={`Resolved (${yearFilter})`} value={myResolved} icon={Archive} trend={monthFilter !== 'ALL' ? `In ${months[parseInt(monthFilter)]}` : "Total this year"} trendUp={true} />
+          <StatCard label={`Resolved (${yearFilter})`} value={myResolved.length} icon={Archive} trend={monthFilter !== 'ALL' ? `In ${months[parseInt(monthFilter)]}` : "Total this year"} trendUp={true} />
         </div>
 
         {/* CARD 3: SLA */}
         <div onClick={() => setFilterMode('sla')} className={`cursor-pointer transition-transform active:scale-95 ${filterMode === 'sla' ? 'ring-2 ring-rose-500 rounded-2xl' : ''}`}>
-          <StatCard label="SLA Breaches" value={slaBreaches} icon={AlertCircle} trend="Target Missed" trendUp={slaBreaches === 0} />
+          <StatCard label="SLA Breaches" value={slaBreaches.length} icon={AlertCircle} trend="Target Missed" trendUp={slaBreaches.length === 0} />
         </div>
 
         {/* CARD 4: BOT */}
         <div onClick={() => setFilterMode('bot')} className={`cursor-pointer transition-transform active:scale-95 ${filterMode === 'bot' ? 'ring-2 ring-purple-500 rounded-2xl' : ''}`}>
-          <StatCard label="Bot Resolved" value={botResolved} icon={Bot} trend="AI Deflection" trendUp={true} />
+          <StatCard label="Bot Resolved" value={botResolved.length} icon={Bot} trend="AI Deflection" trendUp={true} />
         </div>
       </div>
+
+      {/* CHARTS ROW (Only for Admin/Tech, hidden for basic users) */}
+      {role !== 'user' && (
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            {/* VOLUME TREND */}
+            <GlassCard className="p-6 col-span-2">
+                <div className="flex items-center gap-2 mb-6">
+                    <TrendingUp size={20} className="text-blue-400" />
+                    <h3 className="text-sm font-bold text-slate-300 uppercase tracking-wider">7-Day Ticket Volume</h3>
+                </div>
+                <div className="h-64 w-full">
+                    <ResponsiveContainer width="100%" height="100%">
+                        <AreaChart data={volumeData}>
+                            <defs>
+                                <linearGradient id="colorTickets" x1="0" y1="0" x2="0" y2="1">
+                                    <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.3}/>
+                                    <stop offset="95%" stopColor="#3b82f6" stopOpacity={0}/>
+                                </linearGradient>
+                            </defs>
+                            <CartesianGrid strokeDasharray="3 3" stroke="#ffffff10" />
+                            <XAxis dataKey="date" stroke="#94a3b8" fontSize={12} tickLine={false} axisLine={false} />
+                            <YAxis stroke="#94a3b8" fontSize={12} tickLine={false} axisLine={false} allowDecimals={false} />
+                            <Tooltip 
+                                contentStyle={{ backgroundColor: '#1e293b', border: '1px solid #334155', borderRadius: '8px', color: '#fff' }}
+                                itemStyle={{ color: '#60a5fa' }}
+                            />
+                            <Area type="monotone" dataKey="tickets" stroke="#3b82f6" strokeWidth={3} fillOpacity={1} fill="url(#colorTickets)" />
+                        </AreaChart>
+                    </ResponsiveContainer>
+                </div>
+            </GlassCard>
+
+            {/* CATEGORY PIE */}
+            <GlassCard className="p-6">
+                <div className="flex items-center gap-2 mb-6">
+                    <PieIcon size={20} className="text-emerald-400" />
+                    <h3 className="text-sm font-bold text-slate-300 uppercase tracking-wider">Workload Status</h3>
+                </div>
+                <div className="h-64 w-full relative">
+                    <ResponsiveContainer width="100%" height="100%">
+                        <PieChart>
+                            <Pie
+                                data={pieData}
+                                innerRadius={60}
+                                outerRadius={80}
+                                paddingAngle={5}
+                                dataKey="value"
+                            >
+                                {pieData.map((entry, index) => (
+                                    <Cell key={`cell-${index}`} fill={entry.color} stroke="none" />
+                                ))}
+                            </Pie>
+                            <Tooltip 
+                                contentStyle={{ backgroundColor: '#1e293b', border: '1px solid #334155', borderRadius: '8px' }}
+                            />
+                        </PieChart>
+                    </ResponsiveContainer>
+                    <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+                        <span className="text-3xl font-bold text-white">{openTickets.length + myResolved.length}</span>
+                        <span className="text-xs text-slate-500 uppercase">Total</span>
+                    </div>
+                </div>
+            </GlassCard>
+        </div>
+      )}
 
       {/* DYNAMIC LIST */}
       <div className="space-y-4">
