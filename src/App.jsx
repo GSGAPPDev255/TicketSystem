@@ -14,7 +14,7 @@ import { TenantProvider, useTenant } from './contexts/TenantContext';
 function Sidebar({ activeView, setActiveView, session, profile, myTicketCount, isMobile, isOpen, setIsOpen }) {
   const { currentTenant, tenants, setCurrentTenant } = useTenant();
 
-  // FIX: Use profile.role instead of session metadata
+  // Role Check
   const role = profile?.role || 'user'; 
   const isAdmin = role === 'super_admin' || role === 'admin';
   const isTech = ['super_admin', 'admin', 'manager', 'technician'].includes(role);
@@ -224,26 +224,23 @@ function AppContent({ session }) {
     return () => supabase.removeChannel(sub);
   }, [session]);
 
-  // 6. HANDLE TICKET CREATION (DEBUG MODE)
+  // 6. HANDLE TICKET CREATION (DUAL NOTIFICATION LOGIC)
   const handleCreateTicket = async (formData) => {
+    // 1. Setup Data
     const requesterId = session?.user?.id;
+    const requesterName = profile?.full_name || session?.user?.user_metadata?.full_name || 'User'; 
+    const requesterEmail = profile?.email || session?.user?.email;
+
     const priority = formData.priority || 'Medium';
     const now = new Date();
     const hours = priority === 'Critical' ? 4 : priority === 'High' ? 8 : priority === 'Low' ? 72 : 24; 
     now.setHours(now.getHours() + hours);
 
-    // DEBUG LOGS START
-    console.log("🔍 DEBUG: Starting Ticket Creation...");
-    console.log("Selected Category Label:", formData.category);
-
-    // Auto Routing
+    // 2. Auto Routing
     const selectedCategory = categories.find(c => c.label === formData.category);
-    console.log("Found Category Object:", selectedCategory);
-    
     const autoDeptId = selectedCategory?.default_department_id || null;
-    console.log("Auto-Assign Dept ID:", autoDeptId);
 
-    // 1. Insert Ticket
+    // 3. Insert Ticket
     const { data: newTicket, error } = await supabase.from('tickets').insert({ 
       ...formData, 
       requester_id: requesterId,
@@ -257,45 +254,62 @@ function AppContent({ session }) {
       alert(error.message);
       return;
     }
-    console.log("✅ Ticket Created in DB:", newTicket.id);
 
-    // 2. Email Logic
+    // 4. EMAIL LOGIC
+    const emailPromises = [];
+
+    // A. Notify IT Department
     if (autoDeptId) {
         const targetDept = departments.find(d => d.id === autoDeptId);
-        console.log("Target Dept Object:", targetDept);
-        console.log("Target Dept Email:", targetDept?.team_email);
-
         if (targetDept?.team_email) {
-            console.log(`🚀 ATTEMPTING EMAIL to: ${targetDept.team_email}`);
-            
-            fetch('/api/email', {
+            console.log(`📤 Notifying Team: ${targetDept.team_email}`);
+            emailPromises.push(fetch('/api/email', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     to: targetDept.team_email,
                     subject: `[New Ticket] #${newTicket.id} - ${formData.subject}`,
                     body: `
-                        <h3>New Ticket Received</h3>
-                        <p><b>Requester:</b> ${session?.user?.user_metadata?.full_name}</p>
-                        <p><b>Priority:</b> ${priority}</p>
-                        <hr/>
-                        <p>${formData.description}</p>
-                        <br/>
-                        <a href="${window.location.origin}">View Ticket</a>
+                        <div style="font-family: sans-serif; color: #333;">
+                           <h3 style="color: #2563eb;">New Ticket Assigned</h3>
+                           <p><b>Requester:</b> ${requesterName}</p>
+                           <p><b>Priority:</b> ${priority}</p>
+                           <hr style="border: 0; border-top: 1px solid #eee; margin: 15px 0;" />
+                           <p style="background: #f8fafc; padding: 15px; border-radius: 8px;">${formData.description}</p>
+                           <br/>
+                           <a href="${window.location.origin}" style="background: #2563eb; color: white; padding: 10px 20px; text-decoration: none; border-radius: 6px;">View Ticket</a>
+                        </div>
                     `
                 })
-            })
-            .then(res => {
-                if (res.ok) console.log("✅ Email sent successfully!");
-                else res.text().then(t => console.error("❌ Email Failed:", t));
-            })
-            .catch(e => console.error("❌ Network Error:", e));
-        } else {
-            console.warn("⚠️ Dept found, but NO EMAIL configured.");
+            }));
         }
-    } else {
-        console.warn("⚠️ No Default Department linked to this category.");
     }
+
+    // B. Notify Requester (Receipt)
+    if (requesterEmail) {
+        console.log(`📤 Sending Receipt to: ${requesterEmail}`);
+        emailPromises.push(fetch('/api/email', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                to: requesterEmail,
+                subject: `Ticket Received: #${newTicket.id}`,
+                body: `
+                    <div style="font-family: sans-serif; color: #333;">
+                       <h3>We received your request</h3>
+                       <p>Hello ${requesterName},</p>
+                       <p>Your ticket <b>#${newTicket.id}</b> has been logged successfully.</p>
+                       <p><b>Subject:</b> ${formData.subject}</p>
+                       <p>Our team will review it shortly.</p>
+                       <br/>
+                       <a href="${window.location.origin}" style="color: #2563eb;">View Status</a>
+                    </div>
+                `
+            })
+        }));
+    }
+
+    Promise.allSettled(emailPromises).then(() => console.log("✅ All emails processed"));
 
     await fetchTickets(); 
     setActiveView('dashboard'); 
