@@ -232,14 +232,13 @@ function AppContent({ session }) {
     const priority = formData.priority || 'Medium';
     const now = new Date();
     
-    // FORMAT: "Fri, 15 Feb 2026 at 14:30"
+    // FORMAT: "Fri, 15 Feb 2026 at 16:08"
     const formattedDate = now.toLocaleString('en-GB', { 
         weekday: 'short', day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' 
     });
     
     // FORMAT: "FEB26"
     const monthYear = now.toLocaleString('en-GB', { month: 'short', year: '2-digit' }).toUpperCase().replace(' ','');
-
     const hours = priority === 'Critical' ? 4 : priority === 'High' ? 8 : priority === 'Low' ? 72 : 24; 
     now.setHours(now.getHours() + hours);
 
@@ -261,15 +260,19 @@ function AppContent({ session }) {
       return;
     }
 
-    // --- GENERATE FRIENDLY ID ---
-    // If ticket_number exists (DB sequence), use "FEB26-1001". If not, fallback to UUID.
+    // FRIENDLY ID
     const friendlyId = newTicket.ticket_number 
         ? `${monthYear}-${newTicket.ticket_number}` 
         : `#${newTicket.id.slice(0,8)}`;
 
     const emailPromises = [];
 
-    // A. PROFESSIONAL ALERT (To IT Dept)
+    // SHARED STYLES (Consistency is Key)
+    const htmlStyle = `font-family: 'Segoe UI', Arial, sans-serif; color: #333; line-height: 1.6; max-width: 600px;`;
+    const labelStyle = `font-weight: bold; width: 120px; padding: 4px 0; color: #555;`;
+    const boxStyle = `background-color: #f8fafc; border-left: 4px solid #2563eb; padding: 15px; border-radius: 4px; margin-bottom: 20px; color: #333;`;
+
+    // A. ALERT (To IT Dept)
     if (autoDeptId) {
         const targetDept = departments.find(d => d.id === autoDeptId);
         if (targetDept?.team_email) {
@@ -281,39 +284,20 @@ function AppContent({ session }) {
                     to: targetDept.team_email,
                     subject: `[${priority}] ${formData.subject} (${friendlyId})`,
                     body: `
-                        <div style="font-family: Arial, sans-serif; color: #333; line-height: 1.6; max-width: 600px;">
-                           <p style="font-size: 16px;">
-                             A new issue has been assigned to you by <strong>${requesterName}</strong> from <strong>${tenantName}</strong>.
-                           </p>
+                        <div style="${htmlStyle}">
+                           <p style="font-size: 16px;">A new issue has been assigned to you by <strong>${requesterName}</strong> from <strong>${tenantName}</strong>.</p>
                            <hr style="border: 0; border-top: 1px solid #ddd; margin: 20px 0;" />
-                           
                            <table style="width: 100%; border-collapse: collapse; margin-bottom: 20px;">
-                             <tr>
-                               <td style="font-weight: bold; width: 100px; padding: 4px 0; color: #666;">Issue ID:</td>
-                               <td>${friendlyId}</td>
-                             </tr>
-                             <tr>
-                               <td style="font-weight: bold; padding: 4px 0; color: #666;">Title:</td>
-                               <td>${formData.subject}</td>
-                             </tr>
-                             <tr>
-                               <td style="font-weight: bold; padding: 4px 0; color: #666;">Priority:</td>
-                               <td style="color: ${priority === 'Critical' ? '#e11d48' : 'inherit'}; font-weight: bold;">${priority}</td>
-                             </tr>
-                             <tr>
-                               <td style="font-weight: bold; padding: 4px 0; color: #666;">Logged:</td>
-                               <td>${formattedDate}</td>
-                             </tr>
+                             <tr><td style="${labelStyle}">Issue ID:</td><td>${friendlyId}</td></tr>
+                             <tr><td style="${labelStyle}">Title:</td><td>${formData.subject}</td></tr>
+                             <tr><td style="${labelStyle}">Priority:</td><td style="font-weight:bold; color:${priority === 'Critical' ? '#e11d48' : '#333'}">${priority}</td></tr>
+                             <tr><td style="${labelStyle}">Logged:</td><td>${formattedDate}</td></tr>
                            </table>
-
-                           <div style="background-color: #f8fafc; border-left: 4px solid #2563eb; padding: 15px; border-radius: 4px; margin-bottom: 30px;">
-                             <strong>Description:</strong><br/>
-                             <span style="white-space: pre-wrap;">${formData.description}</span>
+                           <div style="${boxStyle}">
+                             <strong>Description:</strong><br/><span style="white-space: pre-wrap;">${formData.description}</span>
                            </div>
-
-                           <a href="${window.location.origin}" style="background-color: #2563eb; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; font-weight: bold; font-size: 14px;">Respond to Issue</a>
-                           
-                           <p style="margin-top: 40px; font-size: 12px; color: #999;">Nexus ESM Automation</p>
+                           <a href="${window.location.origin}" style="background-color: #2563eb; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px; font-size: 14px;">Respond to Issue</a>
+                           <p style="margin-top: 30px; font-size: 12px; color: #999;">Nexus ESM Automation</p>
                         </div>
                     `
                 })
@@ -321,7 +305,7 @@ function AppContent({ session }) {
         }
     }
 
-    // B. RECEIPT (To User)
+    // B. RECEIPT (To Requester - PROFESSIONALLY STYLED)
     if (requesterEmail) {
         emailPromises.push(fetch('/api/email', {
             method: 'POST',
@@ -330,13 +314,25 @@ function AppContent({ session }) {
                 to: requesterEmail,
                 subject: `Ticket Logged: ${friendlyId}`,
                 body: `
-                    <div style="font-family: Arial, sans-serif; color: #333;">
-                       <h3>Request Received</h3>
+                    <div style="${htmlStyle}">
+                       <h3 style="color: #2563eb; margin-bottom: 10px;">Request Received</h3>
                        <p>Hello ${requesterName},</p>
-                       <p>Your ticket <b>${friendlyId}</b> regarding "<b>${formData.subject}</b>" has been logged with ${tenantName} IT Support.</p>
-                       <p>We will review it shortly.</p>
-                       <br/>
-                       <a href="${window.location.origin}" style="color: #2563eb;">Check Status</a>
+                       <p>Your ticket <strong>${friendlyId}</strong> regarding "<strong>${formData.subject}</strong>" has been logged with ${tenantName} IT Support.</p>
+                       <hr style="border: 0; border-top: 1px solid #ddd; margin: 20px 0;" />
+                       
+                       <table style="width: 100%; border-collapse: collapse; margin-bottom: 20px;">
+                         <tr><td style="${labelStyle}">Issue ID:</td><td>${friendlyId}</td></tr>
+                         <tr><td style="${labelStyle}">Date:</td><td>${formattedDate}</td></tr>
+                         <tr><td style="${labelStyle}">Status:</td><td>New</td></tr>
+                       </table>
+
+                       <div style="${boxStyle}">
+                         <strong>Your Description:</strong><br/><span style="white-space: pre-wrap;">${formData.description}</span>
+                       </div>
+                       
+                       <p>Our team will review it shortly. You will be notified of any updates.</p>
+                       <a href="${window.location.origin}" style="color: #2563eb; text-decoration: none; font-weight: bold;">Check Status Online</a>
+                       <p style="margin-top: 30px; font-size: 12px; color: #999;">Nexus ESM Automation</p>
                     </div>
                 `
             })
