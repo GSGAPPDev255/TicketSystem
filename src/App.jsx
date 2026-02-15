@@ -7,12 +7,17 @@ import TeamsView from './views/Teams';
 import KnowledgeBaseView from './views/Knowledge';
 import SettingsView from './views/Settings';
 import TenantsView from './views/Tenants';
-import { TicketDetailView } from './components/ui'; // <--- FIX: Correct Import
+import { TicketDetailView } from './components/ui'; 
 import { TenantProvider, useTenant } from './contexts/TenantContext';
 
 // --- SIDEBAR COMPONENT ---
-function Sidebar({ activeView, setActiveView, session, myTicketCount, isMobile, isOpen, setIsOpen }) {
+function Sidebar({ activeView, setActiveView, session, profile, myTicketCount, isMobile, isOpen, setIsOpen }) {
   const { currentTenant, tenants, setCurrentTenant } = useTenant();
+
+  // FIX: Use profile.role instead of session metadata
+  const role = profile?.role || 'user'; 
+  const isAdmin = role === 'super_admin' || role === 'admin';
+  const isTech = ['super_admin', 'admin', 'manager', 'technician'].includes(role);
 
   const menuItems = [
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
@@ -23,10 +28,6 @@ function Sidebar({ activeView, setActiveView, session, myTicketCount, isMobile, 
     { id: 'tenants', label: 'Tenants', icon: Building, adminOnly: true },
     { id: 'settings', label: 'Settings', icon: Settings, adminOnly: true },
   ];
-
-  const role = session?.user?.user_metadata?.role || 'user';
-  const isAdmin = role === 'super_admin' || role === 'admin';
-  const isTech = ['super_admin', 'admin', 'manager', 'technician'].includes(role);
 
   const sidebarClasses = isMobile
     ? `fixed inset-y-0 left-0 z-50 w-64 bg-slate-900/95 backdrop-blur-xl border-r border-white/10 transform transition-transform duration-300 ${isOpen ? 'translate-x-0' : '-translate-x-full'}`
@@ -44,7 +45,6 @@ function Sidebar({ activeView, setActiveView, session, myTicketCount, isMobile, 
         {isMobile && <button onClick={() => setIsOpen(false)} className="text-slate-400"><X size={24} /></button>}
       </div>
 
-      {/* TENANT SELECTOR */}
       <div className="px-4 mb-6">
         <select 
           className="w-full bg-black/20 border border-white/10 rounded-lg px-3 py-2 text-sm text-slate-300 focus:outline-none focus:border-blue-500/50"
@@ -92,15 +92,15 @@ function Sidebar({ activeView, setActiveView, session, myTicketCount, isMobile, 
       <div className="p-4 border-t border-white/5">
         <div className="flex items-center gap-3 px-4 py-3 rounded-xl bg-white/5 border border-white/5">
           <div className="w-10 h-10 rounded-full bg-slate-700 flex items-center justify-center overflow-hidden shrink-0 text-white font-bold text-xs">
-             {session?.user?.user_metadata?.avatar_url ? (
-               <img src={session.user.user_metadata.avatar_url} alt="Profile" className="w-full h-full object-cover" />
+             {profile?.avatar_url ? (
+               <img src={profile.avatar_url} alt="Profile" className="w-full h-full object-cover" />
              ) : (
-               (session?.user?.user_metadata?.full_name || 'US').split(' ').map(n=>n[0]).join('').substring(0,2).toUpperCase()
+               (profile?.full_name || 'US').split(' ').map(n=>n[0]).join('').substring(0,2).toUpperCase()
              )}
           </div>
           <div className="flex-1 min-w-0">
-            <p className="text-sm font-medium text-white truncate">{session?.user?.user_metadata?.full_name || 'User'}</p>
-            <p className="text-xs text-slate-400 truncate capitalize">{session?.user?.user_metadata?.role || 'Staff'}</p>
+            <p className="text-sm font-medium text-white truncate">{profile?.full_name || 'User'}</p>
+            <p className="text-xs text-slate-400 truncate capitalize">{profile?.role || 'Staff'}</p>
           </div>
           <button onClick={() => supabase.auth.signOut()} className="text-slate-400 hover:text-white transition-colors">
             <LogOut size={18} />
@@ -111,9 +111,10 @@ function Sidebar({ activeView, setActiveView, session, myTicketCount, isMobile, 
   );
 }
 
-// --- MAIN CONTENT LOGIC (Wrapped in Provider) ---
+// --- MAIN CONTENT LOGIC ---
 function AppContent({ session }) {
   const { currentTenant, tenants } = useTenant();
+  const [profile, setProfile] = useState(null); // <--- RESTORED PROFILE STATE
   const [activeView, setActiveView] = useState('dashboard');
   const [myTicketCount, setMyTicketCount] = useState(0);
   const [isMobile, setIsMobile] = useState(false);
@@ -126,11 +127,28 @@ function AppContent({ session }) {
   const [departments, setDepartments] = useState([]);
   const [kbArticles, setKbArticles] = useState([]);
   const [selectedTicket, setSelectedTicket] = useState(null);
-  
-  // Admin Data State
-  const [users, setUsers] = useState([]); // <--- NEW: Store users here
+  const [users, setUsers] = useState([]);
 
-  // 1. MOBILE CHECK
+  // 1. FETCH REAL PROFILE FROM DB (The Fix)
+  useEffect(() => {
+    if (!session?.user?.id) return;
+    
+    const fetchProfile = async () => {
+      // We explicitly fetch the role from the 'profiles' table
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', session.user.id)
+        .single();
+      
+      if (data) {
+        setProfile(data);
+      }
+    };
+    fetchProfile();
+  }, [session]);
+
+  // 2. MOBILE CHECK
   useEffect(() => {
     const checkMobile = () => setIsMobile(window.innerWidth < 1024);
     checkMobile();
@@ -138,22 +156,21 @@ function AppContent({ session }) {
     return () => window.removeEventListener('resize', checkMobile);
   }, []);
 
-  // 2. FETCH GLOBAL DATA (Categories, Depts, KB, Users)
+  // 3. FETCH GLOBAL DATA
   useEffect(() => {
     const fetchGlobals = async () => {
       const [cats, depts, kb, allUsers, allAccess] = await Promise.all([
         supabase.from('categories').select('*').order('label'),
         supabase.from('departments').select('*').order('name'),
         supabase.from('kb_articles').select('*').order('title'),
-        supabase.from('profiles').select('*').order('full_name'), // Fetch Users
-        supabase.from('tenant_access').select('*') // Fetch Access
+        supabase.from('profiles').select('*').order('full_name'),
+        supabase.from('tenant_access').select('*')
       ]);
       
       if (cats.data) setCategories(cats.data);
       if (depts.data) setDepartments(depts.data);
       if (kb.data) setKbArticles(kb.data);
       
-      // Process Users with Access List
       if (allUsers.data && allAccess.data) {
           const processedUsers = allUsers.data.map(u => ({
               ...u,
@@ -165,12 +182,11 @@ function AppContent({ session }) {
     fetchGlobals();
   }, []);
 
-  // 3. FETCH TICKETS (Scoped to Tenant)
+  // 4. FETCH TICKETS
   const fetchTickets = async () => {
     if (!currentTenant) return;
     setLoading(true);
     
-    // Fetch tickets for THIS tenant only
     const { data, error } = await supabase
       .from('tickets')
       .select('*, requester:profiles!requester_id(full_name), assignee_profile:profiles!assignee_id(full_name)')
@@ -192,7 +208,7 @@ function AppContent({ session }) {
     fetchTickets();
   }, [currentTenant]); 
 
-  // 4. BADGE COUNTER (The Ghost Fix)
+  // 5. BADGE COUNTER
   useEffect(() => {
     if (!session?.user?.id) return;
     const fetchBadge = async () => {
@@ -209,17 +225,15 @@ function AppContent({ session }) {
     return () => supabase.removeChannel(sub);
   }, [session]);
 
-  // 5. HANDLE TICKET CREATION
+  // 6. HANDLE TICKET CREATION
   const handleCreateTicket = async (formData) => {
     const requesterId = session?.user?.id;
     const priority = formData.priority || 'Medium';
     
-    // SLA Calc
     const now = new Date();
     const hours = priority === 'Critical' ? 4 : priority === 'High' ? 8 : priority === 'Low' ? 72 : 24; 
     now.setHours(now.getHours() + hours);
 
-    // Auto Routing
     const selectedCategory = categories.find(c => c.label === formData.category);
     const autoDeptId = selectedCategory?.default_department_id || null;
 
@@ -240,9 +254,8 @@ function AppContent({ session }) {
     }
   };
 
-  const role = session?.user?.user_metadata?.role;
+  const role = profile?.role || 'user'; // FIX: Use real DB role
 
-  // ROUTING
   const renderView = () => {
     if (selectedTicket) return <TicketDetailView ticket={selectedTicket} onBack={() => setSelectedTicket(null)} />;
 
@@ -258,7 +271,6 @@ function AppContent({ session }) {
       case 'knowledge': 
         return <KnowledgeBaseView articles={kbArticles} categories={categories} onUpdate={fetchTickets} />;
       case 'settings': 
-        // FIX: Pass 'users' to SettingsView
         return <SettingsView categories={categories} tenants={tenants} departments={departments} users={users} onUpdate={fetchTickets} />;
       case 'tenants': 
         return <TenantsView tenants={tenants} />;
@@ -272,6 +284,7 @@ function AppContent({ session }) {
         activeView={activeView} 
         setActiveView={setActiveView} 
         session={session} 
+        profile={profile} // FIX: Pass profile to sidebar
         myTicketCount={myTicketCount}
         isMobile={isMobile}
         isOpen={sidebarOpen}
@@ -286,7 +299,6 @@ function AppContent({ session }) {
           </div>
         )}
         
-        {/* TOP BAR */}
         <header className="h-16 border-b border-white/5 bg-[#0f172a]/50 backdrop-blur-md sticky top-0 z-30 flex items-center justify-between px-4 md:px-8">
            <h2 className="text-xl font-semibold text-white/90 capitalize">{activeView.replace('-', ' ')}</h2>
            <div className="flex items-center gap-4">
@@ -310,7 +322,7 @@ function AppContent({ session }) {
   );
 }
 
-// --- ROOT APP (Providers) ---
+// --- ROOT APP ---
 export default function App() {
   const [session, setSession] = useState(null);
 
