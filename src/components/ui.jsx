@@ -3,7 +3,7 @@ import { supabase } from '../lib/supabase';
 import { 
   ArrowLeft, Clock, Send, Users, 
   Briefcase, Monitor, Cpu, Wifi, ShieldAlert, Wrench, Zap, Globe, FileText, CheckCircle2,
-  TrendingUp, TrendingDown, Activity
+  TrendingUp, TrendingDown, Activity, X
 } from 'lucide-react';
 
 // --- HELPER: ICON MAPPER ---
@@ -136,10 +136,10 @@ export const Modal = ({ isOpen, onClose, title, children }) => {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
       <div className="bg-[#1e293b] border border-white/10 rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden animate-in zoom-in-95 duration-200">
-        <div className="px-6 py-4 border-b border-white/5 flex justify-between items-center">
-          <h3 className="text-lg font-semibold text-white">{title}</h3>
+        <div className="px-6 py-4 border-b border-white/5 flex justify-between items-center bg-[#0f172a]/50">
+          <h3 className="text-lg font-bold text-white">{title}</h3>
           <button onClick={onClose} className="text-slate-400 hover:text-white transition-colors">
-            ✕
+            <X size={20} />
           </button>
         </div>
         <div className="p-6 max-h-[80vh] overflow-y-auto custom-scrollbar">
@@ -163,6 +163,11 @@ export const TicketDetailView = ({ ticket, onBack }) => {
   // -- EMAIL CONTEXT DATA --
   const [requesterEmail, setRequesterEmail] = useState('');
   const [departmentEmail, setDepartmentEmail] = useState('');
+
+  // -- RESOLUTION MODAL STATE --
+  const [showResolutionModal, setShowResolutionModal] = useState(false);
+  const [pendingStatus, setPendingStatus] = useState(null);
+  const [resolutionNote, setResolutionNote] = useState('');
 
   // 1. Init Data
   useEffect(() => {
@@ -206,22 +211,18 @@ export const TicketDetailView = ({ ticket, onBack }) => {
     if (data) setStaffMembers(data);
   };
 
-  // 2. HELPER: SEND EMAIL NOTIFICATION
+  // 2. HELPER: SEND EMAIL
   const sendUpdateEmail = async (subject, htmlBody, recipient) => {
       if (!recipient) return;
-      console.log(`📧 Sending Update Email to ${recipient}`);
+      console.log(`📧 Sending Email to ${recipient}`);
       await fetch('/api/email', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-              to: recipient,
-              subject: subject,
-              body: htmlBody
-          })
+          body: JSON.stringify({ to: recipient, subject: subject, body: htmlBody })
       }).catch(e => console.error("Email fail", e));
   };
 
-  // 3. HELPER: LOG SYSTEM MESSAGE
+  // 3. LOG SYSTEM MESSAGE
   const logSystemMessage = async (message) => {
     if (!currentUser) return;
     await supabase.from('ticket_updates').insert({
@@ -238,14 +239,23 @@ export const TicketDetailView = ({ ticket, onBack }) => {
     await supabase.from('tickets').update({ assignee_id: newId || null }).eq('id', ticket.id);
     const assigneeName = staffMembers.find(s => s.id === newId)?.full_name || 'Unassigned';
     await logSystemMessage(`Changed assignee to: ${assigneeName}`);
-
     if (newId && status === 'New') {
-      await handleStatusChange('In Progress');
+      await updateStatusInDb('In Progress');
     }
   };
 
-  // 5. HANDLE STATUS CHANGE (NOTIFY BOTH PARTIES)
-  const handleStatusChange = async (newStatus) => {
+  // 5. HANDLE STATUS SELECT (INTERCEPT FOR RESOLUTION)
+  const handleStatusSelect = (newStatus) => {
+    if (newStatus === 'Resolved' || newStatus === 'Closed') {
+        setPendingStatus(newStatus);
+        setShowResolutionModal(true);
+    } else {
+        updateStatusInDb(newStatus);
+    }
+  };
+
+  // 6. EXECUTE STATUS UPDATE (DB + EMAIL)
+  const updateStatusInDb = async (newStatus, resolutionReason = null) => {
     setStatus(newStatus);
     
     const updates = { status: newStatus };
@@ -254,9 +264,15 @@ export const TicketDetailView = ({ ticket, onBack }) => {
     }
     
     await supabase.from('tickets').update(updates).eq('id', ticket.id);
-    await logSystemMessage(`Changed status to: ${newStatus}`);
+    
+    // Log the change (and the reason if provided)
+    if (resolutionReason) {
+        await logSystemMessage(`Marked as ${newStatus}. Resolution: ${resolutionReason}`);
+    } else {
+        await logSystemMessage(`Changed status to: ${newStatus}`);
+    }
 
-    // --- EMAIL NOTIFICATION FOR RESOLUTION ---
+    // EMAIL NOTIFICATION
     if (newStatus === 'Resolved' || newStatus === 'Closed') {
         const friendlyId = ticket.ticket_number 
             ? `${new Date().toLocaleString('default', { month: 'short', year: '2-digit' }).toUpperCase()}-${ticket.ticket_number}`
@@ -266,6 +282,13 @@ export const TicketDetailView = ({ ticket, onBack }) => {
             <div style="font-family: Arial, sans-serif; color: #333; line-height: 1.6;">
                 <h3 style="color: #2563eb;">Ticket ${newStatus}</h3>
                 <p>Ticket <b>${friendlyId}</b> ("${ticket.subject}") has been marked as <b>${newStatus}</b>.</p>
+                
+                ${resolutionReason ? `
+                <div style="background-color: #ecfdf5; border-left: 4px solid #10b981; padding: 15px; border-radius: 4px; margin: 20px 0;">
+                    <strong>Resolution Notes:</strong><br/>
+                    ${resolutionReason}
+                </div>` : ''}
+
                 <hr style="border: 0; border-top: 1px solid #ddd; margin: 20px 0;" />
                 <p>If you disagree with this, please reply to this ticket in the dashboard.</p>
                 <br/>
@@ -273,35 +296,37 @@ export const TicketDetailView = ({ ticket, onBack }) => {
             </div>
         `;
         
-        // Notify Requester
         if (requesterEmail) await sendUpdateEmail(`Ticket Updated: ${friendlyId} is ${newStatus}`, emailBody, requesterEmail);
-        
-        // Notify Department (NEW)
         if (departmentEmail) await sendUpdateEmail(`[Team Alert] Ticket ${friendlyId} Closed`, emailBody, departmentEmail);
     }
   };
 
-  // 6. "TAKE OWNERSHIP"
+  // 7. CONFIRM RESOLUTION (FROM MODAL)
+  const confirmResolution = async () => {
+      if (!resolutionNote.trim()) return alert("Please provide a resolution reason.");
+      await updateStatusInDb(pendingStatus, resolutionNote);
+      setShowResolutionModal(false);
+      setResolutionNote('');
+  };
+
+  // 8. TAKE OWNERSHIP
   const assignToMe = async () => {
     if (!currentUser) return;
     await handleAssign(currentUser.id);
   };
 
-  // 7. POST COMMENT (WITH INTELLIGENT ROUTING & STYLING)
+  // 9. POST UPDATE
   const handlePostUpdate = async () => {
     if (!newUpdate.trim()) return;
     setLoading(true);
-
     if (!currentUser) return;
 
-    // A. Save to DB
     await supabase.from('ticket_updates').insert({
       ticket_id: ticket.id,
       user_id: currentUser.id,
       content: newUpdate
     });
 
-    // B. Determine Email Recipient
     const isRequester = currentUser.id === ticket.requester_id;
     const recipient = isRequester ? departmentEmail : requesterEmail;
     
@@ -332,6 +357,34 @@ export const TicketDetailView = ({ ticket, onBack }) => {
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 h-[calc(100vh-140px)] animate-in fade-in slide-in-from-right-4">
+      
+      {/* RESOLUTION MODAL */}
+      <Modal 
+        isOpen={showResolutionModal} 
+        onClose={() => setShowResolutionModal(false)} 
+        title={`Mark as ${pendingStatus}`}
+      >
+         <div className="space-y-4">
+            <p className="text-slate-300 text-sm">Please explain how this issue was resolved. This will be sent to the requester.</p>
+            <div>
+               <label className="text-xs font-bold text-slate-500 uppercase">Resolution Notes</label>
+               <textarea 
+                  className="w-full bg-black/30 border border-white/10 rounded-lg p-3 text-white focus:border-emerald-500/50 outline-none mt-2 h-32 resize-none"
+                  placeholder="e.g. Replaced HDMI cable in Room 3..."
+                  value={resolutionNote}
+                  onChange={e => setResolutionNote(e.target.value)}
+                  autoFocus
+               />
+            </div>
+            <button 
+               onClick={confirmResolution}
+               className="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-3 rounded-lg shadow-lg shadow-emerald-900/20 transition-all"
+            >
+               Confirm & Close Ticket
+            </button>
+         </div>
+      </Modal>
+
       {/* LEFT COL: INFO */}
       <div className="lg:col-span-2 flex flex-col h-full gap-4 overflow-hidden">
         <div className="flex items-start gap-4 mb-2 shrink-0">
@@ -411,7 +464,7 @@ export const TicketDetailView = ({ ticket, onBack }) => {
               <select 
                 className="w-full bg-black/30 border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-blue-500/50"
                 value={status}
-                onChange={(e) => handleStatusChange(e.target.value)}
+                onChange={(e) => handleStatusSelect(e.target.value)}
               >
                  {['New', 'In Progress', 'Pending Vendor', 'Resolved', 'Closed'].map(s => <option key={s} value={s}>{s}</option>)}
               </select>
