@@ -7,7 +7,7 @@ import TeamsView from './views/Teams';
 import KnowledgeBaseView from './views/Knowledge';
 import SettingsView from './views/Settings';
 import TenantsView from './views/Tenants';
-import TicketDetailView from './components/ui/TicketDetailView'; // Assuming you have this
+import { TicketDetailView } from './components/ui'; // <--- FIX: Named import from ui.jsx
 import { TenantProvider, useTenant } from './contexts/TenantContext';
 
 // --- SIDEBAR COMPONENT ---
@@ -243,7 +243,7 @@ function AppContent({ session }) {
       case 'knowledge': 
         return <KnowledgeBaseView articles={kbArticles} categories={categories} onUpdate={fetchTickets} />;
       case 'settings': 
-        return <SettingsView categories={categories} tenants={tenants} departments={departments} onUpdate={fetchTickets} />;
+        return <SettingsView categories={categories} tenants={tenants} departments={departments} users={[]} onUpdate={fetchTickets} />;
       case 'tenants': 
         return <TenantsView tenants={tenants} />;
       default: return <DashboardView tickets={tickets} />;
