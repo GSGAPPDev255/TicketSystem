@@ -145,7 +145,7 @@ function AppContent({ session }) {
   const [selectedTicket, setSelectedTicket] = useState(null);
   const [users, setUsers] = useState([]);
 
-  // --- CORE ENGINE: AUTO-PROVISIONING (FIXED FOR NEW USERS) ---
+  // --- CORE ENGINE: AUTO-PROVISIONING (FIXED FOR SAFETY) ---
   const checkAndProvisionAccess = async (user) => {
     if (!user?.email) return;
 
@@ -159,11 +159,21 @@ function AppContent({ session }) {
       .eq('user_id', user.id)
       .limit(1);
 
-    // If access exists (array is not empty), we are done.
     if (existingAccess && existingAccess.length > 0) return; 
 
     console.log("Provisioning new user access for:", domain);
+    
+    // SAFE CHECK: Does profile exist? If so, DO NOT overwrite name.
+    const { data: existingProfile } = await supabase
+        .from('profiles')
+        .select('full_name')
+        .eq('id', user.id)
+        .maybeSingle();
 
+    // Determine safe name to use
+    const providerName = user.user_metadata?.full_name || user.user_metadata?.name;
+    const dbName = existingProfile?.full_name;
+    
     // 2. Gardener Schools Case (Group Admin)
     if (domain === 'gardenerschools.com') {
       const { data: allTenants } = await supabase.from('tenants').select('id');
@@ -176,7 +186,7 @@ function AppContent({ session }) {
           supabase.from('profiles').upsert({ 
             id: user.id, 
             email: user.email, 
-            full_name: user.user_metadata?.full_name || user.user_metadata?.name || 'Group Admin',
+            full_name: dbName || providerName || 'Group Admin', // Priority: DB -> Auth Provider -> Default
             role: 'admin' 
           })
         ]);
@@ -201,17 +211,15 @@ function AppContent({ session }) {
         supabase.from('profiles').upsert({
           id: user.id,
           email: user.email,
-          full_name: user.user_metadata?.full_name || user.user_metadata?.name || 'New User',
+          full_name: dbName || providerName || 'New User', // Priority: DB -> Auth Provider -> Default
           role: 'user',
-          avatar_initials: (user.user_metadata?.full_name || 'US').substring(0,2).toUpperCase()
+          avatar_initials: (dbName || providerName || 'US').substring(0,2).toUpperCase()
         })
       ]);
       
       await refreshTenants(); 
       setCurrentTenant(matchingTenant);
       fetchGlobals();
-    } else {
-        console.log("No tenant found for domain:", domain);
     }
   };
 
@@ -231,18 +239,16 @@ function AppContent({ session }) {
         await checkAndProvisionAccess(session.user);
       } catch (e) { console.error("Provision error:", e); }
 
-      // Step B: Self-Heal Name (NEW FIX)
-      // If the DB says "New User" but Azure gave us a real name, update it.
+      // Step B: Self-Heal Name (REQUIRES 'UPDATE' RLS POLICY)
       const metaName = session.user.user_metadata?.full_name || session.user.user_metadata?.name;
       if (metaName) {
-         // We only update if the current name is the default placeholder 'New User'
-         // This protects against overwriting manual name changes.
          try {
-             const initials = metaName.split(' ').map(n=>n[0]).join('').substring(0,2).toUpperCase();
+             // Only fix if the name is stuck as 'New User' or 'Group Admin'
+             // And if the metadata name is different from what we have.
              await supabase.from('profiles')
-               .update({ full_name: metaName, avatar_initials: initials })
+               .update({ full_name: metaName })
                .eq('id', session.user.id)
-               .eq('full_name', 'New User');
+               .in('full_name', ['New User', 'Group Admin']); // Only target placeholders
          } catch(err) { console.log("Name sync skipped"); }
       }
 
