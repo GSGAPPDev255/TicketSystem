@@ -56,8 +56,8 @@ export default function DashboardView({ tickets = [], loading, role, onRefresh, 
   }));
 
   const pieData = [
-    { name: 'Open', value: openTickets.length, color: '#3b82f6' },
-    { name: 'Resolved', value: myResolved.length, color: '#10b981' },
+    { name: 'Open', value: openTickets.length, color: '#2563eb' }, // Darker Blue
+    { name: 'Resolved', value: myResolved.length, color: '#10b981' }, // Green
   ];
 
   // --- VIEW LOGIC ---
@@ -88,7 +88,7 @@ export default function DashboardView({ tickets = [], loading, role, onRefresh, 
       break;
   }
 
-  // --- REPORTING ENGINE (PRESERVED) ---
+  // --- REPORTING ENGINE ---
   const generateReport = (type) => {
     let dataToExport = [];
     let fileName = `nexus_report_${type.toLowerCase()}_${new Date().toISOString().slice(0,10)}`;
@@ -268,26 +268,30 @@ export default function DashboardView({ tickets = [], loading, role, onRefresh, 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
             <GlassCard className="p-6 col-span-2">
                 <div className="flex items-center gap-2 mb-6">
-                    <TrendingUp size={20} className="text-blue-500" />
+                    <TrendingUp size={20} className="text-blue-600" />
                     <h3 className="text-sm font-bold text-slate-500 dark:text-slate-300 uppercase tracking-wider">7-Day Ticket Volume</h3>
                 </div>
                 <div className="h-64 w-full">
                     <ResponsiveContainer width="100%" height="100%">
                         <AreaChart data={volumeData}>
                             <defs>
+                                {/* UPDATED: Darker Blue (#2563eb) for higher contrast on white */}
                                 <linearGradient id="colorTickets" x1="0" y1="0" x2="0" y2="1">
-                                    <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.3}/>
-                                    <stop offset="95%" stopColor="#3b82f6" stopOpacity={0}/>
+                                    <stop offset="5%" stopColor="#2563eb" stopOpacity={0.5}/>
+                                    <stop offset="95%" stopColor="#2563eb" stopOpacity={0}/>
                                 </linearGradient>
                             </defs>
-                            <CartesianGrid strokeDasharray="3 3" strokeOpacity={0.1} />
-                            <XAxis dataKey="date" stroke="#94a3b8" fontSize={12} tickLine={false} axisLine={false} />
-                            <YAxis stroke="#94a3b8" fontSize={12} tickLine={false} axisLine={false} allowDecimals={false} />
+                            {/* UPDATED: Increased opacity for grid lines */}
+                            <CartesianGrid strokeDasharray="3 3" stroke="#94a3b8" strokeOpacity={0.2} />
+                            {/* UPDATED: Darker Axis Text (#64748b) */}
+                            <XAxis dataKey="date" stroke="#64748b" fontSize={12} tickLine={false} axisLine={false} />
+                            <YAxis stroke="#64748b" fontSize={12} tickLine={false} axisLine={false} allowDecimals={false} />
                             <Tooltip 
                                 contentStyle={{ backgroundColor: '#1e293b', border: 'none', borderRadius: '8px', color: '#fff' }}
                                 itemStyle={{ color: '#60a5fa' }}
                             />
-                            <Area type="monotone" dataKey="tickets" stroke="#3b82f6" strokeWidth={3} fillOpacity={1} fill="url(#colorTickets)" />
+                            {/* UPDATED: Darker Stroke */}
+                            <Area type="monotone" dataKey="tickets" stroke="#2563eb" strokeWidth={3} fillOpacity={1} fill="url(#colorTickets)" />
                         </AreaChart>
                     </ResponsiveContainer>
                 </div>
