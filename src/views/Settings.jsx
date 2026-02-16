@@ -1,16 +1,17 @@
+// src/views/Settings.jsx
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 import { 
   Building2, Search, Plus, Trash2, Save, 
-  Shield, Check, X, Filter, Users, Briefcase, Network, Building
-} from 'lucide-react';
+  Shield, Check, X, Filter, Users, Briefcase, Network, Building, Settings 
+} from 'lucide-react'; // <--- Added 'Settings' here
 import { GlassCard, getIcon } from '../components/ui'; 
 
 export default function SettingsView({ categories, tenants, users, departments = [], onUpdate }) {
   // SEARCH & FILTER STATE
   const [searchTerm, setSearchTerm] = useState('');
   const [deptFilter, setDeptFilter] = useState('ALL'); 
-  const [tenantFilter, setTenantFilter] = useState('ALL'); // <--- NEW TENANT FILTER
+  const [tenantFilter, setTenantFilter] = useState('ALL'); 
   const [userDeptMap, setUserDeptMap] = useState({}); 
 
   // CATEGORY EDIT STATE
@@ -100,7 +101,7 @@ export default function SettingsView({ categories, tenants, users, departments =
     onUpdate();
   };
 
-  // --- FILTER LOGIC (UPDATED) ---
+  // --- FILTER LOGIC ---
   const filteredUsers = users.filter(user => {
     // 1. Search
     const matchesSearch = (user.full_name || '').toLowerCase().includes(searchTerm.toLowerCase()) 
@@ -111,7 +112,6 @@ export default function SettingsView({ categories, tenants, users, departments =
     const matchesDept = deptFilter === 'ALL' || userDeptId === deptFilter;
 
     // 3. Tenant Filter (NEW)
-    // Checks if the user's access list includes the selected tenant ID
     const matchesTenant = tenantFilter === 'ALL' || (user.access_list && user.access_list.includes(tenantFilter));
 
     return matchesSearch && matchesDept && matchesTenant;
@@ -296,7 +296,7 @@ export default function SettingsView({ categories, tenants, users, departments =
                             onClick={() => setEditingUser(editingUser === user.id ? null : user.id)}
                             className="p-2 hover:bg-slate-100 dark:hover:bg-white/10 rounded-lg text-slate-400"
                           >
-                             <Settings size={16} />
+                             <Settings size={16} /> {/* <--- This is where it crashed before */}
                           </button>
                        </div>
 
