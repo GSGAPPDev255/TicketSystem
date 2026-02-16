@@ -1,4 +1,3 @@
-// src/App.jsx
 import React, { useState, useEffect } from 'react';
 import { 
   LayoutDashboard, Ticket, PlusCircle, Users, Settings, Book, Building, 
@@ -131,7 +130,7 @@ function Sidebar({ activeView, onNavigate, session, profile, myTicketCount, isMo
 
 // --- MAIN CONTENT LOGIC ---
 function AppContent({ session }) {
-  const { currentTenant, tenants, setCurrentTenant, refreshTenants } = useTenant(); // Added refreshTenants
+  const { currentTenant, tenants, setCurrentTenant, refreshTenants } = useTenant(); 
   const [profile, setProfile] = useState(null); 
   const [activeView, setActiveView] = useState('dashboard');
   const [myTicketCount, setMyTicketCount] = useState(0);
@@ -167,7 +166,6 @@ function AppContent({ session }) {
 
     // 2. Gardener Schools Case (Group Admin)
     if (domain === 'gardenerschools.com') {
-      // Fetch all tenants directly since Context might be empty for new users
       const { data: allTenants } = await supabase.from('tenants').select('id');
       
       if (allTenants) {
@@ -182,14 +180,13 @@ function AppContent({ session }) {
             role: 'admin' 
           })
         ]);
-        await refreshTenants(); // Refresh the context so UI updates
+        await refreshTenants(); 
         fetchGlobals();
         return; 
       }
     }
 
-    // 3. School Specific Case (The "Chicken and Egg" Fix)
-    // We query the DB directly because the 'tenants' context is empty for new users.
+    // 3. School Specific Case
     const { data: matchingTenant } = await supabase
       .from('tenants')
       .select('*')
@@ -210,7 +207,7 @@ function AppContent({ session }) {
         })
       ]);
       
-      await refreshTenants(); // CRITICAL: Updates the 'tenants' list in Context
+      await refreshTenants(); 
       setCurrentTenant(matchingTenant);
       fetchGlobals();
     } else {
@@ -224,17 +221,32 @@ function AppContent({ session }) {
     if (isMobile) setSidebarOpen(false);
   };
 
-  // 1. FETCH PROFILE + TRIGGER PROVISIONING
+  // 1. FETCH PROFILE + SELF-HEAL NAME
   useEffect(() => {
     if (!session?.user?.id) return;
     
     const initUser = async () => {
-      // Step A: Force Provisioning First (Pass user object directly)
+      // Step A: Force Provisioning First
       try {
         await checkAndProvisionAccess(session.user);
       } catch (e) { console.error("Provision error:", e); }
 
-      // Step B: Load Profile Second
+      // Step B: Self-Heal Name (NEW FIX)
+      // If the DB says "New User" but Azure gave us a real name, update it.
+      const metaName = session.user.user_metadata?.full_name || session.user.user_metadata?.name;
+      if (metaName) {
+         // We only update if the current name is the default placeholder 'New User'
+         // This protects against overwriting manual name changes.
+         try {
+             const initials = metaName.split(' ').map(n=>n[0]).join('').substring(0,2).toUpperCase();
+             await supabase.from('profiles')
+               .update({ full_name: metaName, avatar_initials: initials })
+               .eq('id', session.user.id)
+               .eq('full_name', 'New User');
+         } catch(err) { console.log("Name sync skipped"); }
+      }
+
+      // Step C: Load Profile
       try {
         const { data } = await supabase.from('profiles').select('*').eq('id', session.user.id).maybeSingle();
         if (data) setProfile(data);
@@ -242,7 +254,7 @@ function AppContent({ session }) {
     };
 
     initUser();
-  }, [session]); // Removed 'tenants' dependency to stop loops
+  }, [session]); 
 
   // 2. MOBILE CHECK
   useEffect(() => {
