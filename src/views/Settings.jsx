@@ -21,8 +21,7 @@ export default function SettingsView({ categories, tenants, users, departments =
   // USER EDIT STATE
   const [editingUser, setEditingUser] = useState(null);
 
-  // --- NEW: AVATAR HELPER FUNCTION ---
-  // This ensures blank circles are replaced by initials (e.g., "JV")
+  // --- AVATAR HELPER ---
   const getInitials = (name) => {
     if (!name) return '??';
     const parts = name.trim().split(/\s+/); 
@@ -52,7 +51,6 @@ export default function SettingsView({ categories, tenants, users, departments =
   const handleAddCategory = async () => {
     if (!newCategory.trim()) return;
     
-    // Insert with Icon AND Default Department
     await supabase.from('categories').insert({ 
       label: newCategory, 
       icon: newCategoryIcon,
@@ -108,8 +106,8 @@ export default function SettingsView({ categories, tenants, users, departments =
       
       <div className="flex justify-between items-center">
         <div>
-          <h2 className="text-2xl font-bold text-white">System Settings</h2>
-          <p className="text-slate-400">Manage drop-downs, users, and permissions</p>
+          <h2 className="text-2xl font-bold text-slate-900 dark:text-white transition-colors">System Settings</h2>
+          <p className="text-slate-500 dark:text-slate-400">Manage drop-downs, users, and permissions</p>
         </div>
       </div>
 
@@ -119,19 +117,19 @@ export default function SettingsView({ categories, tenants, users, departments =
         <div className="space-y-6">
           <GlassCard className="p-6 border-t-4 border-t-blue-500 h-full">
               <div className="flex justify-between items-center mb-6">
-                 <div className="flex items-center gap-2 text-blue-400">
+                 <div className="flex items-center gap-2 text-blue-600 dark:text-blue-400">
                     <Briefcase size={20} />
-                    <h3 className="font-bold text-lg text-white">Issue Categories</h3>
+                    <h3 className="font-bold text-lg text-slate-900 dark:text-white">Issue Categories</h3>
                  </div>
-                 <button onClick={() => setIsAddingCat(true)} className="p-2 hover:bg-white/10 rounded-lg text-slate-400 hover:text-white transition-colors"><Plus size={18} /></button>
+                 <button onClick={() => setIsAddingCat(true)} className="p-2 hover:bg-slate-100 dark:hover:bg-white/10 rounded-lg text-slate-400 hover:text-slate-900 dark:hover:text-white transition-colors"><Plus size={18} /></button>
               </div>
 
               <div className="space-y-2 max-h-[500px] overflow-y-auto custom-scrollbar pr-2">
                  {isAddingCat && (
-                   <div className="flex flex-col gap-2 animate-in fade-in slide-in-from-left-2 p-3 bg-white/5 rounded-lg border border-blue-500/30">
+                   <div className="flex flex-col gap-2 animate-in fade-in slide-in-from-left-2 p-3 bg-blue-50 dark:bg-white/5 rounded-lg border border-blue-200 dark:border-blue-500/30">
                        <input 
                          autoFocus
-                         className="w-full bg-black/30 border border-white/10 rounded px-3 py-2 text-sm text-white focus:border-blue-500 outline-none" 
+                         className="w-full bg-white dark:bg-black/30 border border-slate-300 dark:border-white/10 rounded px-3 py-2 text-sm text-slate-900 dark:text-white focus:border-blue-500 outline-none" 
                          placeholder="Category Name"
                          value={newCategory}
                          onChange={e => setNewCategory(e.target.value)}
@@ -139,7 +137,7 @@ export default function SettingsView({ categories, tenants, users, departments =
                        
                        {/* DEPARTMENT DROPDOWN */}
                        <select 
-                          className="w-full bg-black/30 border border-white/10 rounded px-3 py-2 text-sm text-white focus:border-blue-500 outline-none appearance-none cursor-pointer"
+                          className="w-full bg-white dark:bg-black/30 border border-slate-300 dark:border-white/10 rounded px-3 py-2 text-sm text-slate-900 dark:text-white focus:border-blue-500 outline-none appearance-none cursor-pointer"
                           value={newCategoryDept}
                           onChange={e => setNewCategoryDept(e.target.value)}
                        >
@@ -150,13 +148,13 @@ export default function SettingsView({ categories, tenants, users, departments =
                        <div className="flex gap-2">
                           <div className="relative flex-1">
                             <select 
-                              className="w-full bg-black/30 border border-white/10 rounded px-2 py-2 text-sm text-white focus:border-blue-500 outline-none appearance-none pl-8 cursor-pointer"
+                              className="w-full bg-white dark:bg-black/30 border border-slate-300 dark:border-white/10 rounded px-2 py-2 text-sm text-slate-900 dark:text-white focus:border-blue-500 outline-none appearance-none pl-8 cursor-pointer"
                               value={newCategoryIcon}
                               onChange={e => setNewCategoryIcon(e.target.value)}
                             >
                                {availableIcons.map(icon => <option key={icon} value={icon}>{icon}</option>)}
                             </select>
-                            <div className="absolute left-2 top-1/2 -translate-y-1/2 pointer-events-none text-blue-400">
+                            <div className="absolute left-2 top-1/2 -translate-y-1/2 pointer-events-none text-blue-500">
                                {getIcon(newCategoryIcon, 14)}
                             </div>
                           </div>
@@ -166,25 +164,23 @@ export default function SettingsView({ categories, tenants, users, departments =
                  )}
 
                  {categories.map(cat => {
-                    // Find linked department name for display
                     const linkedDept = departments.find(d => d.id === cat.default_department_id);
-                    
                     return (
-                     <div key={cat.id} className="group flex justify-between items-center p-3 bg-white/5 rounded-lg border border-white/5 hover:border-white/10 transition-all">
+                     <div key={cat.id} className="group flex justify-between items-center p-3 bg-slate-50 dark:bg-white/5 rounded-lg border border-slate-200 dark:border-white/5 hover:border-blue-300 dark:hover:border-white/10 transition-all">
                         <div className="flex items-center gap-3 overflow-hidden">
-                           <div className="text-slate-500 group-hover:text-blue-400 transition-colors shrink-0">
+                           <div className="text-slate-400 group-hover:text-blue-500 transition-colors shrink-0">
                               {getIcon(cat.icon || 'Briefcase', 18)}
                            </div>
                            <div className="flex flex-col min-w-0">
-                              <span className="text-slate-200 truncate">{cat.label}</span>
+                              <span className="text-slate-700 dark:text-slate-200 truncate font-medium">{cat.label}</span>
                               {linkedDept && (
-                                <span className="text-[10px] text-indigo-400 flex items-center gap-1">
+                                <span className="text-[10px] text-indigo-500 dark:text-indigo-400 flex items-center gap-1">
                                   <Network size={10} /> {linkedDept.name}
                                 </span>
                               )}
                            </div>
                         </div>
-                        <button onClick={() => handleDeleteCategory(cat.id)} className="opacity-0 group-hover:opacity-100 text-slate-500 hover:text-rose-400 transition-opacity"><Trash2 size={14} /></button>
+                        <button onClick={() => handleDeleteCategory(cat.id)} className="opacity-0 group-hover:opacity-100 text-slate-400 hover:text-rose-500 transition-opacity"><Trash2 size={14} /></button>
                      </div>
                     );
                  })}
@@ -195,19 +191,19 @@ export default function SettingsView({ categories, tenants, users, departments =
         {/* RIGHT COL: USER MANAGEMENT */}
         <div className="lg:col-span-2 space-y-6">
           <GlassCard className="p-6 border-t-4 border-t-indigo-500 min-h-[600px]">
-              <div className="flex items-center gap-2 text-indigo-400 mb-6">
+              <div className="flex items-center gap-2 text-indigo-500 dark:text-indigo-400 mb-6">
                  <Shield size={20} />
-                 <h3 className="font-bold text-lg text-white">User & Access Management</h3>
+                 <h3 className="font-bold text-lg text-slate-900 dark:text-white">User & Access Management</h3>
               </div>
 
               {/* TOOLBAR */}
               <div className="flex gap-4 mb-6">
                  <div className="relative flex-1">
-                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 w-4 h-4" />
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 dark:text-slate-500 w-4 h-4" />
                     <input 
                       type="text" 
                       placeholder="Search users..." 
-                      className="w-full bg-black/30 border border-white/10 rounded-lg pl-9 pr-4 py-3 text-sm text-white focus:outline-none focus:border-indigo-500/50"
+                      className="w-full bg-slate-100 dark:bg-black/30 border border-slate-300 dark:border-white/10 rounded-lg pl-9 pr-4 py-3 text-sm text-slate-900 dark:text-white focus:outline-none focus:border-indigo-500/50 transition-colors"
                       value={searchTerm}
                       onChange={e => setSearchTerm(e.target.value)}
                     />
@@ -215,7 +211,7 @@ export default function SettingsView({ categories, tenants, users, departments =
 
                  <div className="relative w-1/3">
                     <select 
-                      className="w-full bg-black/30 border border-white/10 rounded-lg pl-9 pr-8 py-3 text-sm text-white focus:outline-none focus:border-indigo-500/50 appearance-none cursor-pointer"
+                      className="w-full bg-slate-100 dark:bg-black/30 border border-slate-300 dark:border-white/10 rounded-lg pl-9 pr-8 py-3 text-sm text-slate-900 dark:text-white focus:outline-none focus:border-indigo-500/50 appearance-none cursor-pointer transition-colors"
                       value={deptFilter}
                       onChange={e => setDeptFilter(e.target.value)}
                     >
@@ -236,11 +232,10 @@ export default function SettingsView({ categories, tenants, users, departments =
               {/* USER LIST */}
               <div className="space-y-4 max-h-[600px] overflow-y-auto custom-scrollbar pr-2">
                  {filteredUsers.map(user => (
-                    <div key={user.id} className="bg-white/5 rounded-xl border border-white/5 p-4 transition-all hover:border-white/10">
+                    <div key={user.id} className="bg-slate-50 dark:bg-white/5 rounded-xl border border-slate-200 dark:border-white/5 p-4 transition-all hover:border-blue-300 dark:hover:border-white/10 shadow-sm">
                        <div className="flex justify-between items-start">
                           <div className="flex items-center gap-3">
-                             <div className="w-10 h-10 rounded-full bg-slate-700 flex items-center justify-center text-sm font-bold border border-white/10 overflow-hidden">
-                                {/* FIX: USE IMAGE IF EXISTS, ELSE INITIALS */}
+                             <div className="w-10 h-10 rounded-full bg-slate-200 dark:bg-slate-700 flex items-center justify-center text-sm font-bold border border-slate-300 dark:border-white/10 overflow-hidden text-slate-600 dark:text-white">
                                 {user.avatar_url ? (
                                     <img src={user.avatar_url} className="w-full h-full object-cover" />
                                 ) : (
@@ -248,30 +243,30 @@ export default function SettingsView({ categories, tenants, users, departments =
                                 )}
                              </div>
                              <div>
-                                <h4 className="font-bold text-white text-sm">{user.full_name || 'Unknown User'}</h4>
+                                <h4 className="font-bold text-slate-900 dark:text-white text-sm">{user.full_name || 'Unknown User'}</h4>
                                 <div className="flex gap-2 items-center">
                                    <span className={`text-[10px] uppercase font-bold px-1.5 py-0.5 rounded ${
-                                      user.role === 'super_admin' ? 'bg-rose-500/20 text-rose-400' :
-                                      user.role === 'admin' ? 'bg-purple-500/20 text-purple-400' :
-                                      user.role === 'manager' ? 'bg-orange-500/20 text-orange-400' :
-                                      user.role === 'technician' ? 'bg-blue-500/20 text-blue-400' :
-                                      'bg-slate-500/20 text-slate-400'
+                                      user.role === 'super_admin' ? 'bg-rose-100 text-rose-600 dark:bg-rose-500/20 dark:text-rose-400' :
+                                      user.role === 'admin' ? 'bg-purple-100 text-purple-600 dark:bg-purple-500/20 dark:text-purple-400' :
+                                      user.role === 'manager' ? 'bg-orange-100 text-orange-600 dark:bg-orange-500/20 dark:text-orange-400' :
+                                      user.role === 'technician' ? 'bg-blue-100 text-blue-600 dark:bg-blue-500/20 dark:text-blue-400' :
+                                      'bg-slate-200 text-slate-600 dark:bg-slate-500/20 dark:text-slate-400'
                                    }`}>{user.role}</span>
                                    <span className="text-xs text-slate-500">{user.email}</span>
                                 </div>
                              </div>
                           </div>
-                          <button onClick={() => setEditingUser(editingUser === user.id ? null : user.id)} className="text-xs text-slate-400 hover:text-white underline">
+                          <button onClick={() => setEditingUser(editingUser === user.id ? null : user.id)} className="text-xs text-slate-500 hover:text-blue-600 dark:hover:text-white underline font-medium">
                              {editingUser === user.id ? 'Close' : 'Manage'}
                           </button>
                        </div>
 
                        {editingUser === user.id && (
-                         <div className="mt-4 pt-4 border-t border-white/5 animate-in slide-in-from-top-2">
+                         <div className="mt-4 pt-4 border-t border-slate-200 dark:border-white/5 animate-in slide-in-from-top-2">
                             <div className="mb-4">
                                <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1 block">Global System Role</label>
                                <select 
-                                 className="w-full bg-black/20 border border-white/10 rounded px-3 py-2 text-sm text-white"
+                                 className="w-full bg-white dark:bg-black/20 border border-slate-300 dark:border-white/10 rounded px-3 py-2 text-sm text-slate-900 dark:text-white focus:border-blue-500 outline-none"
                                  value={user.role}
                                  onChange={(e) => handleUpdateUser(user.id, { role: e.target.value })}
                                >
@@ -288,11 +283,15 @@ export default function SettingsView({ categories, tenants, users, departments =
                                   {tenants.map(t => {
                                      const hasAccess = user.access_list?.includes(t.id);
                                      return (
-                                        <div key={t.id} onClick={() => handleToggleAccess(user.id, t.id, hasAccess)} className="flex items-center gap-3 p-2 rounded hover:bg-white/5 cursor-pointer group">
-                                           <div className={`w-5 h-5 rounded border flex items-center justify-center transition-colors ${hasAccess ? 'bg-indigo-500 border-indigo-500' : 'border-slate-600 group-hover:border-slate-400'}`}>
+                                        <div key={t.id} onClick={() => handleToggleAccess(user.id, t.id, hasAccess)} className="flex items-center gap-3 p-2 rounded hover:bg-slate-100 dark:hover:bg-white/5 cursor-pointer group transition-colors">
+                                           <div className={`w-5 h-5 rounded border flex items-center justify-center transition-colors ${
+                                               hasAccess 
+                                               ? 'bg-indigo-500 border-indigo-500' 
+                                               : 'bg-white dark:bg-transparent border-slate-300 dark:border-slate-600 group-hover:border-indigo-400'
+                                           }`}>
                                               {hasAccess && <Check size={12} className="text-white" />}
                                            </div>
-                                           <span className={hasAccess ? 'text-white' : 'text-slate-400'}>{t.name}</span>
+                                           <span className={`text-sm font-medium ${hasAccess ? 'text-slate-900 dark:text-white' : 'text-slate-500 dark:text-slate-400'}`}>{t.name}</span>
                                         </div>
                                      );
                                   })}
