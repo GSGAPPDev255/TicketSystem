@@ -153,7 +153,7 @@ function AppContent({ session }) {
     return () => window.removeEventListener('resize', checkMobile);
   }, []);
 
-  // 3. FETCH GLOBAL DATA (Refactored to be callable)
+  // 3. FETCH GLOBAL DATA (MOVED OUTSIDE useEffect to be accessible)
   const fetchGlobals = async () => {
     const [cats, depts, kb, allUsers, allAccess] = await Promise.all([
       supabase.from('categories').select('*').order('label'),
@@ -223,7 +223,7 @@ function AppContent({ session }) {
     return () => supabase.removeChannel(sub);
   }, [session]);
 
-  // 6. HANDLE TICKET CREATION
+  // 6. HANDLE TICKET CREATION (PRESERVED)
   const handleCreateTicket = async (formData) => {
     const requesterId = session?.user?.id;
     const requesterName = profile?.full_name || session?.user?.user_metadata?.full_name || 'User'; 
@@ -233,12 +233,10 @@ function AppContent({ session }) {
     const priority = formData.priority || 'Medium';
     const now = new Date();
     
-    // FORMAT: "Fri, 15 Feb 2026 at 16:08"
     const formattedDate = now.toLocaleString('en-GB', { 
         weekday: 'short', day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' 
     });
     
-    // FORMAT: "FEB26"
     const monthYear = now.toLocaleString('en-GB', { month: 'short', year: '2-digit' }).toUpperCase().replace(' ','');
     const hours = priority === 'Critical' ? 4 : priority === 'High' ? 8 : priority === 'Low' ? 72 : 24; 
     now.setHours(now.getHours() + hours);
@@ -361,15 +359,12 @@ function AppContent({ session }) {
       case 'new-ticket': 
         return <NewTicketView categories={categories} kbArticles={kbArticles} onSubmit={handleCreateTicket} />;
       case 'teams': 
-        // --- FIX IS HERE: PASSING ROLE AND UPDATER ---
-        return <TeamsView 
-            departments={departments} 
-            role={role} 
-            onUpdate={fetchGlobals}
-        />;
+        // --- THIS IS THE FIX: Passing 'role' and 'onUpdate' ---
+        return <TeamsView departments={departments} role={role} onUpdate={fetchGlobals} />;
       case 'knowledge': 
         return <KnowledgeBaseView articles={kbArticles} categories={categories} onUpdate={fetchGlobals} />;
       case 'settings': 
+        // --- ALSO FIXED: Passing 'fetchGlobals' instead of 'fetchTickets' ---
         return <SettingsView categories={categories} tenants={tenants} departments={departments} users={users} onUpdate={fetchGlobals} />;
       case 'tenants': 
         return <TenantsView tenants={tenants} />;
