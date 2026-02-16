@@ -12,12 +12,12 @@ import SettingsView from './views/Settings';
 import TenantsView from './views/Tenants';
 import { TicketDetailView } from './components/ui'; 
 import { TenantProvider, useTenant } from './contexts/TenantContext';
-import { ThemeProvider, useTheme } from './contexts/ThemeContext'; // <--- NEW IMPORT
+import { ThemeProvider, useTheme } from './contexts/ThemeContext';
 
 // --- SIDEBAR COMPONENT ---
 function Sidebar({ activeView, onNavigate, session, profile, myTicketCount, isMobile, isOpen, setIsOpen }) {
   const { currentTenant, tenants, setCurrentTenant } = useTenant();
-  const { theme, toggleTheme } = useTheme(); // <--- NEW HOOK
+  const { theme, toggleTheme } = useTheme();
 
   const role = profile?.role || 'user'; 
   const isAdmin = role === 'super_admin' || role === 'admin';
@@ -93,10 +93,7 @@ function Sidebar({ activeView, onNavigate, session, profile, myTicketCount, isMo
         })}
       </nav>
 
-      {/* FOOTER WITH THEME TOGGLE */}
       <div className="p-4 border-t border-slate-200 dark:border-white/5 space-y-3">
-        
-        {/* THEME TOGGLE BUTTON */}
         <button 
           onClick={toggleTheme}
           className="w-full flex items-center justify-between px-4 py-2 rounded-lg text-sm font-medium text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-white/5 transition-colors"
@@ -105,7 +102,6 @@ function Sidebar({ activeView, onNavigate, session, profile, myTicketCount, isMo
              {theme === 'dark' ? <Moon size={16} /> : <Sun size={16} />}
              <span>{theme === 'dark' ? 'Dark Mode' : 'Light Mode'}</span>
            </div>
-           {/* Simple Toggle Switch UI */}
            <div className={`w-8 h-4 rounded-full relative transition-colors duration-300 ${theme === 'dark' ? 'bg-blue-600' : 'bg-slate-300'}`}>
               <div className={`absolute top-0.5 w-3 h-3 rounded-full bg-white shadow-sm transition-all duration-300 ${theme === 'dark' ? 'left-[18px]' : 'left-0.5'}`} />
            </div>
@@ -132,9 +128,9 @@ function Sidebar({ activeView, onNavigate, session, profile, myTicketCount, isMo
   );
 }
 
-// --- MAIN CONTENT LOGIC ---
+// --- MAIN CONTENT LOGIC (WITH AUTO-PROVISIONING) ---
 function AppContent({ session }) {
-  const { currentTenant, tenants } = useTenant();
+  const { currentTenant, tenants, setCurrentTenant } = useTenant();
   const [profile, setProfile] = useState(null); 
   const [activeView, setActiveView] = useState('dashboard');
   const [myTicketCount, setMyTicketCount] = useState(0);
@@ -142,7 +138,6 @@ function AppContent({ session }) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   
-  // Data State
   const [tickets, setTickets] = useState([]);
   const [categories, setCategories] = useState([]);
   const [departments, setDepartments] = useState([]);
@@ -150,24 +145,68 @@ function AppContent({ session }) {
   const [selectedTicket, setSelectedTicket] = useState(null);
   const [users, setUsers] = useState([]);
 
-  // Navigation Handler
+  // --- 🎯 NEW: AUTO-PROVISIONING ENGINE ---
+  const checkAndProvisionAccess = async (user) => {
+    if (!user?.email) return;
+
+    // 1. Check if user already has access records
+    const { data: existingAccess } = await supabase
+      .from('tenant_access')
+      .select('id')
+      .eq('user_id', user.id);
+
+    if (existingAccess && existingAccess.length > 0) return; 
+
+    // 2. Extract domain
+    const domain = user.email.split('@')[1];
+    if (!domain) return;
+
+    // 3. Special Case: Gardener Schools (Super Admin Domain)
+    if (domain === 'gardenerschools.com') {
+      console.log("🛠️ Group Staff Detected - Auto-assigning to all tenants");
+      const accessRows = tenants.map(t => ({ user_id: user.id, tenant_id: t.id }));
+      await supabase.from('tenant_access').insert(accessRows);
+      await supabase.from('profiles').update({ role: 'admin' }).eq('id', user.id);
+      return;
+    }
+
+    // 4. Standard Case: Match domain to Tenant
+    const matchingTenant = tenants.find(t => t.domain?.toLowerCase() === domain.toLowerCase());
+    
+    if (matchingTenant) {
+      console.log(`✨ JIT Provisioning: Mapping user to ${matchingTenant.name}`);
+      await supabase.from('tenant_access').insert({ 
+        user_id: user.id, 
+        tenant_id: matchingTenant.id 
+      });
+      await supabase.from('profiles').update({ role: 'user' }).eq('id', user.id);
+      
+      if (!currentTenant) setCurrentTenant(matchingTenant);
+    }
+  };
+
   const handleNavigation = (viewName) => {
     setActiveView(viewName);
     setSelectedTicket(null);
     if (isMobile) setSidebarOpen(false);
   };
 
-  // 1. FETCH PROFILE
+  // 1. FETCH PROFILE + TRIGGER PROVISIONING
   useEffect(() => {
     if (!session?.user?.id) return;
-    const fetchProfile = async () => {
+    
+    const initUser = async () => {
       const { data } = await supabase.from('profiles').select('*').eq('id', session.user.id).single();
       if (data) setProfile(data);
-    };
-    fetchProfile();
-  }, [session]);
 
-  // 2. MOBILE CHECK
+      if (tenants.length > 0) {
+        await checkAndProvisionAccess(session.user);
+      }
+    };
+
+    initUser();
+  }, [session, tenants]);
+
   useEffect(() => {
     const checkMobile = () => setIsMobile(window.innerWidth < 1024);
     checkMobile();
@@ -175,7 +214,6 @@ function AppContent({ session }) {
     return () => window.removeEventListener('resize', checkMobile);
   }, []);
 
-  // 3. FETCH GLOBAL DATA
   const fetchGlobals = async () => {
     const [cats, depts, kb, allUsers, allAccess] = await Promise.all([
       supabase.from('categories').select('*').order('label'),
@@ -202,7 +240,6 @@ function AppContent({ session }) {
     fetchGlobals();
   }, []);
 
-  // 4. FETCH TICKETS
   const fetchTickets = async () => {
     if (!currentTenant) return;
     setLoading(true);
@@ -228,7 +265,6 @@ function AppContent({ session }) {
     fetchTickets();
   }, [currentTenant, activeView]); 
 
-  // 5. BADGE COUNTER
   useEffect(() => {
     if (!session?.user?.id) return;
     const fetchBadge = async () => {
@@ -245,7 +281,6 @@ function AppContent({ session }) {
     return () => supabase.removeChannel(sub);
   }, [session]);
 
-  // 6. HANDLE TICKET CREATION
   const handleCreateTicket = async (formData) => {
     const requesterId = session?.user?.id;
     const requesterName = profile?.full_name || session?.user?.user_metadata?.full_name || 'User'; 
@@ -266,7 +301,6 @@ function AppContent({ session }) {
     const selectedCategory = categories.find(c => c.label === formData.category);
     const autoDeptId = selectedCategory?.default_department_id || null;
 
-    // INSERT TICKET
     const { data: newTicket, error } = await supabase.from('tickets').insert({ 
       ...formData, 
       requester_id: requesterId,
@@ -281,23 +315,18 @@ function AppContent({ session }) {
       return;
     }
 
-    // FRIENDLY ID
     const friendlyId = newTicket.ticket_number 
         ? `${monthYear}-${newTicket.ticket_number}` 
         : `#${newTicket.id.slice(0,8)}`;
 
     const emailPromises = [];
-
-    // SHARED STYLES
     const htmlStyle = `font-family: 'Segoe UI', Arial, sans-serif; color: #333; line-height: 1.6; max-width: 600px;`;
     const labelStyle = `font-weight: bold; width: 120px; padding: 4px 0; color: #555;`;
     const boxStyle = `background-color: #f8fafc; border-left: 4px solid #2563eb; padding: 15px; border-radius: 4px; margin-bottom: 20px; color: #333;`;
 
-    // A. ALERT (To IT Dept)
     if (autoDeptId) {
         const targetDept = departments.find(d => d.id === autoDeptId);
         if (targetDept?.team_email) {
-            console.log(`📤 Notifying Team: ${targetDept.team_email}`);
             emailPromises.push(fetch('/api/email', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -326,7 +355,6 @@ function AppContent({ session }) {
         }
     }
 
-    // B. RECEIPT (To Requester)
     if (requesterEmail) {
         emailPromises.push(fetch('/api/email', {
             method: 'POST',
@@ -340,17 +368,14 @@ function AppContent({ session }) {
                        <p>Hello ${requesterName},</p>
                        <p>Your ticket <strong>${friendlyId}</strong> regarding "<strong>${formData.subject}</strong>" has been logged with ${tenantName} IT Support.</p>
                        <hr style="border: 0; border-top: 1px solid #ddd; margin: 20px 0;" />
-                       
                        <table style="width: 100%; border-collapse: collapse; margin-bottom: 20px;">
                          <tr><td style="${labelStyle}">Issue ID:</td><td>${friendlyId}</td></tr>
                          <tr><td style="${labelStyle}">Date:</td><td>${formattedDate}</td></tr>
                          <tr><td style="${labelStyle}">Status:</td><td>New</td></tr>
                        </table>
-
                        <div style="${boxStyle}">
                          <strong>Your Description:</strong><br/><span style="white-space: pre-wrap;">${formData.description}</span>
                        </div>
-                       
                        <p>Our team will review it shortly. You will be notified of any updates.</p>
                        <a href="${window.location.origin}" style="color: #2563eb; text-decoration: none; font-weight: bold;">Check Status Online</a>
                        <p style="margin-top: 30px; font-size: 12px; color: #999;">Nexus ESM Automation</p>
@@ -367,7 +392,6 @@ function AppContent({ session }) {
 
   const role = profile?.role || 'user'; 
 
-  // ROUTING VIEW
   const renderView = () => {
     if (selectedTicket) {
       return <TicketDetailView ticket={selectedTicket} onBack={() => { setSelectedTicket(null); fetchTickets(); }} />;
@@ -448,10 +472,10 @@ export default function App() {
 
   if (!session) {
     return (
-      <div className="min-h-screen w-full bg-slate-50 dark:bg-[#0f172a] flex items-center justify-center font-sans text-slate-900 dark:text-slate-200">
+      <div className="min-h-screen w-full bg-slate-50 dark:bg-[#0f172a] flex items-center justify-center font-sans text-slate-900 dark:text-slate-200 bg-[radial-gradient(#e2e8f0_1px,transparent_1px)] [background-size:20px_20px] dark:bg-[radial-gradient(#1e293b_1px,transparent_1px)]">
         <div className="w-full max-w-md p-8 flex flex-col items-center gap-6 bg-white dark:bg-slate-900/50 border border-slate-200 dark:border-white/10 rounded-2xl shadow-xl backdrop-blur-xl">
           <h1 className="text-3xl font-bold text-blue-600 dark:text-blue-200">Nexus ESM</h1>
-          <button onClick={() => supabase.auth.signInWithOAuth({ provider: 'azure', options: { scopes: 'email', redirectTo: window.location.origin } })} className="w-full px-4 py-3 bg-[#2f2f2f] hover:bg-[#3f3f3f] text-white rounded-lg border border-white/5 flex items-center justify-center gap-3 shadow-md">
+          <button onClick={() => supabase.auth.signInWithOAuth({ provider: 'azure', options: { scopes: 'email', redirectTo: window.location.origin } })} className="w-full px-4 py-3 bg-[#2f2f2f] hover:bg-[#3f3f3f] text-white rounded-lg border border-white/5 flex items-center justify-center gap-3 shadow-md transition-all">
             <img src="https://img.icons8.com/color/48/000000/microsoft.png" className="w-5 h-5" alt="MS"/>
             <span>Sign in with Microsoft</span>
           </button>
