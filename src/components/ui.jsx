@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { supabase } from '../lib/supabase';
 import { 
   ArrowLeft, Clock, Send, Users, Paperclip,
@@ -15,7 +15,7 @@ export const getIcon = (name, size = 18, className = "") => {
   return <IconComponent size={size} className={className} />;
 };
 
-// --- COMPONENT: GLASS CARD (Bento Style) ---
+// --- COMPONENT: GLASS CARD ---
 export const GlassCard = ({ children, className = "", hover = false, onClick }) => (
   <div 
     onClick={onClick}
@@ -401,9 +401,9 @@ export const TicketDetailView = ({ ticket, onBack }) => {
          </div>
       </Modal>
 
-      {/* LEFT COL: INFO (SCROLLABLE SINGLE CONTAINER) */}
+      {/* LEFT COL: INFO (UNIFIED SCROLL) */}
       <div className="lg:col-span-2 h-full overflow-y-auto custom-scrollbar pr-2 flex flex-col gap-4">
-        <div className="flex items-start gap-4 mb-2">
+        <div className="flex items-start gap-4 mb-2 shrink-0">
           <button onClick={onBack} className="p-2 -ml-2 text-slate-400 hover:text-slate-600 dark:hover:text-white hover:bg-slate-200 dark:hover:bg-white/5 rounded-full transition-colors">
             <ArrowLeft size={20} />
           </button>
@@ -432,7 +432,7 @@ export const TicketDetailView = ({ ticket, onBack }) => {
           </div>
         </div>
 
-        <GlassCard className="p-6 border-l-4 border-l-blue-500">
+        <GlassCard className="p-6 border-l-4 border-l-blue-500 shrink-0">
            <div className="flex items-center gap-3 mb-4 border-b border-slate-200 dark:border-white/5 pb-4">
                <div className="w-8 h-8 rounded-full bg-slate-200 dark:bg-slate-700 flex items-center justify-center text-xs border border-slate-300 dark:border-white/10 font-bold text-slate-700 dark:text-white">
                   {ticket.requester ? ticket.requester.charAt(0) : 'U'}
@@ -444,7 +444,7 @@ export const TicketDetailView = ({ ticket, onBack }) => {
            </div>
            <p className="text-slate-700 dark:text-slate-300 leading-relaxed whitespace-pre-wrap">{ticket.description || 'No description provided.'}</p>
            
-           {/* --- ATTACHMENT SECTION --- */}
+           {/* --- ATTACHMENT SECTION (CONSTRAINED) --- */}
            {ticket.attachment_url && (
               <div className="mt-6 pt-6 border-t border-slate-200 dark:border-white/5">
                 <h4 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-3 flex items-center gap-2">
@@ -456,15 +456,16 @@ export const TicketDetailView = ({ ticket, onBack }) => {
                     href={ticket.attachment_url} 
                     target="_blank" 
                     rel="noopener noreferrer"
-                    className="block w-full max-w-md rounded-xl overflow-hidden border border-slate-200 dark:border-white/10 hover:border-blue-500 transition-all shadow-sm group"
+                    // ADDED: max-w-sm and max-h-64 to prevent it from eating the screen
+                    className="block w-full max-w-sm rounded-xl overflow-hidden border border-slate-200 dark:border-white/10 hover:border-blue-500 transition-all shadow-sm group relative"
                   >
                     <img 
                       src={ticket.attachment_url} 
                       alt="Ticket Attachment" 
-                      className="w-full h-auto bg-slate-100 dark:bg-black/20" 
+                      className="w-full h-48 object-cover bg-slate-100 dark:bg-black/20" 
                     />
-                    <div className="bg-slate-50 dark:bg-black/40 p-2 text-xs text-center text-slate-500 group-hover:text-blue-500 transition-colors">
-                      Click to view full size
+                    <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                       <span className="text-white text-xs font-bold bg-black/50 px-3 py-1 rounded-full border border-white/20">Click to Expand</span>
                     </div>
                   </a>
                 ) : (
@@ -487,8 +488,8 @@ export const TicketDetailView = ({ ticket, onBack }) => {
            )}
         </GlassCard>
 
-        {/* ACTIVITY LOG (Now Part of the Scroll) */}
-        <div className="space-y-4">
+        {/* ACTIVITY LOG */}
+        <div className="space-y-4 pb-4">
            <div className="flex items-center gap-2 text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">
              <Activity size={12} /> Activity Log
            </div>
@@ -515,7 +516,7 @@ export const TicketDetailView = ({ ticket, onBack }) => {
         </div>
       </div>
 
-      {/* RIGHT COL: CONTROLS (Kept Sticky) */}
+      {/* RIGHT COL: CONTROLS */}
       <div className="hidden lg:block space-y-4">
         <GlassCard className="p-5 space-y-6 sticky top-0">
            <div>
