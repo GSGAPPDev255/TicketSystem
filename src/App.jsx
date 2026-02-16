@@ -1,4 +1,4 @@
-// src/App.jsx - WITH DIAGNOSTIC LOGGING
+// src/App.jsx
 import React, { useState, useEffect } from 'react';
 import { 
   LayoutDashboard, Ticket, PlusCircle, Users, Settings, Book, Building, 
@@ -146,47 +146,7 @@ function AppContent({ session }) {
   const [selectedTicket, setSelectedTicket] = useState(null);
   const [users, setUsers] = useState([]);
 
-  // --- DIAGNOSTIC LOGGER (RUNS ONCE) ---
-  useEffect(() => {
-    const runDiagnostic = async () => {
-      console.log("%c [DIAGNOSTIC] STARTING CHECK... ", "background: #222; color: #bada55");
-      
-      // 1. What is Azure Sending?
-      const meta = session?.user?.user_metadata;
-      console.log("[DIAGNOSTIC] 1. AZURE DATA:", meta);
-      console.log("[DIAGNOSTIC]    - full_name:", meta?.full_name);
-      console.log("[DIAGNOSTIC]    - name:", meta?.name);
-
-      // 2. What is in the Database?
-      const { data: dbProfile, error: dbError } = await supabase
-        .from('profiles')
-        .select('*')
-        .eq('id', session.user.id)
-        .single();
-      
-      if (dbError) console.error("[DIAGNOSTIC] 2. DB READ FAILED:", dbError.message);
-      else console.log("[DIAGNOSTIC] 2. CURRENT DB PROFILE:", dbProfile);
-
-      // 3. Can we Write?
-      const { error: updateError } = await supabase
-        .from('profiles')
-        .update({ last_seen: new Date().toISOString() }) // Safe update
-        .eq('id', session.user.id);
-
-      if (updateError) {
-        console.error("[DIAGNOSTIC] 3. WRITE PERMISSION FAILED ❌");
-        console.error("              - REASON:", updateError.message);
-        console.error("              - SOLUTION: You MUST run the SQL 'UPDATE' policy fix.");
-      } else {
-        console.log("[DIAGNOSTIC] 3. WRITE PERMISSION SUCCESS ✅");
-      }
-      console.log("%c [DIAGNOSTIC] END CHECK ", "background: #222; color: #bada55");
-    };
-    
-    if (session?.user) runDiagnostic();
-  }, [session]);
-
-  // --- CORE ENGINE: AUTO-PROVISIONING (FIXED) ---
+  // --- CORE ENGINE: AUTO-PROVISIONING ---
   const checkAndProvisionAccess = async (user) => {
     if (!user?.email) return;
 
@@ -220,8 +180,10 @@ function AppContent({ session }) {
     // 2. Gardener Schools Case (Group Admin)
     if (domain === 'gardenerschools.com') {
       const { data: allTenants } = await supabase.from('tenants').select('id');
+      
       if (allTenants) {
         const accessRows = allTenants.map(t => ({ user_id: user.id, tenant_id: t.id }));
+        
         await Promise.all([
           supabase.from('tenant_access').upsert(accessRows, { onConflict: 'user_id, tenant_id' }),
           supabase.from('profiles').upsert({ 
@@ -256,6 +218,7 @@ function AppContent({ session }) {
           avatar_initials: finalInitials
         })
       ]);
+      
       await refreshTenants(); 
       setCurrentTenant(matchingTenant);
       fetchGlobals();
@@ -279,6 +242,7 @@ function AppContent({ session }) {
       } catch (e) { console.error("Provision error:", e); }
 
       // Step B: Self-Heal Name (Force Fix for 'Group Admin' or 'New User')
+      // Only runs if Azure sends a valid name (which in your case, it currently doesn't)
       const metaName = session.user.user_metadata?.full_name || session.user.user_metadata?.name;
       if (metaName) {
          try {
