@@ -153,29 +153,30 @@ function AppContent({ session }) {
     return () => window.removeEventListener('resize', checkMobile);
   }, []);
 
-  // 3. FETCH GLOBAL DATA
+  // 3. FETCH GLOBAL DATA (Refactored to be callable)
+  const fetchGlobals = async () => {
+    const [cats, depts, kb, allUsers, allAccess] = await Promise.all([
+      supabase.from('categories').select('*').order('label'),
+      supabase.from('departments').select('*').order('name'),
+      supabase.from('kb_articles').select('*').order('title'),
+      supabase.from('profiles').select('*').order('full_name'),
+      supabase.from('tenant_access').select('*')
+    ]);
+    
+    if (cats.data) setCategories(cats.data);
+    if (depts.data) setDepartments(depts.data);
+    if (kb.data) setKbArticles(kb.data);
+    
+    if (allUsers.data && allAccess.data) {
+        const processedUsers = allUsers.data.map(u => ({
+            ...u,
+            access_list: allAccess.data.filter(a => a.user_id === u.id).map(a => a.tenant_id)
+        }));
+        setUsers(processedUsers);
+    }
+  };
+
   useEffect(() => {
-    const fetchGlobals = async () => {
-      const [cats, depts, kb, allUsers, allAccess] = await Promise.all([
-        supabase.from('categories').select('*').order('label'),
-        supabase.from('departments').select('*').order('name'),
-        supabase.from('kb_articles').select('*').order('title'),
-        supabase.from('profiles').select('*').order('full_name'),
-        supabase.from('tenant_access').select('*')
-      ]);
-      
-      if (cats.data) setCategories(cats.data);
-      if (depts.data) setDepartments(depts.data);
-      if (kb.data) setKbArticles(kb.data);
-      
-      if (allUsers.data && allAccess.data) {
-          const processedUsers = allUsers.data.map(u => ({
-              ...u,
-              access_list: allAccess.data.filter(a => a.user_id === u.id).map(a => a.tenant_id)
-          }));
-          setUsers(processedUsers);
-      }
-    };
     fetchGlobals();
   }, []);
 
@@ -222,7 +223,7 @@ function AppContent({ session }) {
     return () => supabase.removeChannel(sub);
   }, [session]);
 
-  // 6. HANDLE TICKET CREATION (PROFESSIONAL EMAIL + FRIENDLY ID)
+  // 6. HANDLE TICKET CREATION
   const handleCreateTicket = async (formData) => {
     const requesterId = session?.user?.id;
     const requesterName = profile?.full_name || session?.user?.user_metadata?.full_name || 'User'; 
@@ -267,7 +268,7 @@ function AppContent({ session }) {
 
     const emailPromises = [];
 
-    // SHARED STYLES (Consistency is Key)
+    // SHARED STYLES
     const htmlStyle = `font-family: 'Segoe UI', Arial, sans-serif; color: #333; line-height: 1.6; max-width: 600px;`;
     const labelStyle = `font-weight: bold; width: 120px; padding: 4px 0; color: #555;`;
     const boxStyle = `background-color: #f8fafc; border-left: 4px solid #2563eb; padding: 15px; border-radius: 4px; margin-bottom: 20px; color: #333;`;
@@ -305,7 +306,7 @@ function AppContent({ session }) {
         }
     }
 
-    // B. RECEIPT (To Requester - PROFESSIONALLY STYLED)
+    // B. RECEIPT (To Requester)
     if (requesterEmail) {
         emailPromises.push(fetch('/api/email', {
             method: 'POST',
@@ -360,11 +361,16 @@ function AppContent({ session }) {
       case 'new-ticket': 
         return <NewTicketView categories={categories} kbArticles={kbArticles} onSubmit={handleCreateTicket} />;
       case 'teams': 
-        return <TeamsView departments={departments} />;
+        // --- FIX IS HERE: PASSING ROLE AND UPDATER ---
+        return <TeamsView 
+            departments={departments} 
+            role={role} 
+            onUpdate={fetchGlobals}
+        />;
       case 'knowledge': 
-        return <KnowledgeBaseView articles={kbArticles} categories={categories} onUpdate={fetchTickets} />;
+        return <KnowledgeBaseView articles={kbArticles} categories={categories} onUpdate={fetchGlobals} />;
       case 'settings': 
-        return <SettingsView categories={categories} tenants={tenants} departments={departments} users={users} onUpdate={fetchTickets} />;
+        return <SettingsView categories={categories} tenants={tenants} departments={departments} users={users} onUpdate={fetchGlobals} />;
       case 'tenants': 
         return <TenantsView tenants={tenants} />;
       default: return <DashboardView tickets={tickets} />;
