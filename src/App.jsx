@@ -1,3 +1,4 @@
+// src/App.jsx
 import React, { useState, useEffect } from 'react';
 import { 
   LayoutDashboard, Ticket, PlusCircle, Users, Settings, Book, Building, 
@@ -145,7 +146,7 @@ function AppContent({ session }) {
   const [selectedTicket, setSelectedTicket] = useState(null);
   const [users, setUsers] = useState([]);
 
-  // --- CORE ENGINE: AUTO-PROVISIONING (FIXED FOR SAFETY) ---
+  // --- CORE ENGINE: AUTO-PROVISIONING (FIXED - FORCE UPDATE PLACEHOLDERS) ---
   const checkAndProvisionAccess = async (user) => {
     if (!user?.email) return;
 
@@ -163,17 +164,22 @@ function AppContent({ session }) {
 
     console.log("Provisioning new user access for:", domain);
     
-    // SAFE CHECK: Does profile exist? If so, DO NOT overwrite name.
+    // SAFE CHECK: Does profile exist?
     const { data: existingProfile } = await supabase
         .from('profiles')
         .select('full_name')
         .eq('id', user.id)
         .maybeSingle();
 
-    // Determine safe name to use
-    const providerName = user.user_metadata?.full_name || user.user_metadata?.name;
     const dbName = existingProfile?.full_name;
-    
+    const providerName = user.user_metadata?.full_name || user.user_metadata?.name;
+
+    // INTELLIGENT NAME SELECTION
+    // If DB name is 'New User' or 'Group Admin', we treat it as invalid and overwrite it.
+    const isPlaceholder = ['New User', 'Group Admin'].includes(dbName);
+    const finalName = (dbName && !isPlaceholder) ? dbName : (providerName || 'New User');
+    const finalInitials = (finalName || 'US').split(' ').map(n=>n[0]).join('').substring(0,2).toUpperCase();
+
     // 2. Gardener Schools Case (Group Admin)
     if (domain === 'gardenerschools.com') {
       const { data: allTenants } = await supabase.from('tenants').select('id');
@@ -186,8 +192,9 @@ function AppContent({ session }) {
           supabase.from('profiles').upsert({ 
             id: user.id, 
             email: user.email, 
-            full_name: dbName || providerName || 'Group Admin', // Priority: DB -> Auth Provider -> Default
-            role: 'admin' 
+            full_name: (dbName && !isPlaceholder) ? dbName : (providerName || 'Group Admin'),
+            role: 'admin',
+            avatar_initials: finalInitials
           })
         ]);
         await refreshTenants(); 
@@ -211,9 +218,9 @@ function AppContent({ session }) {
         supabase.from('profiles').upsert({
           id: user.id,
           email: user.email,
-          full_name: dbName || providerName || 'New User', // Priority: DB -> Auth Provider -> Default
+          full_name: finalName,
           role: 'user',
-          avatar_initials: (dbName || providerName || 'US').substring(0,2).toUpperCase()
+          avatar_initials: finalInitials
         })
       ]);
       
@@ -239,20 +246,28 @@ function AppContent({ session }) {
         await checkAndProvisionAccess(session.user);
       } catch (e) { console.error("Provision error:", e); }
 
-      // Step B: Self-Heal Name (REQUIRES 'UPDATE' RLS POLICY)
+      // Step B: Self-Heal Name (Force Fix for 'Group Admin' or 'New User')
       const metaName = session.user.user_metadata?.full_name || session.user.user_metadata?.name;
       if (metaName) {
          try {
-             // Only fix if the name is stuck as 'New User' or 'Group Admin'
-             // And if the metadata name is different from what we have.
-             await supabase.from('profiles')
-               .update({ full_name: metaName })
-               .eq('id', session.user.id)
-               .in('full_name', ['New User', 'Group Admin']); // Only target placeholders
-         } catch(err) { console.log("Name sync skipped"); }
+             // We ask: Is the current name in the DB a placeholder?
+             const { data: current } = await supabase.from('profiles').select('full_name').eq('id', session.user.id).single();
+             
+             if (current && ['New User', 'Group Admin'].includes(current.full_name)) {
+                 console.log("Fixing placeholder name...");
+                 const initials = metaName.split(' ').map(n=>n[0]).join('').substring(0,2).toUpperCase();
+                 await supabase.from('profiles')
+                   .update({ full_name: metaName, avatar_initials: initials })
+                   .eq('id', session.user.id);
+                 // Reload profile immediately to show change
+                 const { data: updated } = await supabase.from('profiles').select('*').eq('id', session.user.id).single();
+                 if (updated) setProfile(updated);
+                 return; // Exit here as we already set profile
+             }
+         } catch(err) { console.log("Name sync skipped", err); }
       }
 
-      // Step C: Load Profile
+      // Step C: Load Profile (Standard)
       try {
         const { data } = await supabase.from('profiles').select('*').eq('id', session.user.id).maybeSingle();
         if (data) setProfile(data);
