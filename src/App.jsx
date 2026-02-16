@@ -1,4 +1,4 @@
-// src/App.jsx
+// src/App.jsx - WITH DIAGNOSTIC LOGGING
 import React, { useState, useEffect } from 'react';
 import { 
   LayoutDashboard, Ticket, PlusCircle, Users, Settings, Book, Building, 
@@ -146,7 +146,47 @@ function AppContent({ session }) {
   const [selectedTicket, setSelectedTicket] = useState(null);
   const [users, setUsers] = useState([]);
 
-  // --- CORE ENGINE: AUTO-PROVISIONING (FIXED - FORCE UPDATE PLACEHOLDERS) ---
+  // --- DIAGNOSTIC LOGGER (RUNS ONCE) ---
+  useEffect(() => {
+    const runDiagnostic = async () => {
+      console.log("%c [DIAGNOSTIC] STARTING CHECK... ", "background: #222; color: #bada55");
+      
+      // 1. What is Azure Sending?
+      const meta = session?.user?.user_metadata;
+      console.log("[DIAGNOSTIC] 1. AZURE DATA:", meta);
+      console.log("[DIAGNOSTIC]    - full_name:", meta?.full_name);
+      console.log("[DIAGNOSTIC]    - name:", meta?.name);
+
+      // 2. What is in the Database?
+      const { data: dbProfile, error: dbError } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', session.user.id)
+        .single();
+      
+      if (dbError) console.error("[DIAGNOSTIC] 2. DB READ FAILED:", dbError.message);
+      else console.log("[DIAGNOSTIC] 2. CURRENT DB PROFILE:", dbProfile);
+
+      // 3. Can we Write?
+      const { error: updateError } = await supabase
+        .from('profiles')
+        .update({ last_seen: new Date().toISOString() }) // Safe update
+        .eq('id', session.user.id);
+
+      if (updateError) {
+        console.error("[DIAGNOSTIC] 3. WRITE PERMISSION FAILED ❌");
+        console.error("              - REASON:", updateError.message);
+        console.error("              - SOLUTION: You MUST run the SQL 'UPDATE' policy fix.");
+      } else {
+        console.log("[DIAGNOSTIC] 3. WRITE PERMISSION SUCCESS ✅");
+      }
+      console.log("%c [DIAGNOSTIC] END CHECK ", "background: #222; color: #bada55");
+    };
+    
+    if (session?.user) runDiagnostic();
+  }, [session]);
+
+  // --- CORE ENGINE: AUTO-PROVISIONING (FIXED) ---
   const checkAndProvisionAccess = async (user) => {
     if (!user?.email) return;
 
@@ -162,8 +202,6 @@ function AppContent({ session }) {
 
     if (existingAccess && existingAccess.length > 0) return; 
 
-    console.log("Provisioning new user access for:", domain);
-    
     // SAFE CHECK: Does profile exist?
     const { data: existingProfile } = await supabase
         .from('profiles')
@@ -175,7 +213,6 @@ function AppContent({ session }) {
     const providerName = user.user_metadata?.full_name || user.user_metadata?.name;
 
     // INTELLIGENT NAME SELECTION
-    // If DB name is 'New User' or 'Group Admin', we treat it as invalid and overwrite it.
     const isPlaceholder = ['New User', 'Group Admin'].includes(dbName);
     const finalName = (dbName && !isPlaceholder) ? dbName : (providerName || 'New User');
     const finalInitials = (finalName || 'US').split(' ').map(n=>n[0]).join('').substring(0,2).toUpperCase();
@@ -183,10 +220,8 @@ function AppContent({ session }) {
     // 2. Gardener Schools Case (Group Admin)
     if (domain === 'gardenerschools.com') {
       const { data: allTenants } = await supabase.from('tenants').select('id');
-      
       if (allTenants) {
         const accessRows = allTenants.map(t => ({ user_id: user.id, tenant_id: t.id }));
-        
         await Promise.all([
           supabase.from('tenant_access').upsert(accessRows, { onConflict: 'user_id, tenant_id' }),
           supabase.from('profiles').upsert({ 
@@ -211,8 +246,6 @@ function AppContent({ session }) {
       .maybeSingle();
     
     if (matchingTenant) {
-      console.log("Found matching tenant:", matchingTenant.name);
-      
       await Promise.all([
         supabase.from('tenant_access').insert({ user_id: user.id, tenant_id: matchingTenant.id }),
         supabase.from('profiles').upsert({
@@ -223,7 +256,6 @@ function AppContent({ session }) {
           avatar_initials: finalInitials
         })
       ]);
-      
       await refreshTenants(); 
       setCurrentTenant(matchingTenant);
       fetchGlobals();
@@ -250,21 +282,17 @@ function AppContent({ session }) {
       const metaName = session.user.user_metadata?.full_name || session.user.user_metadata?.name;
       if (metaName) {
          try {
-             // We ask: Is the current name in the DB a placeholder?
              const { data: current } = await supabase.from('profiles').select('full_name').eq('id', session.user.id).single();
-             
              if (current && ['New User', 'Group Admin'].includes(current.full_name)) {
-                 console.log("Fixing placeholder name...");
                  const initials = metaName.split(' ').map(n=>n[0]).join('').substring(0,2).toUpperCase();
                  await supabase.from('profiles')
                    .update({ full_name: metaName, avatar_initials: initials })
                    .eq('id', session.user.id);
-                 // Reload profile immediately to show change
                  const { data: updated } = await supabase.from('profiles').select('*').eq('id', session.user.id).single();
                  if (updated) setProfile(updated);
-                 return; // Exit here as we already set profile
+                 return; 
              }
-         } catch(err) { console.log("Name sync skipped", err); }
+         } catch(err) { console.log("Name sync skipped"); }
       }
 
       // Step C: Load Profile (Standard)
