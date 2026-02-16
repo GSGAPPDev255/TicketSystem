@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 import { 
-  ArrowLeft, Clock, Send, Users, 
+  ArrowLeft, Clock, Send, Users, Paperclip, // <--- Added Paperclip
   Briefcase, Monitor, Cpu, Wifi, ShieldAlert, Wrench, Zap, Globe, FileText, CheckCircle2,
   TrendingUp, TrendingDown, Activity, X
 } from 'lucide-react';
@@ -15,16 +15,16 @@ export const getIcon = (name, size = 18, className = "") => {
   return <IconComponent size={size} className={className} />;
 };
 
-// --- COMPONENT: GLASS CARD (High-Def Bento Upgrade) ---
+// --- COMPONENT: GLASS CARD (Bento Style) ---
 export const GlassCard = ({ children, className = "", hover = false, onClick }) => (
   <div 
     onClick={onClick}
     className={`
       transition-all duration-300 relative overflow-hidden
-      /* DARK MODE (Cyberpunk Glass) */
+      /* DARK MODE (Glassy) */
       dark:bg-[#1e293b]/60 dark:backdrop-blur-md dark:border-white/5 dark:shadow-xl
       
-      /* LIGHT MODE (Technical Bento) */
+      /* LIGHT MODE (Bento / Clean) */
       bg-white border border-slate-300 shadow-[0px_2px_3px_-1px_rgba(0,0,0,0.1),0px_1px_0px_0px_rgba(25,28,33,0.02),0px_0px_0px_1px_rgba(25,28,33,0.08)]
       
       /* SHARED */
@@ -39,7 +39,7 @@ export const GlassCard = ({ children, className = "", hover = false, onClick }) 
   </div>
 );
 
-// --- COMPONENT: STAT CARD (Bento Style) ---
+// --- COMPONENT: STAT CARD ---
 export const StatCard = ({ label, value, icon: Icon, trend, trendUp }) => (
   <GlassCard hover={true} className="p-6">
     <div className="flex justify-between items-start mb-4">
@@ -62,7 +62,7 @@ export const StatCard = ({ label, value, icon: Icon, trend, trendUp }) => (
   </GlassCard>
 );
 
-// --- COMPONENT: TICKET ROW (Technical / Sharp) ---
+// --- COMPONENT: TICKET ROW ---
 export const TicketRow = ({ ticket, onClick }) => (
   <div 
     onClick={onClick}
@@ -443,6 +443,50 @@ export const TicketDetailView = ({ ticket, onBack }) => {
                </div>
            </div>
            <p className="text-slate-700 dark:text-slate-300 leading-relaxed whitespace-pre-wrap">{ticket.description || 'No description provided.'}</p>
+           
+           {/* --- ATTACHMENT SECTION (NEW) --- */}
+           {ticket.attachment_url && (
+              <div className="mt-6 pt-6 border-t border-slate-200 dark:border-white/5">
+                <h4 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-3 flex items-center gap-2">
+                  <Paperclip size={14} /> Attachment
+                </h4>
+                
+                {/* Image Preview */}
+                {/\.(jpg|jpeg|png|gif|webp)$/i.test(ticket.attachment_url) ? (
+                  <a 
+                    href={ticket.attachment_url} 
+                    target="_blank" 
+                    rel="noopener noreferrer"
+                    className="block w-full max-w-md rounded-xl overflow-hidden border border-slate-200 dark:border-white/10 hover:border-blue-500 transition-all shadow-sm group"
+                  >
+                    <img 
+                      src={ticket.attachment_url} 
+                      alt="Ticket Attachment" 
+                      className="w-full h-auto bg-slate-100 dark:bg-black/20" 
+                    />
+                    <div className="bg-slate-50 dark:bg-black/40 p-2 text-xs text-center text-slate-500 group-hover:text-blue-500 transition-colors">
+                      Click to view full size
+                    </div>
+                  </a>
+                ) : (
+                  /* Generic File Download */
+                  <a 
+                    href={ticket.attachment_url} 
+                    target="_blank" 
+                    rel="noopener noreferrer"
+                    className="flex items-center gap-4 p-4 rounded-xl bg-slate-50 dark:bg-black/20 border border-slate-200 dark:border-white/10 hover:border-blue-500 transition-all group max-w-md"
+                  >
+                    <div className="p-3 bg-blue-100 dark:bg-blue-500/20 text-blue-600 dark:text-blue-400 rounded-lg group-hover:scale-110 transition-transform">
+                      <FileText size={24} />
+                    </div>
+                    <div>
+                      <p className="font-bold text-slate-900 dark:text-white group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors">View Attachment</p>
+                      <p className="text-xs text-slate-500">Click to download file</p>
+                    </div>
+                  </a>
+                )}
+              </div>
+           )}
         </GlassCard>
 
         <div className="flex-1 overflow-y-auto space-y-4 pr-2 custom-scrollbar mt-2">
