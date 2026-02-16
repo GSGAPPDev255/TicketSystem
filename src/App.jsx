@@ -145,25 +145,23 @@ function AppContent({ session }) {
   const [selectedTicket, setSelectedTicket] = useState(null);
   const [users, setUsers] = useState([]);
 
-  // --- 🎯 NEW: BULLETPROOF AUTO-PROVISIONING ---
+  // --- CORE ENGINE: AUTO-PROVISIONING (FIXED FOR 406 ERRORS) ---
   const checkAndProvisionAccess = async (user) => {
     if (!user?.email || tenants.length === 0) return;
 
     const domain = user.email.split('@')[1]?.toLowerCase();
     if (!domain) return;
 
-    // 1. Defensively check access using maybeSingle to avoid 406 triggers
+    // 1. Defensively check access using maybeSingle to avoid 406 fetch triggers
     const { data: access } = await supabase
       .from('tenant_access')
       .select('id')
       .eq('user_id', user.id)
       .maybeSingle();
 
-    if (access) return; // User already mapped
+    if (access) return; 
 
-    console.log(`🔍 Provisioning check for domain: ${domain}`);
-
-    // 2. Group Admin Case
+    // 2. Gardener Schools Case (Group Admin)
     if (domain === 'gardenerschools.com') {
       const accessRows = tenants.map(t => ({ user_id: user.id, tenant_id: t.id }));
       await Promise.all([
@@ -183,9 +181,6 @@ function AppContent({ session }) {
     const matchingTenant = tenants.find(t => t.domain?.toLowerCase() === domain);
     
     if (matchingTenant) {
-      console.log(`✨ JIT Provisioning: Creating access for ${matchingTenant.name}`);
-      
-      // Perform both ops simultaneously to ensure profile exists before any data fetches
       await Promise.all([
         supabase.from('tenant_access').insert({ user_id: user.id, tenant_id: matchingTenant.id }),
         supabase.from('profiles').upsert({
@@ -198,7 +193,7 @@ function AppContent({ session }) {
       ]);
       
       setCurrentTenant(matchingTenant);
-      window.location.reload(); // Clear Supabase fetch cache/state
+      window.location.reload(); 
     }
   };
 
@@ -208,19 +203,23 @@ function AppContent({ session }) {
     if (isMobile) setSidebarOpen(false);
   };
 
-  // 1. FETCH PROFILE + TRIGGER PROVISIONING
+  // 1. FETCH PROFILE + TRIGGER PROVISIONING (ISOLATED TO PREVENT 406 BLOCKS)
   useEffect(() => {
     if (!session?.user?.id) return;
     
     const initUser = async () => {
-      // ALWAYS Provision first to solve 406 errors for new users
+      // Step A: Force Provisioning First
       if (tenants.length > 0) {
-        await checkAndProvisionAccess(session.user);
+        try {
+          await checkAndProvisionAccess(session.user);
+        } catch (e) { console.error("Provision error:", e); }
       }
 
-      // Load Profile - use maybeSingle so missing record doesn't throw visible 406 in some contexts
-      const { data } = await supabase.from('profiles').select('*').eq('id', session.user.id).maybeSingle();
-      if (data) setProfile(data);
+      // Step B: Load Profile Second
+      try {
+        const { data } = await supabase.from('profiles').select('*').eq('id', session.user.id).maybeSingle();
+        if (data) setProfile(data);
+      } catch (e) { console.warn("Fetch skipped - waiting for provisioning."); }
     };
 
     initUser();
