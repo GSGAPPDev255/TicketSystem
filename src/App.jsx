@@ -1,5 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { LayoutDashboard, Ticket, PlusCircle, Users, Settings, Book, Building, LogOut, Bell, Menu, X, Search } from 'lucide-react';
+import { 
+  LayoutDashboard, Ticket, PlusCircle, Users, Settings, Book, Building, 
+  LogOut, Bell, Menu, X, Search, Sun, Moon 
+} from 'lucide-react';
 import { supabase } from './lib/supabase';
 import DashboardView from './views/Dashboard';
 import NewTicketView from './views/NewTicket';
@@ -9,10 +12,12 @@ import SettingsView from './views/Settings';
 import TenantsView from './views/Tenants';
 import { TicketDetailView } from './components/ui'; 
 import { TenantProvider, useTenant } from './contexts/TenantContext';
+import { ThemeProvider, useTheme } from './contexts/ThemeContext'; // <--- NEW IMPORT
 
 // --- SIDEBAR COMPONENT ---
 function Sidebar({ activeView, onNavigate, session, profile, myTicketCount, isMobile, isOpen, setIsOpen }) {
   const { currentTenant, tenants, setCurrentTenant } = useTenant();
+  const { theme, toggleTheme } = useTheme(); // <--- NEW HOOK
 
   const role = profile?.role || 'user'; 
   const isAdmin = role === 'super_admin' || role === 'admin';
@@ -29,8 +34,8 @@ function Sidebar({ activeView, onNavigate, session, profile, myTicketCount, isMo
   ];
 
   const sidebarClasses = isMobile
-    ? `fixed inset-y-0 left-0 z-50 w-64 bg-slate-900/95 backdrop-blur-xl border-r border-white/10 transform transition-transform duration-300 ${isOpen ? 'translate-x-0' : '-translate-x-full'}`
-    : 'w-64 bg-slate-900/50 backdrop-blur-xl border-r border-white/10 flex flex-col shrink-0';
+    ? `fixed inset-y-0 left-0 z-50 w-64 bg-white dark:bg-slate-900/95 backdrop-blur-xl border-r border-slate-200 dark:border-white/10 transform transition-transform duration-300 ${isOpen ? 'translate-x-0' : '-translate-x-full'}`
+    : 'w-64 bg-white dark:bg-slate-900/50 backdrop-blur-xl border-r border-slate-200 dark:border-white/10 flex flex-col shrink-0 transition-colors duration-300';
 
   return (
     <div className={sidebarClasses}>
@@ -39,14 +44,14 @@ function Sidebar({ activeView, onNavigate, session, profile, myTicketCount, isMo
           <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center font-bold text-white shadow-lg shadow-blue-500/20">
             N
           </div>
-          <span className="font-bold text-xl tracking-tight text-white">Nexus</span>
+          <span className="font-bold text-xl tracking-tight text-slate-900 dark:text-white">Nexus</span>
         </div>
         {isMobile && <button onClick={() => setIsOpen(false)} className="text-slate-400"><X size={24} /></button>}
       </div>
 
       <div className="px-4 mb-6">
         <select 
-          className="w-full bg-black/20 border border-white/10 rounded-lg px-3 py-2 text-sm text-slate-300 focus:outline-none focus:border-blue-500/50"
+          className="w-full bg-slate-100 dark:bg-black/20 border border-slate-200 dark:border-white/10 rounded-lg px-3 py-2 text-sm text-slate-700 dark:text-slate-300 focus:outline-none focus:border-blue-500/50 transition-colors"
           value={currentTenant?.id || ''}
           onChange={(e) => {
             const t = tenants.find(t => t.id === e.target.value);
@@ -71,11 +76,11 @@ function Sidebar({ activeView, onNavigate, session, profile, myTicketCount, isMo
               className={`w-full flex items-center justify-between px-4 py-3 rounded-xl transition-all duration-200 group ${
                 activeView === item.id 
                   ? 'bg-blue-600 text-white shadow-lg shadow-blue-900/20' 
-                  : 'text-slate-400 hover:bg-white/5 hover:text-white'
+                  : 'text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-white/5 hover:text-slate-900 dark:hover:text-white'
               }`}
             >
               <div className="flex items-center gap-3">
-                <item.icon size={20} className={activeView === item.id ? 'text-white' : 'text-slate-500 group-hover:text-blue-400'} />
+                <item.icon size={20} className={activeView === item.id ? 'text-white' : 'text-slate-400 dark:text-slate-500 group-hover:text-blue-600 dark:group-hover:text-blue-400'} />
                 <span className="font-medium">{item.label}</span>
               </div>
               {item.badge > 0 && (
@@ -88,9 +93,26 @@ function Sidebar({ activeView, onNavigate, session, profile, myTicketCount, isMo
         })}
       </nav>
 
-      <div className="p-4 border-t border-white/5">
-        <div className="flex items-center gap-3 px-4 py-3 rounded-xl bg-white/5 border border-white/5">
-          <div className="w-10 h-10 rounded-full bg-slate-700 flex items-center justify-center overflow-hidden shrink-0 text-white font-bold text-xs">
+      {/* FOOTER WITH THEME TOGGLE */}
+      <div className="p-4 border-t border-slate-200 dark:border-white/5 space-y-3">
+        
+        {/* THEME TOGGLE BUTTON */}
+        <button 
+          onClick={toggleTheme}
+          className="w-full flex items-center justify-between px-4 py-2 rounded-lg text-sm font-medium text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-white/5 transition-colors"
+        >
+           <div className="flex items-center gap-2">
+             {theme === 'dark' ? <Moon size={16} /> : <Sun size={16} />}
+             <span>{theme === 'dark' ? 'Dark Mode' : 'Light Mode'}</span>
+           </div>
+           {/* Simple Toggle Switch UI */}
+           <div className={`w-8 h-4 rounded-full relative transition-colors duration-300 ${theme === 'dark' ? 'bg-blue-600' : 'bg-slate-300'}`}>
+              <div className={`absolute top-0.5 w-3 h-3 rounded-full bg-white shadow-sm transition-all duration-300 ${theme === 'dark' ? 'left-[18px]' : 'left-0.5'}`} />
+           </div>
+        </button>
+
+        <div className="flex items-center gap-3 px-4 py-3 rounded-xl bg-slate-100 dark:bg-white/5 border border-slate-200 dark:border-white/5 transition-colors">
+          <div className="w-10 h-10 rounded-full bg-slate-200 dark:bg-slate-700 flex items-center justify-center overflow-hidden shrink-0 text-slate-600 dark:text-white font-bold text-xs">
              {profile?.avatar_url ? (
                <img src={profile.avatar_url} alt="Profile" className="w-full h-full object-cover" />
              ) : (
@@ -98,10 +120,10 @@ function Sidebar({ activeView, onNavigate, session, profile, myTicketCount, isMo
              )}
           </div>
           <div className="flex-1 min-w-0">
-            <p className="text-sm font-medium text-white truncate">{profile?.full_name || 'User'}</p>
-            <p className="text-xs text-slate-400 truncate capitalize">{profile?.role || 'Staff'}</p>
+            <p className="text-sm font-medium text-slate-900 dark:text-white truncate">{profile?.full_name || 'User'}</p>
+            <p className="text-xs text-slate-500 dark:text-slate-400 truncate capitalize">{profile?.role || 'Staff'}</p>
           </div>
-          <button onClick={() => supabase.auth.signOut()} className="text-slate-400 hover:text-white transition-colors">
+          <button onClick={() => supabase.auth.signOut()} className="text-slate-400 hover:text-rose-500 transition-colors">
             <LogOut size={18} />
           </button>
         </div>
@@ -153,7 +175,7 @@ function AppContent({ session }) {
     return () => window.removeEventListener('resize', checkMobile);
   }, []);
 
-  // 3. FETCH GLOBAL DATA (MOVED OUTSIDE useEffect to be accessible)
+  // 3. FETCH GLOBAL DATA
   const fetchGlobals = async () => {
     const [cats, depts, kb, allUsers, allAccess] = await Promise.all([
       supabase.from('categories').select('*').order('label'),
@@ -223,7 +245,7 @@ function AppContent({ session }) {
     return () => supabase.removeChannel(sub);
   }, [session]);
 
-  // 6. HANDLE TICKET CREATION (PRESERVED)
+  // 6. HANDLE TICKET CREATION
   const handleCreateTicket = async (formData) => {
     const requesterId = session?.user?.id;
     const requesterName = profile?.full_name || session?.user?.user_metadata?.full_name || 'User'; 
@@ -359,12 +381,10 @@ function AppContent({ session }) {
       case 'new-ticket': 
         return <NewTicketView categories={categories} kbArticles={kbArticles} onSubmit={handleCreateTicket} />;
       case 'teams': 
-        // --- THIS IS THE FIX: Passing 'role' and 'onUpdate' ---
         return <TeamsView departments={departments} role={role} onUpdate={fetchGlobals} />;
       case 'knowledge': 
         return <KnowledgeBaseView articles={kbArticles} categories={categories} onUpdate={fetchGlobals} />;
       case 'settings': 
-        // --- ALSO FIXED: Passing 'fetchGlobals' instead of 'fetchTickets' ---
         return <SettingsView categories={categories} tenants={tenants} departments={departments} users={users} onUpdate={fetchGlobals} />;
       case 'tenants': 
         return <TenantsView tenants={tenants} />;
@@ -373,7 +393,7 @@ function AppContent({ session }) {
   };
 
   return (
-    <div className="flex h-screen bg-slate-950 text-slate-200 overflow-hidden font-sans selection:bg-blue-500/30">
+    <div className="flex h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-200 overflow-hidden font-sans selection:bg-blue-500/30 transition-colors duration-300">
       <Sidebar 
         activeView={activeView} 
         onNavigate={handleNavigation} 
@@ -387,20 +407,20 @@ function AppContent({ session }) {
 
       <div className="flex-1 flex flex-col min-w-0 relative">
         {isMobile && (
-          <div className="flex items-center justify-between p-4 bg-slate-900 border-b border-white/5">
-            <span className="font-bold text-white">Nexus</span>
-            <button onClick={() => setSidebarOpen(true)} className="text-white"><Menu size={24} /></button>
+          <div className="flex items-center justify-between p-4 bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-white/5 transition-colors">
+            <span className="font-bold text-slate-900 dark:text-white">Nexus</span>
+            <button onClick={() => setSidebarOpen(true)} className="text-slate-500 dark:text-white"><Menu size={24} /></button>
           </div>
         )}
         
-        <header className="h-16 border-b border-white/5 bg-[#0f172a]/50 backdrop-blur-md sticky top-0 z-30 flex items-center justify-between px-4 md:px-8">
-           <h2 className="text-xl font-semibold text-white/90 capitalize">{activeView.replace('-', ' ')}</h2>
+        <header className="h-16 border-b border-slate-200 dark:border-white/5 bg-white/50 dark:bg-[#0f172a]/50 backdrop-blur-md sticky top-0 z-30 flex items-center justify-between px-4 md:px-8 transition-colors">
+           <h2 className="text-xl font-semibold text-slate-900 dark:text-white/90 capitalize">{activeView.replace('-', ' ')}</h2>
            <div className="flex items-center gap-4">
              <div className="relative hidden md:block">
-               <Search className="absolute left-3 top-2 text-slate-500 w-4 h-4" />
-               <input type="text" placeholder="Search..." className="bg-black/20 border border-white/5 rounded-full pl-9 pr-4 py-1.5 text-sm w-64 text-slate-200 focus:outline-none focus:border-blue-500/50" />
+               <Search className="absolute left-3 top-2 text-slate-400 dark:text-slate-500 w-4 h-4" />
+               <input type="text" placeholder="Search..." className="bg-slate-100 dark:bg-black/20 border border-slate-200 dark:border-white/5 rounded-full pl-9 pr-4 py-1.5 text-sm w-64 text-slate-900 dark:text-slate-200 focus:outline-none focus:border-blue-500/50 transition-colors" />
              </div>
-             <button className="p-2 text-slate-400 hover:text-white"><Bell size={20} /></button>
+             <button className="p-2 text-slate-400 hover:text-blue-600 dark:hover:text-white transition-colors"><Bell size={20} /></button>
            </div>
         </header>
 
@@ -428,10 +448,10 @@ export default function App() {
 
   if (!session) {
     return (
-      <div className="min-h-screen w-full bg-[#0f172a] flex items-center justify-center font-sans text-slate-200">
-        <div className="w-full max-w-md p-8 flex flex-col items-center gap-6 bg-slate-900/50 border border-white/10 rounded-2xl backdrop-blur-xl">
-          <h1 className="text-3xl font-bold text-blue-200">Nexus ESM</h1>
-          <button onClick={() => supabase.auth.signInWithOAuth({ provider: 'azure', options: { scopes: 'email', redirectTo: window.location.origin } })} className="w-full px-4 py-3 bg-[#2f2f2f] hover:bg-[#3f3f3f] text-white rounded-lg border border-white/5 flex items-center justify-center gap-3">
+      <div className="min-h-screen w-full bg-slate-50 dark:bg-[#0f172a] flex items-center justify-center font-sans text-slate-900 dark:text-slate-200">
+        <div className="w-full max-w-md p-8 flex flex-col items-center gap-6 bg-white dark:bg-slate-900/50 border border-slate-200 dark:border-white/10 rounded-2xl shadow-xl backdrop-blur-xl">
+          <h1 className="text-3xl font-bold text-blue-600 dark:text-blue-200">Nexus ESM</h1>
+          <button onClick={() => supabase.auth.signInWithOAuth({ provider: 'azure', options: { scopes: 'email', redirectTo: window.location.origin } })} className="w-full px-4 py-3 bg-[#2f2f2f] hover:bg-[#3f3f3f] text-white rounded-lg border border-white/5 flex items-center justify-center gap-3 shadow-md">
             <img src="https://img.icons8.com/color/48/000000/microsoft.png" className="w-5 h-5" alt="MS"/>
             <span>Sign in with Microsoft</span>
           </button>
@@ -441,8 +461,10 @@ export default function App() {
   }
 
   return (
-    <TenantProvider>
-      <AppContent session={session} />
-    </TenantProvider>
+    <ThemeProvider>
+      <TenantProvider>
+        <AppContent session={session} />
+      </TenantProvider>
+    </ThemeProvider>
   );
 }
