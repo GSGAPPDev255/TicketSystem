@@ -15,13 +15,23 @@ export const getIcon = (name, size = 18, className = "") => {
   return <IconComponent size={size} className={className} />;
 };
 
-// --- COMPONENT: GLASS CARD ---
+// --- COMPONENT: GLASS CARD (Bento Style Upgrade) ---
 export const GlassCard = ({ children, className = "", hover = false, onClick }) => (
   <div 
     onClick={onClick}
     className={`
-      bg-[#1e293b]/60 backdrop-blur-md border border-white/5 rounded-2xl shadow-xl
-      ${hover ? 'hover:bg-[#1e293b]/80 hover:border-blue-500/30 hover:shadow-2xl hover:shadow-blue-500/10 transition-all duration-300 cursor-pointer' : ''}
+      transition-all duration-300 relative overflow-hidden
+      /* DARK MODE (Glassy) */
+      dark:bg-[#1e293b]/60 dark:backdrop-blur-md dark:border-white/5 dark:shadow-xl
+      
+      /* LIGHT MODE (Bento / Clean) */
+      bg-white border border-slate-200 shadow-sm
+      
+      /* SHARED */
+      rounded-2xl
+      
+      /* HOVER EFFECTS */
+      ${hover ? 'cursor-pointer hover:-translate-y-1 hover:shadow-lg dark:hover:bg-[#1e293b]/80 dark:hover:border-blue-500/30 hover:border-blue-500/30' : ''}
       ${className}
     `}
   >
@@ -29,43 +39,47 @@ export const GlassCard = ({ children, className = "", hover = false, onClick }) 
   </div>
 );
 
-// --- COMPONENT: STAT CARD ---
+// --- COMPONENT: STAT CARD (Bento Style Upgrade) ---
 export const StatCard = ({ label, value, icon: Icon, trend, trendUp }) => (
-  <div className="bg-[#1e293b]/60 backdrop-blur-md border border-white/5 p-6 rounded-2xl relative overflow-hidden group hover:border-blue-500/30 transition-all duration-300">
+  <GlassCard hover={true} className="p-6">
     <div className="flex justify-between items-start mb-4">
       <div>
-        <p className="text-slate-400 text-xs font-bold uppercase tracking-wider mb-1">{label}</p>
-        <h3 className="text-3xl font-bold text-white">{value}</h3>
+        <p className="text-xs font-bold uppercase tracking-wider mb-1 text-slate-500 dark:text-slate-400">{label}</p>
+        <h3 className="text-3xl font-bold text-slate-900 dark:text-white">{value}</h3>
       </div>
-      <div className="p-3 bg-white/5 rounded-xl text-blue-400 group-hover:scale-110 transition-transform duration-300">
+      <div className="p-3 rounded-xl transition-transform duration-300 group-hover:scale-110 
+        bg-blue-50 text-blue-600 
+        dark:bg-white/5 dark:text-blue-400">
         <Icon size={24} />
       </div>
     </div>
     {trend && (
-      <div className={`flex items-center gap-2 text-xs font-medium ${trendUp ? 'text-emerald-400' : 'text-rose-400'}`}>
+      <div className={`flex items-center gap-2 text-xs font-medium ${trendUp ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'}`}>
         {trendUp ? <TrendingUp size={14} /> : <TrendingDown size={14} />}
         <span>{trend}</span>
       </div>
     )}
-  </div>
+  </GlassCard>
 );
 
-// --- COMPONENT: TICKET ROW ---
+// --- COMPONENT: TICKET ROW (Bento Style Upgrade) ---
 export const TicketRow = ({ ticket, onClick }) => (
   <div 
     onClick={onClick}
-    className="group flex items-center justify-between p-4 bg-[#1e293b]/40 border border-white/5 rounded-xl hover:bg-[#1e293b]/80 hover:border-blue-500/30 transition-all cursor-pointer"
+    className="group flex items-center justify-between p-4 rounded-xl transition-all cursor-pointer border
+      bg-white border-slate-100 hover:border-blue-300 hover:shadow-md
+      dark:bg-[#1e293b]/40 dark:border-white/5 dark:hover:bg-[#1e293b]/80 dark:hover:border-blue-500/30"
   >
     <div className="flex items-center gap-4">
       <div className={`p-3 rounded-full ${
-        ticket.priority === 'Critical' ? 'bg-rose-500/10 text-rose-400' : 
-        ticket.priority === 'High' ? 'bg-orange-500/10 text-orange-400' : 
-        'bg-blue-500/10 text-blue-400'
+        ticket.priority === 'Critical' ? 'bg-rose-100 text-rose-600 dark:bg-rose-500/10 dark:text-rose-400' : 
+        ticket.priority === 'High' ? 'bg-orange-100 text-orange-600 dark:bg-orange-500/10 dark:text-orange-400' : 
+        'bg-blue-100 text-blue-600 dark:bg-blue-500/10 dark:text-blue-400'
       }`}>
         {getIcon(ticket.category, 20)}
       </div>
       <div>
-        <h4 className="font-semibold text-slate-200 group-hover:text-white transition-colors">{ticket.subject}</h4>
+        <h4 className="font-semibold text-slate-900 dark:text-slate-200 group-hover:text-blue-600 dark:group-hover:text-white transition-colors">{ticket.subject}</h4>
         <div className="flex items-center gap-3 text-xs text-slate-500 mt-1">
           <span className="font-mono">{ticket.ticket_number ? `${new Date(ticket.created_at).toLocaleString('default', { month: 'short', year: '2-digit' }).toUpperCase()}-${ticket.ticket_number}` : `#${ticket.id.slice(0,4)}`}</span>
           <span>•</span>
@@ -78,17 +92,17 @@ export const TicketRow = ({ ticket, onClick }) => (
     <div className="flex items-center gap-4">
       {ticket.priority && (
         <span className={`px-2 py-1 rounded text-[10px] font-bold uppercase tracking-wider ${
-           ticket.priority === 'Critical' ? 'bg-rose-500/20 text-rose-300' : 
-           ticket.priority === 'High' ? 'bg-orange-500/20 text-orange-300' : 
-           'bg-blue-500/10 text-blue-300'
+           ticket.priority === 'Critical' ? 'bg-rose-100 text-rose-700 dark:bg-rose-500/20 dark:text-rose-300' : 
+           ticket.priority === 'High' ? 'bg-orange-100 text-orange-700 dark:bg-orange-500/20 dark:text-orange-300' : 
+           'bg-blue-100 text-blue-700 dark:bg-blue-500/10 dark:text-blue-300'
         }`}>
           {ticket.priority}
         </span>
       )}
       <div className={`px-3 py-1 rounded-full text-xs font-medium border ${
-        ticket.status === 'Resolved' ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' : 
-        ticket.status === 'New' ? 'bg-blue-500/10 text-blue-400 border-blue-500/20' : 
-        'bg-slate-700/50 text-slate-300 border-white/10'
+        ticket.status === 'Resolved' ? 'bg-emerald-100 text-emerald-700 border-emerald-200 dark:bg-emerald-500/10 dark:text-emerald-400 dark:border-emerald-500/20' : 
+        ticket.status === 'New' ? 'bg-blue-100 text-blue-700 border-blue-200 dark:bg-blue-500/10 dark:text-blue-400 dark:border-blue-500/20' : 
+        'bg-slate-100 text-slate-600 border-slate-200 dark:bg-slate-700/50 dark:text-slate-300 dark:border-white/10'
       }`}>
         {ticket.status}
       </div>
@@ -417,16 +431,16 @@ export const TicketDetailView = ({ ticket, onBack }) => {
         </div>
 
         <GlassCard className="p-6 border-l-4 border-l-blue-500 shrink-0">
-           <div className="flex items-center gap-3 mb-4 border-b border-white/5 pb-4">
-               <div className="w-8 h-8 rounded-full bg-slate-700 flex items-center justify-center text-xs border border-white/10 font-bold">
+           <div className="flex items-center gap-3 mb-4 border-b border-white/5 pb-4 dark:border-white/5 border-slate-100">
+               <div className="w-8 h-8 rounded-full bg-slate-700 flex items-center justify-center text-xs border border-white/10 font-bold text-white">
                   {ticket.requester ? ticket.requester.charAt(0) : 'U'}
                </div>
                <div>
-                  <p className="text-sm font-semibold text-white">{ticket.requester}</p>
+                  <p className="text-sm font-semibold text-slate-900 dark:text-white">{ticket.requester}</p>
                   <p className="text-xs text-slate-500">Requester • {ticket.location || 'Remote'}</p>
                </div>
            </div>
-           <p className="text-slate-300 leading-relaxed whitespace-pre-wrap">{ticket.description || 'No description provided.'}</p>
+           <p className="text-slate-700 dark:text-slate-300 leading-relaxed whitespace-pre-wrap">{ticket.description || 'No description provided.'}</p>
         </GlassCard>
 
         <div className="flex-1 overflow-y-auto space-y-4 pr-2 custom-scrollbar mt-2">
@@ -462,7 +476,7 @@ export const TicketDetailView = ({ ticket, onBack }) => {
            <div>
               <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider block mb-2">Current Status</label>
               <select 
-                className="w-full bg-black/30 border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-blue-500/50"
+                className="w-full bg-slate-100 dark:bg-black/30 border border-slate-200 dark:border-white/10 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:border-blue-500/50"
                 value={status}
                 onChange={(e) => handleStatusSelect(e.target.value)}
               >
@@ -470,7 +484,7 @@ export const TicketDetailView = ({ ticket, onBack }) => {
               </select>
            </div>
 
-           <div className="pt-4 border-t border-white/5">
+           <div className="pt-4 border-t border-slate-200 dark:border-white/5">
               <div className="flex justify-between items-center mb-2">
                 <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Assignee</label>
                 {assigneeId !== currentUser?.id && (
@@ -481,7 +495,7 @@ export const TicketDetailView = ({ ticket, onBack }) => {
               </div>
               <div className="relative">
                 <select 
-                  className="w-full bg-black/30 border border-white/10 rounded-lg px-3 py-2 pl-9 text-sm text-white focus:outline-none focus:border-blue-500/50 appearance-none"
+                  className="w-full bg-slate-100 dark:bg-black/30 border border-slate-200 dark:border-white/10 rounded-lg px-3 py-2 pl-9 text-sm text-slate-900 dark:text-white focus:outline-none focus:border-blue-500/50 appearance-none"
                   value={assigneeId}
                   onChange={(e) => handleAssign(e.target.value)}
                 >
@@ -492,10 +506,10 @@ export const TicketDetailView = ({ ticket, onBack }) => {
               </div>
            </div>
 
-           <div className="pt-4 border-t border-white/5">
+           <div className="pt-4 border-t border-slate-200 dark:border-white/5">
               <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider block mb-2">Add Update</label>
               <textarea 
-                className="w-full bg-black/30 border border-white/10 rounded-lg px-3 py-3 text-sm text-white focus:outline-none focus:border-blue-500/50 min-h-[120px] resize-none"
+                className="w-full bg-slate-100 dark:bg-black/30 border border-slate-200 dark:border-white/10 rounded-lg px-3 py-3 text-sm text-slate-900 dark:text-white focus:outline-none focus:border-blue-500/50 min-h-[120px] resize-none"
                 placeholder="Type your response here..."
                 value={newUpdate}
                 onChange={(e) => setNewUpdate(e.target.value)}
