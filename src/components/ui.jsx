@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 import { 
-  ArrowLeft, Clock, Send, Users, Paperclip, // <--- Added Paperclip
+  ArrowLeft, Clock, Send, Users, Paperclip,
   Briefcase, Monitor, Cpu, Wifi, ShieldAlert, Wrench, Zap, Globe, FileText, CheckCircle2,
   TrendingUp, TrendingDown, Activity, X
 } from 'lucide-react';
@@ -401,9 +401,9 @@ export const TicketDetailView = ({ ticket, onBack }) => {
          </div>
       </Modal>
 
-      {/* LEFT COL: INFO */}
-      <div className="lg:col-span-2 flex flex-col h-full gap-4 overflow-hidden">
-        <div className="flex items-start gap-4 mb-2 shrink-0">
+      {/* LEFT COL: INFO (SCROLLABLE SINGLE CONTAINER) */}
+      <div className="lg:col-span-2 h-full overflow-y-auto custom-scrollbar pr-2 flex flex-col gap-4">
+        <div className="flex items-start gap-4 mb-2">
           <button onClick={onBack} className="p-2 -ml-2 text-slate-400 hover:text-slate-600 dark:hover:text-white hover:bg-slate-200 dark:hover:bg-white/5 rounded-full transition-colors">
             <ArrowLeft size={20} />
           </button>
@@ -432,7 +432,7 @@ export const TicketDetailView = ({ ticket, onBack }) => {
           </div>
         </div>
 
-        <GlassCard className="p-6 border-l-4 border-l-blue-500 shrink-0">
+        <GlassCard className="p-6 border-l-4 border-l-blue-500">
            <div className="flex items-center gap-3 mb-4 border-b border-slate-200 dark:border-white/5 pb-4">
                <div className="w-8 h-8 rounded-full bg-slate-200 dark:bg-slate-700 flex items-center justify-center text-xs border border-slate-300 dark:border-white/10 font-bold text-slate-700 dark:text-white">
                   {ticket.requester ? ticket.requester.charAt(0) : 'U'}
@@ -444,14 +444,13 @@ export const TicketDetailView = ({ ticket, onBack }) => {
            </div>
            <p className="text-slate-700 dark:text-slate-300 leading-relaxed whitespace-pre-wrap">{ticket.description || 'No description provided.'}</p>
            
-           {/* --- ATTACHMENT SECTION (NEW) --- */}
+           {/* --- ATTACHMENT SECTION --- */}
            {ticket.attachment_url && (
               <div className="mt-6 pt-6 border-t border-slate-200 dark:border-white/5">
                 <h4 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-3 flex items-center gap-2">
                   <Paperclip size={14} /> Attachment
                 </h4>
                 
-                {/* Image Preview */}
                 {/\.(jpg|jpeg|png|gif|webp)$/i.test(ticket.attachment_url) ? (
                   <a 
                     href={ticket.attachment_url} 
@@ -469,7 +468,6 @@ export const TicketDetailView = ({ ticket, onBack }) => {
                     </div>
                   </a>
                 ) : (
-                  /* Generic File Download */
                   <a 
                     href={ticket.attachment_url} 
                     target="_blank" 
@@ -489,8 +487,9 @@ export const TicketDetailView = ({ ticket, onBack }) => {
            )}
         </GlassCard>
 
-        <div className="flex-1 overflow-y-auto space-y-4 pr-2 custom-scrollbar mt-2">
-           <div className="flex items-center gap-2 text-xs font-bold text-slate-500 uppercase tracking-wider mb-4">
+        {/* ACTIVITY LOG (Now Part of the Scroll) */}
+        <div className="space-y-4">
+           <div className="flex items-center gap-2 text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">
              <Activity size={12} /> Activity Log
            </div>
            {updates.length === 0 && <div className="text-center py-8 text-slate-500 italic text-sm border border-dashed border-slate-300 dark:border-white/5 rounded-xl">No updates yet.</div>}
@@ -516,13 +515,13 @@ export const TicketDetailView = ({ ticket, onBack }) => {
         </div>
       </div>
 
-      {/* RIGHT COL: CONTROLS */}
+      {/* RIGHT COL: CONTROLS (Kept Sticky) */}
       <div className="hidden lg:block space-y-4">
         <GlassCard className="p-5 space-y-6 sticky top-0">
            <div>
               <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider block mb-2">Current Status</label>
               <select 
-                className="w-full bg-slate-50 dark:bg-black/30 border border-slate-300 dark:border-white/10 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:border-blue-500/50"
+                className="w-full bg-slate-100 dark:bg-black/30 border border-slate-300 dark:border-white/10 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:border-blue-500/50"
                 value={status}
                 onChange={(e) => handleStatusSelect(e.target.value)}
               >
@@ -541,7 +540,7 @@ export const TicketDetailView = ({ ticket, onBack }) => {
               </div>
               <div className="relative">
                 <select 
-                  className="w-full bg-slate-50 dark:bg-black/30 border border-slate-300 dark:border-white/10 rounded-lg px-3 py-2 pl-9 text-sm text-slate-900 dark:text-white focus:outline-none focus:border-blue-500/50 appearance-none"
+                  className="w-full bg-slate-100 dark:bg-black/30 border border-slate-300 dark:border-white/10 rounded-lg px-3 py-2 pl-9 text-sm text-slate-900 dark:text-white focus:outline-none focus:border-blue-500/50 appearance-none"
                   value={assigneeId}
                   onChange={(e) => handleAssign(e.target.value)}
                 >
@@ -555,7 +554,7 @@ export const TicketDetailView = ({ ticket, onBack }) => {
            <div className="pt-4 border-t border-slate-200 dark:border-white/5">
               <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider block mb-2">Add Update</label>
               <textarea 
-                className="w-full bg-slate-50 dark:bg-black/30 border border-slate-300 dark:border-white/10 rounded-lg px-3 py-3 text-sm text-slate-900 dark:text-white focus:outline-none focus:border-blue-500/50 min-h-[120px] resize-none"
+                className="w-full bg-slate-100 dark:bg-black/30 border border-slate-300 dark:border-white/10 rounded-lg px-3 py-3 text-sm text-slate-900 dark:text-white focus:outline-none focus:border-blue-500/50 min-h-[120px] resize-none"
                 placeholder="Type your response here..."
                 value={newUpdate}
                 onChange={(e) => setNewUpdate(e.target.value)}
