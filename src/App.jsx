@@ -145,27 +145,32 @@ function AppContent({ session }) {
   const [selectedTicket, setSelectedTicket] = useState(null);
   const [users, setUsers] = useState([]);
 
-  // --- CORE ENGINE: AUTO-PROVISIONING (FIXED FOR 406 ERRORS) ---
+  // --- CORE ENGINE: AUTO-PROVISIONING (FIXED - NO DEATH LOOPS) ---
   const checkAndProvisionAccess = async (user) => {
     if (!user?.email || tenants.length === 0) return;
 
     const domain = user.email.split('@')[1]?.toLowerCase();
     if (!domain) return;
 
-    // 1. Defensively check access using maybeSingle to avoid 406 fetch triggers
-    const { data: access } = await supabase
+    // 1. Defensively check access. 
+    // FIXED: Use limit(1) instead of maybeSingle to avoid crashes if duplicate rows exist.
+    const { data: existingAccess } = await supabase
       .from('tenant_access')
       .select('id')
       .eq('user_id', user.id)
-      .maybeSingle();
+      .limit(1);
 
-    if (access) return; 
+    // If access exists (array is not empty), we are done. Stop here.
+    if (existingAccess && existingAccess.length > 0) return; 
+
+    console.log("Provisioning new user access for:", domain);
 
     // 2. Gardener Schools Case (Group Admin)
     if (domain === 'gardenerschools.com') {
       const accessRows = tenants.map(t => ({ user_id: user.id, tenant_id: t.id }));
+      
       await Promise.all([
-        supabase.from('tenant_access').upsert(accessRows),
+        supabase.from('tenant_access').upsert(accessRows, { onConflict: 'user_id, tenant_id' }),
         supabase.from('profiles').upsert({ 
           id: user.id, 
           email: user.email, 
@@ -173,7 +178,9 @@ function AppContent({ session }) {
           role: 'admin' 
         })
       ]);
-      window.location.reload();
+      
+      // FIXED: Refresh state instead of reloading page
+      fetchGlobals(); 
       return;
     }
 
@@ -192,8 +199,9 @@ function AppContent({ session }) {
         })
       ]);
       
+      // FIXED: Smooth transition instead of hard reload
       setCurrentTenant(matchingTenant);
-      window.location.reload(); 
+      fetchGlobals();
     }
   };
 
