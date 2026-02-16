@@ -15,23 +15,23 @@ export const getIcon = (name, size = 18, className = "") => {
   return <IconComponent size={size} className={className} />;
 };
 
-// --- COMPONENT: GLASS CARD (Bento Style Upgrade) ---
+// --- COMPONENT: GLASS CARD (High-Def Bento Upgrade) ---
 export const GlassCard = ({ children, className = "", hover = false, onClick }) => (
   <div 
     onClick={onClick}
     className={`
       transition-all duration-300 relative overflow-hidden
-      /* DARK MODE (Glassy) */
+      /* DARK MODE (Cyberpunk Glass) */
       dark:bg-[#1e293b]/60 dark:backdrop-blur-md dark:border-white/5 dark:shadow-xl
       
-      /* LIGHT MODE (Bento / Clean) */
-      bg-white border border-slate-200 shadow-sm
+      /* LIGHT MODE (Technical Bento) */
+      bg-white border border-slate-300 shadow-[0px_2px_3px_-1px_rgba(0,0,0,0.1),0px_1px_0px_0px_rgba(25,28,33,0.02),0px_0px_0px_1px_rgba(25,28,33,0.08)]
       
       /* SHARED */
-      rounded-2xl
+      rounded-xl
       
       /* HOVER EFFECTS */
-      ${hover ? 'cursor-pointer hover:-translate-y-1 hover:shadow-lg dark:hover:bg-[#1e293b]/80 dark:hover:border-blue-500/30 hover:border-blue-500/30' : ''}
+      ${hover ? 'cursor-pointer hover:-translate-y-1 hover:shadow-lg dark:hover:bg-[#1e293b]/80 dark:hover:border-blue-500/30 hover:border-blue-400/50' : ''}
       ${className}
     `}
   >
@@ -39,7 +39,7 @@ export const GlassCard = ({ children, className = "", hover = false, onClick }) 
   </div>
 );
 
-// --- COMPONENT: STAT CARD (Bento Style Upgrade) ---
+// --- COMPONENT: STAT CARD (Bento Style) ---
 export const StatCard = ({ label, value, icon: Icon, trend, trendUp }) => (
   <GlassCard hover={true} className="p-6">
     <div className="flex justify-between items-start mb-4">
@@ -62,12 +62,12 @@ export const StatCard = ({ label, value, icon: Icon, trend, trendUp }) => (
   </GlassCard>
 );
 
-// --- COMPONENT: TICKET ROW (Bento Style Upgrade) ---
+// --- COMPONENT: TICKET ROW (Technical / Sharp) ---
 export const TicketRow = ({ ticket, onClick }) => (
   <div 
     onClick={onClick}
     className="group flex items-center justify-between p-4 rounded-xl transition-all cursor-pointer border
-      bg-white border-slate-100 hover:border-blue-300 hover:shadow-md
+      bg-white border-slate-300 shadow-sm hover:border-blue-400 hover:shadow-md
       dark:bg-[#1e293b]/40 dark:border-white/5 dark:hover:bg-[#1e293b]/80 dark:hover:border-blue-500/30"
   >
     <div className="flex items-center gap-4">
@@ -81,7 +81,9 @@ export const TicketRow = ({ ticket, onClick }) => (
       <div>
         <h4 className="font-semibold text-slate-900 dark:text-slate-200 group-hover:text-blue-600 dark:group-hover:text-white transition-colors">{ticket.subject}</h4>
         <div className="flex items-center gap-3 text-xs text-slate-500 mt-1">
-          <span className="font-mono">{ticket.ticket_number ? `${new Date(ticket.created_at).toLocaleString('default', { month: 'short', year: '2-digit' }).toUpperCase()}-${ticket.ticket_number}` : `#${ticket.id.slice(0,4)}`}</span>
+          <span className="font-mono tracking-tight font-bold text-slate-500 bg-slate-100 dark:bg-white/10 px-1.5 py-0.5 rounded text-xs border border-slate-200 dark:border-transparent">
+            {ticket.ticket_number ? `${new Date(ticket.created_at).toLocaleString('default', { month: 'short', year: '2-digit' }).toUpperCase()}-${ticket.ticket_number}` : `#${ticket.id.slice(0,4)}`}
+          </span>
           <span>•</span>
           <span>{ticket.requester}</span>
           <span>•</span>
@@ -118,12 +120,12 @@ export const NavItem = ({ icon: Icon, label, active, onClick, count, collapsed }
       w-full flex items-center gap-3 px-3 py-2.5 rounded-lg mb-1 transition-all duration-200 group
       ${active 
         ? 'bg-blue-600 text-white shadow-lg shadow-blue-900/20' 
-        : 'text-slate-400 hover:bg-white/5 hover:text-slate-200'}
+        : 'text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-white/5 hover:text-slate-900 dark:hover:text-slate-200'}
       ${collapsed ? 'justify-center px-0' : ''}
     `}
     title={collapsed ? label : ''}
   >
-    <div className={`relative ${active ? 'text-white' : 'text-slate-400 group-hover:text-slate-200'}`}>
+    <div className={`relative ${active ? 'text-white' : 'text-slate-400 group-hover:text-slate-900 dark:group-hover:text-slate-200'}`}>
       <Icon size={20} strokeWidth={active ? 2.5 : 2} />
       {count > 0 && (
         <span className="absolute -top-1.5 -right-1.5 flex h-4 w-4 items-center justify-center rounded-full bg-rose-500 text-[10px] font-bold text-white shadow-sm ring-2 ring-[#0f172a]">
@@ -137,7 +139,7 @@ export const NavItem = ({ icon: Icon, label, active, onClick, count, collapsed }
       </span>
     )}
     {!collapsed && count > 0 && !active && (
-      <span className="ml-auto text-xs font-semibold bg-white/10 px-2 py-0.5 rounded-full text-slate-300">
+      <span className="ml-auto text-xs font-semibold bg-slate-100 dark:bg-white/10 px-2 py-0.5 rounded-full text-slate-600 dark:text-slate-300">
         {count}
       </span>
     )}
@@ -149,10 +151,10 @@ export const Modal = ({ isOpen, onClose, title, children }) => {
   if (!isOpen) return null;
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
-      <div className="bg-[#1e293b] border border-white/10 rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden animate-in zoom-in-95 duration-200">
-        <div className="px-6 py-4 border-b border-white/5 flex justify-between items-center bg-[#0f172a]/50">
-          <h3 className="text-lg font-bold text-white">{title}</h3>
-          <button onClick={onClose} className="text-slate-400 hover:text-white transition-colors">
+      <div className="bg-white dark:bg-[#1e293b] border border-slate-200 dark:border-white/10 rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden animate-in zoom-in-95 duration-200">
+        <div className="px-6 py-4 border-b border-slate-200 dark:border-white/5 flex justify-between items-center bg-slate-50 dark:bg-[#0f172a]/50">
+          <h3 className="text-lg font-bold text-slate-900 dark:text-white">{title}</h3>
+          <button onClick={onClose} className="text-slate-400 hover:text-slate-600 dark:hover:text-white transition-colors">
             <X size={20} />
           </button>
         </div>
@@ -379,11 +381,11 @@ export const TicketDetailView = ({ ticket, onBack }) => {
         title={`Mark as ${pendingStatus}`}
       >
          <div className="space-y-4">
-            <p className="text-slate-300 text-sm">Please explain how this issue was resolved. This will be sent to the requester.</p>
+            <p className="text-slate-500 dark:text-slate-300 text-sm">Please explain how this issue was resolved. This will be sent to the requester.</p>
             <div>
                <label className="text-xs font-bold text-slate-500 uppercase">Resolution Notes</label>
                <textarea 
-                  className="w-full bg-black/30 border border-white/10 rounded-lg p-3 text-white focus:border-emerald-500/50 outline-none mt-2 h-32 resize-none"
+                  className="w-full bg-slate-100 dark:bg-black/30 border border-slate-300 dark:border-white/10 rounded-lg p-3 text-slate-900 dark:text-white focus:border-emerald-500/50 outline-none mt-2 h-32 resize-none"
                   placeholder="e.g. Replaced HDMI cable in Room 3..."
                   value={resolutionNote}
                   onChange={e => setResolutionNote(e.target.value)}
@@ -402,37 +404,37 @@ export const TicketDetailView = ({ ticket, onBack }) => {
       {/* LEFT COL: INFO */}
       <div className="lg:col-span-2 flex flex-col h-full gap-4 overflow-hidden">
         <div className="flex items-start gap-4 mb-2 shrink-0">
-          <button onClick={onBack} className="p-2 -ml-2 text-slate-400 hover:text-white hover:bg-white/5 rounded-full transition-colors">
+          <button onClick={onBack} className="p-2 -ml-2 text-slate-400 hover:text-slate-600 dark:hover:text-white hover:bg-slate-200 dark:hover:bg-white/5 rounded-full transition-colors">
             <ArrowLeft size={20} />
           </button>
           <div className="flex-1">
              <div className="flex justify-between items-start">
-                <h1 className="text-2xl font-bold text-white leading-tight">{ticket.subject}</h1>
+                <h1 className="text-2xl font-bold text-slate-900 dark:text-white leading-tight">{ticket.subject}</h1>
                 {ticket.priority && (
                   <span className={`px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider border ${
-                    ticket.priority === 'Critical' ? 'bg-rose-500/20 text-rose-400 border-rose-500/30' :
-                    ticket.priority === 'High' ? 'bg-orange-500/20 text-orange-400 border-orange-500/30' :
-                    'bg-blue-500/20 text-blue-400 border-blue-500/30'
+                    ticket.priority === 'Critical' ? 'bg-rose-100 text-rose-700 border-rose-200 dark:bg-rose-500/20 dark:text-rose-400 dark:border-rose-500/30' :
+                    ticket.priority === 'High' ? 'bg-orange-100 text-orange-700 border-orange-200 dark:bg-orange-500/20 dark:text-orange-400 dark:border-orange-500/30' :
+                    'bg-blue-100 text-blue-700 border-blue-200 dark:bg-blue-500/20 dark:text-blue-400 dark:border-blue-500/30'
                   }`}>
                     {ticket.priority} Priority
                   </span>
                 )}
              </div>
-             <div className="flex items-center gap-3 mt-2 text-sm text-slate-400">
-               <span className="font-mono bg-white/5 px-1.5 rounded text-xs">
+             <div className="flex items-center gap-3 mt-2 text-sm text-slate-500 dark:text-slate-400">
+               <span className="font-mono bg-slate-100 dark:bg-white/5 px-1.5 rounded text-xs border border-slate-200 dark:border-transparent">
                  {ticket.ticket_number ? `${new Date(ticket.created_at).toLocaleString('default', { month: 'short', year: '2-digit' }).toUpperCase()}-${ticket.ticket_number}` : `#${ticket.id.slice(0,4)}`}
                </span>
-               <span className="w-1 h-1 bg-slate-600 rounded-full"></span>
+               <span className="w-1 h-1 bg-slate-400 dark:bg-slate-600 rounded-full"></span>
                <span>{new Date(ticket.created_at).toLocaleDateString()}</span>
-               <span className="w-1 h-1 bg-slate-600 rounded-full"></span>
-               <span className="text-blue-400">{ticket.category}</span>
+               <span className="w-1 h-1 bg-slate-400 dark:bg-slate-600 rounded-full"></span>
+               <span className="text-blue-600 dark:text-blue-400">{ticket.category}</span>
             </div>
           </div>
         </div>
 
         <GlassCard className="p-6 border-l-4 border-l-blue-500 shrink-0">
-           <div className="flex items-center gap-3 mb-4 border-b border-white/5 pb-4 dark:border-white/5 border-slate-100">
-               <div className="w-8 h-8 rounded-full bg-slate-700 flex items-center justify-center text-xs border border-white/10 font-bold text-white">
+           <div className="flex items-center gap-3 mb-4 border-b border-slate-200 dark:border-white/5 pb-4">
+               <div className="w-8 h-8 rounded-full bg-slate-200 dark:bg-slate-700 flex items-center justify-center text-xs border border-slate-300 dark:border-white/10 font-bold text-slate-700 dark:text-white">
                   {ticket.requester ? ticket.requester.charAt(0) : 'U'}
                </div>
                <div>
@@ -447,21 +449,21 @@ export const TicketDetailView = ({ ticket, onBack }) => {
            <div className="flex items-center gap-2 text-xs font-bold text-slate-500 uppercase tracking-wider mb-4">
              <Activity size={12} /> Activity Log
            </div>
-           {updates.length === 0 && <div className="text-center py-8 text-slate-500 italic text-sm border border-white/5 rounded-xl border-dashed">No updates yet.</div>}
+           {updates.length === 0 && <div className="text-center py-8 text-slate-500 italic text-sm border border-dashed border-slate-300 dark:border-white/5 rounded-xl">No updates yet.</div>}
            {updates.map(update => (
              <div key={update.id} className="flex gap-4 group">
                 <div className="flex flex-col items-center">
-                   <div className="w-8 h-8 rounded-full bg-slate-800 border border-white/10 flex items-center justify-center text-xs text-slate-400 font-bold mt-1">
+                   <div className="w-8 h-8 rounded-full bg-slate-200 dark:bg-slate-800 border border-slate-300 dark:border-white/10 flex items-center justify-center text-xs text-slate-600 dark:text-slate-400 font-bold mt-1">
                       {update.profile?.avatar_initials || '?'}
                    </div>
-                   <div className="w-px h-full bg-white/5 my-2 group-last:hidden"></div>
+                   <div className="w-px h-full bg-slate-200 dark:bg-white/5 my-2 group-last:hidden"></div>
                 </div>
                 <div className="flex-1 pb-6">
                    <div className="flex items-baseline justify-between mb-1">
-                      <span className="text-sm font-semibold text-slate-300">{update.profile?.full_name || 'System'}</span>
+                      <span className="text-sm font-semibold text-slate-700 dark:text-slate-300">{update.profile?.full_name || 'System'}</span>
                       <span className="text-xs text-slate-500">{new Date(update.created_at).toLocaleString()}</span>
                    </div>
-                   <div className="text-slate-300 text-sm bg-white/5 p-3 rounded-lg rounded-tl-none border border-white/5 shadow-sm">
+                   <div className="text-slate-700 dark:text-slate-300 text-sm bg-white dark:bg-white/5 p-3 rounded-lg rounded-tl-none border border-slate-200 dark:border-white/5 shadow-sm">
                       {update.content}
                    </div>
                 </div>
@@ -476,7 +478,7 @@ export const TicketDetailView = ({ ticket, onBack }) => {
            <div>
               <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider block mb-2">Current Status</label>
               <select 
-                className="w-full bg-slate-100 dark:bg-black/30 border border-slate-200 dark:border-white/10 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:border-blue-500/50"
+                className="w-full bg-slate-50 dark:bg-black/30 border border-slate-300 dark:border-white/10 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:border-blue-500/50"
                 value={status}
                 onChange={(e) => handleStatusSelect(e.target.value)}
               >
@@ -488,14 +490,14 @@ export const TicketDetailView = ({ ticket, onBack }) => {
               <div className="flex justify-between items-center mb-2">
                 <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Assignee</label>
                 {assigneeId !== currentUser?.id && (
-                  <button onClick={assignToMe} className="text-[10px] bg-blue-600/20 hover:bg-blue-600 hover:text-white text-blue-400 px-2 py-1 rounded transition-colors uppercase font-bold">
+                  <button onClick={assignToMe} className="text-[10px] bg-blue-100 dark:bg-blue-600/20 hover:bg-blue-600 hover:text-white text-blue-600 dark:text-blue-400 px-2 py-1 rounded transition-colors uppercase font-bold">
                     Take Ownership
                   </button>
                 )}
               </div>
               <div className="relative">
                 <select 
-                  className="w-full bg-slate-100 dark:bg-black/30 border border-slate-200 dark:border-white/10 rounded-lg px-3 py-2 pl-9 text-sm text-slate-900 dark:text-white focus:outline-none focus:border-blue-500/50 appearance-none"
+                  className="w-full bg-slate-50 dark:bg-black/30 border border-slate-300 dark:border-white/10 rounded-lg px-3 py-2 pl-9 text-sm text-slate-900 dark:text-white focus:outline-none focus:border-blue-500/50 appearance-none"
                   value={assigneeId}
                   onChange={(e) => handleAssign(e.target.value)}
                 >
@@ -509,7 +511,7 @@ export const TicketDetailView = ({ ticket, onBack }) => {
            <div className="pt-4 border-t border-slate-200 dark:border-white/5">
               <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider block mb-2">Add Update</label>
               <textarea 
-                className="w-full bg-slate-100 dark:bg-black/30 border border-slate-200 dark:border-white/10 rounded-lg px-3 py-3 text-sm text-slate-900 dark:text-white focus:outline-none focus:border-blue-500/50 min-h-[120px] resize-none"
+                className="w-full bg-slate-50 dark:bg-black/30 border border-slate-300 dark:border-white/10 rounded-lg px-3 py-3 text-sm text-slate-900 dark:text-white focus:outline-none focus:border-blue-500/50 min-h-[120px] resize-none"
                 placeholder="Type your response here..."
                 value={newUpdate}
                 onChange={(e) => setNewUpdate(e.target.value)}
