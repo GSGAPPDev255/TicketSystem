@@ -1,3 +1,4 @@
+// src/App.jsx
 import React, { useState, useEffect } from 'react';
 import { 
   LayoutDashboard, Ticket, PlusCircle, Users, Settings, Book, Building, 
@@ -130,7 +131,7 @@ function Sidebar({ activeView, onNavigate, session, profile, myTicketCount, isMo
 
 // --- MAIN CONTENT LOGIC ---
 function AppContent({ session }) {
-  const { currentTenant, tenants, setCurrentTenant } = useTenant();
+  const { currentTenant, tenants, setCurrentTenant, refreshTenants } = useTenant(); // Added refreshTenants
   const [profile, setProfile] = useState(null); 
   const [activeView, setActiveView] = useState('dashboard');
   const [myTicketCount, setMyTicketCount] = useState(0);
@@ -145,63 +146,75 @@ function AppContent({ session }) {
   const [selectedTicket, setSelectedTicket] = useState(null);
   const [users, setUsers] = useState([]);
 
-  // --- CORE ENGINE: AUTO-PROVISIONING (FIXED - NO DEATH LOOPS) ---
+  // --- CORE ENGINE: AUTO-PROVISIONING (FIXED FOR NEW USERS) ---
   const checkAndProvisionAccess = async (user) => {
-    if (!user?.email || tenants.length === 0) return;
+    if (!user?.email) return;
 
     const domain = user.email.split('@')[1]?.toLowerCase();
     if (!domain) return;
 
-    // 1. Defensively check access. 
-    // FIXED: Use limit(1) instead of maybeSingle to avoid crashes if duplicate rows exist.
+    // 1. Defensively check access.
     const { data: existingAccess } = await supabase
       .from('tenant_access')
       .select('id')
       .eq('user_id', user.id)
       .limit(1);
 
-    // If access exists (array is not empty), we are done. Stop here.
+    // If access exists (array is not empty), we are done.
     if (existingAccess && existingAccess.length > 0) return; 
 
     console.log("Provisioning new user access for:", domain);
 
     // 2. Gardener Schools Case (Group Admin)
     if (domain === 'gardenerschools.com') {
-      const accessRows = tenants.map(t => ({ user_id: user.id, tenant_id: t.id }));
+      // Fetch all tenants directly since Context might be empty for new users
+      const { data: allTenants } = await supabase.from('tenants').select('id');
       
-      await Promise.all([
-        supabase.from('tenant_access').upsert(accessRows, { onConflict: 'user_id, tenant_id' }),
-        supabase.from('profiles').upsert({ 
-          id: user.id, 
-          email: user.email, 
-          full_name: user.user_metadata?.full_name || 'Group Admin',
-          role: 'admin' 
-        })
-      ]);
-      
-      // FIXED: Refresh state instead of reloading page
-      fetchGlobals(); 
-      return;
+      if (allTenants) {
+        const accessRows = allTenants.map(t => ({ user_id: user.id, tenant_id: t.id }));
+        
+        await Promise.all([
+          supabase.from('tenant_access').upsert(accessRows, { onConflict: 'user_id, tenant_id' }),
+          supabase.from('profiles').upsert({ 
+            id: user.id, 
+            email: user.email, 
+            full_name: user.user_metadata?.full_name || user.user_metadata?.name || 'Group Admin',
+            role: 'admin' 
+          })
+        ]);
+        await refreshTenants(); // Refresh the context so UI updates
+        fetchGlobals();
+        return; 
+      }
     }
 
-    // 3. School Specific Case (e.g. kewhouseschool.com)
-    const matchingTenant = tenants.find(t => t.domain?.toLowerCase() === domain);
+    // 3. School Specific Case (The "Chicken and Egg" Fix)
+    // We query the DB directly because the 'tenants' context is empty for new users.
+    const { data: matchingTenant } = await supabase
+      .from('tenants')
+      .select('*')
+      .ilike('domain', domain) 
+      .maybeSingle();
     
     if (matchingTenant) {
+      console.log("Found matching tenant:", matchingTenant.name);
+      
       await Promise.all([
         supabase.from('tenant_access').insert({ user_id: user.id, tenant_id: matchingTenant.id }),
         supabase.from('profiles').upsert({
           id: user.id,
           email: user.email,
-          full_name: user.user_metadata?.full_name || 'New User',
+          full_name: user.user_metadata?.full_name || user.user_metadata?.name || 'New User',
           role: 'user',
           avatar_initials: (user.user_metadata?.full_name || 'US').substring(0,2).toUpperCase()
         })
       ]);
       
-      // FIXED: Smooth transition instead of hard reload
+      await refreshTenants(); // CRITICAL: Updates the 'tenants' list in Context
       setCurrentTenant(matchingTenant);
       fetchGlobals();
+    } else {
+        console.log("No tenant found for domain:", domain);
     }
   };
 
@@ -211,17 +224,15 @@ function AppContent({ session }) {
     if (isMobile) setSidebarOpen(false);
   };
 
-  // 1. FETCH PROFILE + TRIGGER PROVISIONING (ISOLATED TO PREVENT 406 BLOCKS)
+  // 1. FETCH PROFILE + TRIGGER PROVISIONING
   useEffect(() => {
     if (!session?.user?.id) return;
     
     const initUser = async () => {
-      // Step A: Force Provisioning First
-      if (tenants.length > 0) {
-        try {
-          await checkAndProvisionAccess(session.user);
-        } catch (e) { console.error("Provision error:", e); }
-      }
+      // Step A: Force Provisioning First (Pass user object directly)
+      try {
+        await checkAndProvisionAccess(session.user);
+      } catch (e) { console.error("Provision error:", e); }
 
       // Step B: Load Profile Second
       try {
@@ -231,7 +242,7 @@ function AppContent({ session }) {
     };
 
     initUser();
-  }, [session, tenants]);
+  }, [session]); // Removed 'tenants' dependency to stop loops
 
   // 2. MOBILE CHECK
   useEffect(() => {
