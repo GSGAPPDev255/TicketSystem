@@ -128,7 +128,7 @@ function Sidebar({ activeView, onNavigate, session, profile, myTicketCount, isMo
   );
 }
 
-// --- MAIN CONTENT LOGIC (WITH REWRITTEN BULLETPROOF PROVISIONING) ---
+// --- MAIN CONTENT LOGIC ---
 function AppContent({ session }) {
   const { currentTenant, tenants, setCurrentTenant } = useTenant();
   const [profile, setProfile] = useState(null); 
@@ -145,61 +145,60 @@ function AppContent({ session }) {
   const [selectedTicket, setSelectedTicket] = useState(null);
   const [users, setUsers] = useState([]);
 
-  // --- 🎯 NEW: AUTO-PROVISIONING ENGINE (FIXED FOR 406 ERRORS) ---
+  // --- 🎯 NEW: BULLETPROOF AUTO-PROVISIONING ---
   const checkAndProvisionAccess = async (user) => {
     if (!user?.email || tenants.length === 0) return;
 
-    // 1. Force check if access exists (Ignore 406 by using a simple count check)
-    const { count } = await supabase
-      .from('tenant_access')
-      .select('*', { count: 'exact', head: true })
-      .eq('user_id', user.id);
-
-    if (count > 0) return; // User already mapped
-
-    // 2. Extract domain
     const domain = user.email.split('@')[1]?.toLowerCase();
     if (!domain) return;
 
-    console.log(`🔍 New User Detection: ${user.email} from ${domain}`);
+    // 1. Defensively check access using maybeSingle to avoid 406 triggers
+    const { data: access } = await supabase
+      .from('tenant_access')
+      .select('id')
+      .eq('user_id', user.id)
+      .maybeSingle();
 
-    // 3. Special Case: Gardener Schools (Group Admin)
+    if (access) return; // User already mapped
+
+    console.log(`🔍 Provisioning check for domain: ${domain}`);
+
+    // 2. Group Admin Case
     if (domain === 'gardenerschools.com') {
       const accessRows = tenants.map(t => ({ user_id: user.id, tenant_id: t.id }));
-      await supabase.from('tenant_access').upsert(accessRows);
-      await supabase.from('profiles').upsert({ 
-        id: user.id, 
-        email: user.email, 
-        full_name: user.user_metadata?.full_name || 'Group Admin',
-        role: 'admin' 
-      });
+      await Promise.all([
+        supabase.from('tenant_access').upsert(accessRows),
+        supabase.from('profiles').upsert({ 
+          id: user.id, 
+          email: user.email, 
+          full_name: user.user_metadata?.full_name || 'Group Admin',
+          role: 'admin' 
+        })
+      ]);
+      window.location.reload();
       return;
     }
 
-    // 4. Standard Case: Match domain to Tenant (e.g. kewhouseschool.com)
+    // 3. School Specific Case (e.g. kewhouseschool.com)
     const matchingTenant = tenants.find(t => t.domain?.toLowerCase() === domain);
     
     if (matchingTenant) {
-      console.log(`✨ JIT Provisioning: Mapping user to ${matchingTenant.name}`);
+      console.log(`✨ JIT Provisioning: Creating access for ${matchingTenant.name}`);
       
-      // A. Provision Access
-      await supabase.from('tenant_access').insert({ 
-        user_id: user.id, 
-        tenant_id: matchingTenant.id 
-      });
-
-      // B. Create/Update Profile (Eliminates 406 Error)
-      await supabase.from('profiles').upsert({
-        id: user.id,
-        email: user.email,
-        full_name: user.user_metadata?.full_name || 'New User',
-        role: 'user',
-        avatar_initials: (user.user_metadata?.full_name || 'US').substring(0,2).toUpperCase()
-      });
+      // Perform both ops simultaneously to ensure profile exists before any data fetches
+      await Promise.all([
+        supabase.from('tenant_access').insert({ user_id: user.id, tenant_id: matchingTenant.id }),
+        supabase.from('profiles').upsert({
+          id: user.id,
+          email: user.email,
+          full_name: user.user_metadata?.full_name || 'New User',
+          role: 'user',
+          avatar_initials: (user.user_metadata?.full_name || 'US').substring(0,2).toUpperCase()
+        })
+      ]);
       
-      // C. Set Context & Reset state
       setCurrentTenant(matchingTenant);
-      window.location.reload(); // Reset to clear Supabase cache
+      window.location.reload(); // Clear Supabase fetch cache/state
     }
   };
 
@@ -214,12 +213,12 @@ function AppContent({ session }) {
     if (!session?.user?.id) return;
     
     const initUser = async () => {
-      // Step A: Provision FIRST (Don't wait for profile fetch)
+      // ALWAYS Provision first to solve 406 errors for new users
       if (tenants.length > 0) {
         await checkAndProvisionAccess(session.user);
       }
 
-      // Step B: Load Profile SECOND
+      // Load Profile - use maybeSingle so missing record doesn't throw visible 406 in some contexts
       const { data } = await supabase.from('profiles').select('*').eq('id', session.user.id).maybeSingle();
       if (data) setProfile(data);
     };
