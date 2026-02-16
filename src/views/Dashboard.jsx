@@ -39,20 +39,11 @@ export default function DashboardView({ tickets = [], loading, role, onRefresh, 
   // --- STATS ENGINE ---
   const openTickets = dateFilteredTickets.filter(t => t.status !== 'Resolved' && t.status !== 'Closed');
   const criticalTickets = dateFilteredTickets.filter(t => t.priority === 'Critical' && t.status !== 'Resolved');
-  const slaBreaches = dateFilteredTickets.filter(t => t.sla_breached); // Uses the DB flag we added in Phase 4
+  const slaBreaches = dateFilteredTickets.filter(t => t.sla_breached);
   const botResolved = dateFilteredTickets.filter(t => t.assignee === 'Nexus Bot' || t.assignee === 'GSG Bot');
   const myResolved = dateFilteredTickets.filter(t => t.status === 'Resolved' || t.status === 'Closed');
 
-  // --- CHART DATA PREP (New Feature) ---
-  
-  // A. Category Distribution
-  const categoryCount = dateFilteredTickets.reduce((acc, t) => {
-    acc[t.category] = (acc[t.category] || 0) + 1;
-    return acc;
-  }, {});
-  const categoryData = Object.keys(categoryCount).map(key => ({ name: key, count: categoryCount[key] }));
-
-  // B. Volume Last 7 Days
+  // --- CHART DATA PREP ---
   const last7Days = [...Array(7)].map((_, i) => {
     const d = new Date();
     d.setDate(d.getDate() - (6 - i));
@@ -64,10 +55,9 @@ export default function DashboardView({ tickets = [], loading, role, onRefresh, 
     tickets: safeTickets.filter(t => t.created_at.startsWith(date)).length
   }));
 
-  // C. Status Pie Chart
   const pieData = [
-    { name: 'Open', value: openTickets.length, color: '#3b82f6' }, // Blue
-    { name: 'Resolved', value: myResolved.length, color: '#10b981' }, // Green
+    { name: 'Open', value: openTickets.length, color: '#3b82f6' },
+    { name: 'Resolved', value: myResolved.length, color: '#10b981' },
   ];
 
   // --- VIEW LOGIC ---
@@ -98,7 +88,7 @@ export default function DashboardView({ tickets = [], loading, role, onRefresh, 
       break;
   }
 
-  // --- REPORTING ENGINE (Kept original logic) ---
+  // --- REPORTING ENGINE (PRESERVED) ---
   const generateReport = (type) => {
     let dataToExport = [];
     let fileName = `nexus_report_${type.toLowerCase()}_${new Date().toISOString().slice(0,10)}`;
@@ -183,27 +173,28 @@ export default function DashboardView({ tickets = [], loading, role, onRefresh, 
 
   return (
     <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4" onClick={() => showReportMenu && setShowReportMenu(false)}>
+      
       {/* HEADER & CONTROLS */}
       <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
         <div>
-          <h2 className="text-2xl font-bold text-white">{title}</h2>
-          <p className="text-slate-400">Overview & Historical Data</p>
+          <h2 className="text-2xl font-bold text-slate-900 dark:text-white transition-colors">{title}</h2>
+          <p className="text-slate-500 dark:text-slate-400">Overview & Historical Data</p>
         </div>
         
         <div className="flex flex-wrap gap-2 items-center">
            {/* TIME FILTERS */}
-           <div className="flex bg-[#1e293b] border border-white/10 rounded-lg p-1">
+           <div className="flex bg-white dark:bg-[#1e293b] border border-slate-300 dark:border-white/10 rounded-lg p-1 shadow-sm transition-colors">
               <select 
-                className="bg-transparent text-sm text-white px-2 py-1 outline-none cursor-pointer"
+                className="bg-transparent text-sm text-slate-700 dark:text-white px-2 py-1 outline-none cursor-pointer"
                 value={monthFilter}
                 onChange={(e) => setMonthFilter(e.target.value)}
               >
                 <option value="ALL">All Months</option>
                 {months.map((m, i) => <option key={m} value={i.toString()}>{m}</option>)}
               </select>
-              <div className="w-px bg-white/10 my-1"></div>
+              <div className="w-px bg-slate-200 dark:bg-white/10 my-1"></div>
               <select 
-                className="bg-transparent text-sm font-bold text-blue-400 px-2 py-1 outline-none cursor-pointer"
+                className="bg-transparent text-sm font-bold text-blue-600 dark:text-blue-400 px-2 py-1 outline-none cursor-pointer"
                 value={yearFilter}
                 onChange={(e) => setYearFilter(e.target.value)}
               >
@@ -215,26 +206,26 @@ export default function DashboardView({ tickets = [], loading, role, onRefresh, 
            <div className="relative">
              <button 
                onClick={(e) => { e.stopPropagation(); setShowReportMenu(!showReportMenu); }}
-               className={`p-2 bg-[#1e293b] hover:bg-[#2d3748] hover:text-white rounded-lg border border-white/10 transition-colors flex items-center gap-2 text-sm font-medium ${showReportMenu ? 'text-white border-blue-500' : 'text-slate-300'}`}
+               className={`p-2 bg-white dark:bg-[#1e293b] hover:bg-slate-50 dark:hover:bg-[#2d3748] rounded-lg border border-slate-300 dark:border-white/10 transition-colors flex items-center gap-2 text-sm font-medium shadow-sm ${showReportMenu ? 'text-blue-600 border-blue-500' : 'text-slate-600 dark:text-slate-300'}`}
              >
                <FileText size={16} /> <span>Reports</span> <ChevronDown size={14} />
              </button>
 
              {showReportMenu && (
-               <div className="absolute top-full right-0 mt-2 w-56 bg-[#1e293b] border border-white/10 rounded-xl shadow-2xl z-50 overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+               <div className="absolute top-full right-0 mt-2 w-56 bg-white dark:bg-[#1e293b] border border-slate-300 dark:border-white/10 rounded-xl shadow-2xl z-50 overflow-hidden animate-in fade-in zoom-in-95 duration-200">
                   <div className="py-1">
-                    <button onClick={() => generateReport('MY_ISSUES')} className="w-full text-left px-4 py-2.5 text-sm text-slate-300 hover:bg-blue-600 hover:text-white transition-colors flex items-center gap-2">
+                    <button onClick={() => generateReport('MY_ISSUES')} className="w-full text-left px-4 py-2.5 text-sm text-slate-600 dark:text-slate-300 hover:bg-blue-600 hover:text-white transition-colors flex items-center gap-2">
                       <Bot size={14} /> My Issues
                     </button>
-                    <div className="h-px bg-white/10 my-1"></div>
-                    <button onClick={() => generateReport('OPEN')} className="w-full text-left px-4 py-2.5 text-sm text-slate-300 hover:bg-blue-600 hover:text-white transition-colors flex items-center gap-2">
+                    <div className="h-px bg-slate-100 dark:bg-white/10 my-1"></div>
+                    <button onClick={() => generateReport('OPEN')} className="w-full text-left px-4 py-2.5 text-sm text-slate-600 dark:text-slate-300 hover:bg-blue-600 hover:text-white transition-colors flex items-center gap-2">
                       <TrendingUp size={14} /> All Open Issues
                     </button>
-                    <button onClick={() => generateReport('CLOSED')} className="w-full text-left px-4 py-2.5 text-sm text-slate-300 hover:bg-blue-600 hover:text-white transition-colors flex items-center gap-2">
+                    <button onClick={() => generateReport('CLOSED')} className="w-full text-left px-4 py-2.5 text-sm text-slate-600 dark:text-slate-300 hover:bg-blue-600 hover:text-white transition-colors flex items-center gap-2">
                       <Archive size={14} /> All Closed Issues
                     </button>
-                    <div className="h-px bg-white/10 my-1"></div>
-                    <button onClick={() => generateReport('ALL')} className="w-full text-left px-4 py-2.5 text-sm text-slate-300 hover:bg-blue-600 hover:text-white transition-colors flex items-center gap-2">
+                    <div className="h-px bg-slate-100 dark:bg-white/10 my-1"></div>
+                    <button onClick={() => generateReport('ALL')} className="w-full text-left px-4 py-2.5 text-sm text-slate-600 dark:text-slate-300 hover:bg-blue-600 hover:text-white transition-colors flex items-center gap-2">
                       <Download size={14} /> Full Data Dump (csv)
                     </button>
                   </div>
@@ -242,9 +233,9 @@ export default function DashboardView({ tickets = [], loading, role, onRefresh, 
              )}
            </div>
 
-           <div className="w-px h-8 bg-white/10 mx-2 hidden md:block"></div>
+           <div className="w-px h-8 bg-slate-200 dark:bg-white/10 mx-2 hidden md:block"></div>
 
-           <button onClick={onRefresh} className="p-2 bg-white/5 hover:bg-white/10 text-white rounded-lg border border-white/10 transition-colors">
+           <button onClick={onRefresh} className="p-2 bg-white dark:bg-white/5 hover:bg-slate-50 dark:hover:bg-white/10 text-slate-600 dark:text-white rounded-lg border border-slate-300 dark:border-white/10 transition-colors shadow-sm">
              <Clock size={20} className={loading ? "animate-spin" : ""} />
            </button>
            <button onClick={onNewTicket} className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-lg font-medium shadow-lg shadow-blue-900/20 transition-all flex items-center gap-2">
@@ -255,35 +246,30 @@ export default function DashboardView({ tickets = [], loading, role, onRefresh, 
 
       {/* STATS GRID */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-        {/* CARD 1: ACTIVE */}
-        <div onClick={() => setFilterMode('active')} className={`cursor-pointer transition-transform active:scale-95 ${filterMode === 'active' ? 'ring-2 ring-blue-500 rounded-2xl' : ''}`}>
+        <div onClick={() => setFilterMode('active')} className={`cursor-pointer transition-transform active:scale-95 ${filterMode === 'active' ? 'ring-2 ring-blue-500 rounded-xl' : ''}`}>
           <StatCard label="Open Tickets" value={openTickets.length} icon={LayoutDashboard} trend="Active Queue" trendUp={true} />
         </div>
 
-        {/* CARD 2: HISTORY */}
-        <div onClick={() => setFilterMode('resolved')} className={`cursor-pointer transition-transform active:scale-95 ${filterMode === 'resolved' ? 'ring-2 ring-emerald-500 rounded-2xl' : ''}`}>
+        <div onClick={() => setFilterMode('resolved')} className={`cursor-pointer transition-transform active:scale-95 ${filterMode === 'resolved' ? 'ring-2 ring-emerald-500 rounded-xl' : ''}`}>
           <StatCard label={`Resolved (${yearFilter})`} value={myResolved.length} icon={Archive} trend={monthFilter !== 'ALL' ? `In ${months[parseInt(monthFilter)]}` : "Total this year"} trendUp={true} />
         </div>
 
-        {/* CARD 3: SLA */}
-        <div onClick={() => setFilterMode('sla')} className={`cursor-pointer transition-transform active:scale-95 ${filterMode === 'sla' ? 'ring-2 ring-rose-500 rounded-2xl' : ''}`}>
+        <div onClick={() => setFilterMode('sla')} className={`cursor-pointer transition-transform active:scale-95 ${filterMode === 'sla' ? 'ring-2 ring-rose-500 rounded-xl' : ''}`}>
           <StatCard label="SLA Breaches" value={slaBreaches.length} icon={AlertCircle} trend="Target Missed" trendUp={slaBreaches.length === 0} />
         </div>
 
-        {/* CARD 4: BOT */}
-        <div onClick={() => setFilterMode('bot')} className={`cursor-pointer transition-transform active:scale-95 ${filterMode === 'bot' ? 'ring-2 ring-purple-500 rounded-2xl' : ''}`}>
+        <div onClick={() => setFilterMode('bot')} className={`cursor-pointer transition-transform active:scale-95 ${filterMode === 'bot' ? 'ring-2 ring-purple-500 rounded-xl' : ''}`}>
           <StatCard label="Bot Resolved" value={botResolved.length} icon={Bot} trend="AI Deflection" trendUp={true} />
         </div>
       </div>
 
-      {/* CHARTS ROW (Only for Admin/Tech, hidden for basic users) */}
+      {/* CHARTS ROW (Only for Admin/Tech) */}
       {role !== 'user' && (
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            {/* VOLUME TREND */}
             <GlassCard className="p-6 col-span-2">
                 <div className="flex items-center gap-2 mb-6">
-                    <TrendingUp size={20} className="text-blue-400" />
-                    <h3 className="text-sm font-bold text-slate-300 uppercase tracking-wider">7-Day Ticket Volume</h3>
+                    <TrendingUp size={20} className="text-blue-500" />
+                    <h3 className="text-sm font-bold text-slate-500 dark:text-slate-300 uppercase tracking-wider">7-Day Ticket Volume</h3>
                 </div>
                 <div className="h-64 w-full">
                     <ResponsiveContainer width="100%" height="100%">
@@ -294,11 +280,11 @@ export default function DashboardView({ tickets = [], loading, role, onRefresh, 
                                     <stop offset="95%" stopColor="#3b82f6" stopOpacity={0}/>
                                 </linearGradient>
                             </defs>
-                            <CartesianGrid strokeDasharray="3 3" stroke="#ffffff10" />
+                            <CartesianGrid strokeDasharray="3 3" strokeOpacity={0.1} />
                             <XAxis dataKey="date" stroke="#94a3b8" fontSize={12} tickLine={false} axisLine={false} />
                             <YAxis stroke="#94a3b8" fontSize={12} tickLine={false} axisLine={false} allowDecimals={false} />
                             <Tooltip 
-                                contentStyle={{ backgroundColor: '#1e293b', border: '1px solid #334155', borderRadius: '8px', color: '#fff' }}
+                                contentStyle={{ backgroundColor: '#1e293b', border: 'none', borderRadius: '8px', color: '#fff' }}
                                 itemStyle={{ color: '#60a5fa' }}
                             />
                             <Area type="monotone" dataKey="tickets" stroke="#3b82f6" strokeWidth={3} fillOpacity={1} fill="url(#colorTickets)" />
@@ -307,11 +293,10 @@ export default function DashboardView({ tickets = [], loading, role, onRefresh, 
                 </div>
             </GlassCard>
 
-            {/* CATEGORY PIE */}
             <GlassCard className="p-6">
                 <div className="flex items-center gap-2 mb-6">
-                    <PieIcon size={20} className="text-emerald-400" />
-                    <h3 className="text-sm font-bold text-slate-300 uppercase tracking-wider">Workload Status</h3>
+                    <PieIcon size={20} className="text-emerald-500" />
+                    <h3 className="text-sm font-bold text-slate-500 dark:text-slate-300 uppercase tracking-wider">Workload Status</h3>
                 </div>
                 <div className="h-64 w-full relative">
                     <ResponsiveContainer width="100%" height="100%">
@@ -328,12 +313,12 @@ export default function DashboardView({ tickets = [], loading, role, onRefresh, 
                                 ))}
                             </Pie>
                             <Tooltip 
-                                contentStyle={{ backgroundColor: '#1e293b', border: '1px solid #334155', borderRadius: '8px' }}
+                                contentStyle={{ backgroundColor: '#1e293b', border: 'none', borderRadius: '8px', color: '#fff' }}
                             />
                         </PieChart>
                     </ResponsiveContainer>
                     <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
-                        <span className="text-3xl font-bold text-white">{openTickets.length + myResolved.length}</span>
+                        <span className="text-3xl font-bold text-slate-900 dark:text-white">{openTickets.length + myResolved.length}</span>
                         <span className="text-xs text-slate-500 uppercase">Total</span>
                     </div>
                 </div>
@@ -345,12 +330,12 @@ export default function DashboardView({ tickets = [], loading, role, onRefresh, 
       <div className="space-y-4">
         <div className="flex items-center justify-between">
            <div className="flex items-center gap-2">
-              <h3 className="text-lg font-semibold text-white">{listTitle}</h3>
-              <span className="text-xs font-mono text-slate-500 bg-white/5 px-2 py-0.5 rounded-full">{displayedTickets.length}</span>
+              <h3 className="text-lg font-semibold text-slate-900 dark:text-white transition-colors">{listTitle}</h3>
+              <span className="text-xs font-mono text-slate-500 bg-slate-100 dark:bg-white/5 px-2 py-0.5 rounded-full">{displayedTickets.length}</span>
            </div>
            
            {filterMode !== 'active' && (
-             <button onClick={() => setFilterMode('active')} className="flex items-center gap-1 text-xs text-blue-400 hover:text-blue-300">
+             <button onClick={() => setFilterMode('active')} className="flex items-center gap-1 text-xs text-blue-500 hover:text-blue-400">
                <X size={12} /> Clear Filter
              </button>
            )}
@@ -360,12 +345,12 @@ export default function DashboardView({ tickets = [], loading, role, onRefresh, 
            {loading ? (
              <div className="text-center py-12 text-slate-500">Loading tickets...</div>
            ) : displayedTickets.length === 0 ? (
-             <div className="text-center py-12 border border-dashed border-white/10 rounded-xl">
-               <div className="w-12 h-12 bg-white/5 rounded-full flex items-center justify-center mx-auto mb-3 text-slate-500">
+             <div className="text-center py-12 border border-dashed border-slate-300 dark:border-white/10 rounded-xl">
+               <div className="w-12 h-12 bg-slate-100 dark:bg-white/5 rounded-full flex items-center justify-center mx-auto mb-3 text-slate-500">
                  {filterMode === 'resolved' ? <Archive size={24}/> : <Check size={24}/>}
                </div>
-               <p className="text-slate-400 font-medium">No tickets found.</p>
-               <p className="text-xs text-slate-500">
+               <p className="text-slate-500 dark:text-slate-400 font-medium">No tickets found.</p>
+               <p className="text-xs text-slate-400 dark:text-slate-500">
                  {filterMode === 'resolved' ? 'Try changing the date filter.' : 'Your queue is clear!'}
                </p>
              </div>
