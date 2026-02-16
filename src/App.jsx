@@ -128,7 +128,7 @@ function Sidebar({ activeView, onNavigate, session, profile, myTicketCount, isMo
   );
 }
 
-// --- MAIN CONTENT LOGIC (WITH AUTO-PROVISIONING) ---
+// --- MAIN CONTENT LOGIC (WITH REWRITTEN BULLETPROOF PROVISIONING) ---
 function AppContent({ session }) {
   const { currentTenant, tenants, setCurrentTenant } = useTenant();
   const [profile, setProfile] = useState(null); 
@@ -145,43 +145,61 @@ function AppContent({ session }) {
   const [selectedTicket, setSelectedTicket] = useState(null);
   const [users, setUsers] = useState([]);
 
-  // --- 🎯 NEW: AUTO-PROVISIONING ENGINE ---
+  // --- 🎯 NEW: AUTO-PROVISIONING ENGINE (FIXED FOR 406 ERRORS) ---
   const checkAndProvisionAccess = async (user) => {
-    if (!user?.email) return;
+    if (!user?.email || tenants.length === 0) return;
 
-    // 1. Check if user already has access records
-    const { data: existingAccess } = await supabase
+    // 1. Force check if access exists (Ignore 406 by using a simple count check)
+    const { count } = await supabase
       .from('tenant_access')
-      .select('id')
+      .select('*', { count: 'exact', head: true })
       .eq('user_id', user.id);
 
-    if (existingAccess && existingAccess.length > 0) return; 
+    if (count > 0) return; // User already mapped
 
     // 2. Extract domain
-    const domain = user.email.split('@')[1];
+    const domain = user.email.split('@')[1]?.toLowerCase();
     if (!domain) return;
 
-    // 3. Special Case: Gardener Schools (Super Admin Domain)
+    console.log(`🔍 New User Detection: ${user.email} from ${domain}`);
+
+    // 3. Special Case: Gardener Schools (Group Admin)
     if (domain === 'gardenerschools.com') {
-      console.log("🛠️ Group Staff Detected - Auto-assigning to all tenants");
       const accessRows = tenants.map(t => ({ user_id: user.id, tenant_id: t.id }));
-      await supabase.from('tenant_access').insert(accessRows);
-      await supabase.from('profiles').update({ role: 'admin' }).eq('id', user.id);
+      await supabase.from('tenant_access').upsert(accessRows);
+      await supabase.from('profiles').upsert({ 
+        id: user.id, 
+        email: user.email, 
+        full_name: user.user_metadata?.full_name || 'Group Admin',
+        role: 'admin' 
+      });
       return;
     }
 
-    // 4. Standard Case: Match domain to Tenant
-    const matchingTenant = tenants.find(t => t.domain?.toLowerCase() === domain.toLowerCase());
+    // 4. Standard Case: Match domain to Tenant (e.g. kewhouseschool.com)
+    const matchingTenant = tenants.find(t => t.domain?.toLowerCase() === domain);
     
     if (matchingTenant) {
       console.log(`✨ JIT Provisioning: Mapping user to ${matchingTenant.name}`);
+      
+      // A. Provision Access
       await supabase.from('tenant_access').insert({ 
         user_id: user.id, 
         tenant_id: matchingTenant.id 
       });
-      await supabase.from('profiles').update({ role: 'user' }).eq('id', user.id);
+
+      // B. Create/Update Profile (Eliminates 406 Error)
+      await supabase.from('profiles').upsert({
+        id: user.id,
+        email: user.email,
+        full_name: user.user_metadata?.full_name || 'New User',
+        role: 'user',
+        avatar_initials: (user.user_metadata?.full_name || 'US').substring(0,2).toUpperCase()
+      });
       
-      if (!currentTenant) setCurrentTenant(matchingTenant);
+      // C. Set Context & Reset state
+      setCurrentTenant(matchingTenant);
+      window.location.reload(); // Reset to clear Supabase cache
     }
   };
 
@@ -196,17 +214,20 @@ function AppContent({ session }) {
     if (!session?.user?.id) return;
     
     const initUser = async () => {
-      const { data } = await supabase.from('profiles').select('*').eq('id', session.user.id).single();
-      if (data) setProfile(data);
-
+      // Step A: Provision FIRST (Don't wait for profile fetch)
       if (tenants.length > 0) {
         await checkAndProvisionAccess(session.user);
       }
+
+      // Step B: Load Profile SECOND
+      const { data } = await supabase.from('profiles').select('*').eq('id', session.user.id).maybeSingle();
+      if (data) setProfile(data);
     };
 
     initUser();
   }, [session, tenants]);
 
+  // 2. MOBILE CHECK
   useEffect(() => {
     const checkMobile = () => setIsMobile(window.innerWidth < 1024);
     checkMobile();
@@ -214,6 +235,7 @@ function AppContent({ session }) {
     return () => window.removeEventListener('resize', checkMobile);
   }, []);
 
+  // 3. FETCH GLOBAL DATA
   const fetchGlobals = async () => {
     const [cats, depts, kb, allUsers, allAccess] = await Promise.all([
       supabase.from('categories').select('*').order('label'),
@@ -240,6 +262,7 @@ function AppContent({ session }) {
     fetchGlobals();
   }, []);
 
+  // 4. FETCH TICKETS
   const fetchTickets = async () => {
     if (!currentTenant) return;
     setLoading(true);
@@ -265,6 +288,7 @@ function AppContent({ session }) {
     fetchTickets();
   }, [currentTenant, activeView]); 
 
+  // 5. BADGE COUNTER
   useEffect(() => {
     if (!session?.user?.id) return;
     const fetchBadge = async () => {
@@ -281,6 +305,7 @@ function AppContent({ session }) {
     return () => supabase.removeChannel(sub);
   }, [session]);
 
+  // 6. HANDLE TICKET CREATION
   const handleCreateTicket = async (formData) => {
     const requesterId = session?.user?.id;
     const requesterName = profile?.full_name || session?.user?.user_metadata?.full_name || 'User'; 
@@ -411,7 +436,7 @@ function AppContent({ session }) {
       case 'settings': 
         return <SettingsView categories={categories} tenants={tenants} departments={departments} users={users} onUpdate={fetchGlobals} />;
       case 'tenants': 
-        return <TenantsView tenants={tenants} />;
+        return <TenantsView tenants={tenants} onUpdate={fetchGlobals} />;
       default: return <DashboardView tickets={tickets} />;
     }
   };
