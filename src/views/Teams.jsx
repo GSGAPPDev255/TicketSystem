@@ -6,18 +6,24 @@ import {
 } from 'lucide-react';
 import { GlassCard } from '../components/ui'; 
 
-export default function TeamsView({ departments = [] }) {
+export default function TeamsView({ departments = [], role = 'user', onUpdate }) {
   const [selectedDept, setSelectedDept] = useState(null);
   const [members, setMembers] = useState([]);
   const [loading, setLoading] = useState(false);
   const [isAdding, setIsAdding] = useState(false);
 
-  // --- AZURE SEARCH STATE (PRESERVED) ---
+  // --- ADMIN PERMISSIONS ---
+  const isAdmin = ['super_admin', 'admin', 'manager'].includes(role);
+
+  // --- AZURE SEARCH STATE ---
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState([]);
   const [isSearching, setIsSearching] = useState(false);
 
-  // --- EDIT TEAM STATE (NEW) ---
+  // --- TEAM MANAGEMENT STATE ---
+  const [isCreatingDept, setIsCreatingDept] = useState(false);
+  const [newDeptName, setNewDeptName] = useState('');
+  
   const [isEditingTeam, setIsEditingTeam] = useState(false);
   const [editTeamName, setEditTeamName] = useState('');
   const [editTeamEmail, setEditTeamEmail] = useState('');
@@ -49,7 +55,7 @@ export default function TeamsView({ departments = [] }) {
     setLoading(false);
   };
 
-  // 3. LIVE AZURE SEARCH (PRESERVED)
+  // 3. LIVE AZURE SEARCH
   useEffect(() => {
     const delayDebounceFn = setTimeout(async () => {
       if (searchQuery.length < 3) {
@@ -71,11 +77,10 @@ export default function TeamsView({ departments = [] }) {
     return () => clearTimeout(delayDebounceFn);
   }, [searchQuery]);
 
-  // 4. ADD MEMBER + SEND INVITE (PRESERVED)
+  // 4. ADD MEMBER + SEND INVITE
   const handleAddMember = async (azureUser) => {
     if (!selectedDept) return;
     
-    // Optimistic UI update
     setSearchQuery(''); 
     setSearchResults([]);
     setIsAdding(false);
@@ -121,8 +126,6 @@ export default function TeamsView({ departments = [] }) {
       } else {
          // Step D: Send Email Invite
          await sendInviteEmail(azureUser.email, azureUser.name, selectedDept.name);
-         
-         // Refresh list
          handleSelectDept(selectedDept);
       }
 
@@ -138,21 +141,16 @@ export default function TeamsView({ departments = [] }) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           to: email,
-          subject: `Welcome to the ${deptName} Team on Nexus`,
+          subject: `Welcome to the ${deptName} Team`,
           body: `
             <h3>Hello ${name},</h3>
             <p>You have been added to the <b>${deptName}</b> team on the Nexus Support Portal.</p>
-            <p>You can now access your dashboard to view and manage tickets.</p>
             <br/>
             <a href="${window.location.origin}" style="background-color: #2563eb; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px;">Go to Dashboard</a>
-            <br/><br/>
-            <p>Best regards,<br/>Nexus System</p>
           `
         })
       });
-    } catch (e) {
-      console.error("Failed to send invite email", e);
-    }
+    } catch (e) { console.error("Email failed", e); }
   };
 
   const handleRemoveMember = async (userId) => {
@@ -161,7 +159,16 @@ export default function TeamsView({ departments = [] }) {
     handleSelectDept(selectedDept);
   };
 
-  // --- TEAM EDIT LOGIC (NEW) ---
+  // --- ADMIN: CREATE DEPARTMENT ---
+  const handleCreateDept = async () => {
+      if (!newDeptName.trim()) return;
+      await supabase.from('departments').insert({ name: newDeptName });
+      setNewDeptName('');
+      setIsCreatingDept(false);
+      if (onUpdate) onUpdate(); 
+  };
+
+  // --- ADMIN: UPDATE / DELETE DEPARTMENT ---
   const handleUpdateTeam = async () => {
     if (!editTeamName.trim()) return;
 
@@ -177,11 +184,18 @@ export default function TeamsView({ departments = [] }) {
       alert(error.message);
     } else {
       setIsEditingTeam(false);
-      // Update local state without full reload
+      // Optimistic update
       const updatedDept = { ...selectedDept, name: editTeamName, team_email: editTeamEmail };
       setSelectedDept(updatedDept);
-      // We don't update the parent list instantly here, but it's fine for now
+      if (onUpdate) onUpdate();
     }
+  };
+
+  const handleDeleteDept = async () => {
+      if (!confirm('Delete this department? This will unlink all members and tickets.')) return;
+      await supabase.from('departments').delete().eq('id', selectedDept.id);
+      setSelectedDept(null);
+      if (onUpdate) onUpdate();
   };
 
   return (
@@ -189,7 +203,32 @@ export default function TeamsView({ departments = [] }) {
       
       {/* LEFT: DEPARTMENTS LIST */}
       <GlassCard className="col-span-1 p-4 flex flex-col gap-2 h-full">
-        <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2 px-2">Departments</h3>
+        <div className="flex justify-between items-center mb-2 px-2">
+            <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wider">Departments</h3>
+            {isAdmin && (
+                <button onClick={() => setIsCreatingDept(true)} className="text-slate-400 hover:text-white transition-colors">
+                    <Plus size={16} />
+                </button>
+            )}
+        </div>
+
+        {/* CREATE DEPT INPUT */}
+        {isCreatingDept && (
+            <div className="mb-2 p-2 bg-white/5 rounded-lg animate-in slide-in-from-left-2">
+                <input 
+                    autoFocus
+                    className="w-full bg-black/30 border border-white/10 rounded px-2 py-1 text-sm text-white mb-2 outline-none focus:border-blue-500"
+                    placeholder="Dept Name"
+                    value={newDeptName}
+                    onChange={e => setNewDeptName(e.target.value)}
+                />
+                <div className="flex gap-2">
+                    <button onClick={handleCreateDept} className="flex-1 bg-blue-600 text-white text-xs py-1 rounded">Save</button>
+                    <button onClick={() => setIsCreatingDept(false)} className="flex-1 bg-white/10 text-slate-300 text-xs py-1 rounded">Cancel</button>
+                </div>
+            </div>
+        )}
+
         <div className="flex-1 overflow-y-auto custom-scrollbar space-y-1">
           {departments.map(dept => (
              <button 
@@ -235,14 +274,17 @@ export default function TeamsView({ departments = [] }) {
                           <button onClick={handleUpdateTeam} className="px-3 py-1.5 bg-green-600 rounded text-xs font-bold text-white flex items-center gap-1 hover:bg-green-500"><Save size={12}/> Save</button>
                           <button onClick={() => setIsEditingTeam(false)} className="px-3 py-1.5 bg-slate-700 rounded text-xs font-bold text-slate-300 flex items-center gap-1 hover:bg-slate-600"><X size={12}/> Cancel</button>
                         </div>
+                        <button onClick={handleDeleteDept} className="text-xs text-rose-400 hover:underline text-left mt-2 flex items-center gap-1"><Trash2 size={10}/> Delete Department</button>
                       </div>
                     ) : (
                       <>
                          <div className="flex items-center gap-3">
                             <h2 className="text-3xl font-bold text-white">{selectedDept.name}</h2>
-                            <button onClick={() => setIsEditingTeam(true)} className="p-2 text-slate-500 hover:text-white transition-colors rounded-lg hover:bg-white/5">
-                              <Settings size={20} />
-                            </button>
+                            {isAdmin && (
+                                <button onClick={() => setIsEditingTeam(true)} className="p-2 text-slate-500 hover:text-white transition-colors rounded-lg hover:bg-white/5">
+                                    <Settings size={20} />
+                                </button>
+                            )}
                          </div>
                          {selectedDept.team_email && (
                             <div className="flex items-center gap-2 text-slate-400 mt-2">
@@ -255,9 +297,11 @@ export default function TeamsView({ departments = [] }) {
                     )}
                  </div>
                  
-                 <button onClick={() => setIsAdding(true)} className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg font-medium flex items-center gap-2 transition-colors shadow-lg shadow-emerald-900/20 shrink-0">
-                    <UserPlus size={18} /> Add Member
-                 </button>
+                 {isAdmin && (
+                     <button onClick={() => setIsAdding(true)} className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg font-medium flex items-center gap-2 transition-colors shadow-lg shadow-emerald-900/20 shrink-0">
+                        <UserPlus size={18} /> Add Member
+                     </button>
+                 )}
               </div>
 
               {/* MEMBERS GRID */}
@@ -271,9 +315,11 @@ export default function TeamsView({ departments = [] }) {
                           <h4 className="font-bold text-white truncate">{member.full_name}</h4>
                           <p className="text-xs text-slate-400 truncate">{member.email}</p>
                        </div>
-                       <button onClick={() => handleRemoveMember(member.id)} className="p-2 text-slate-500 hover:text-rose-400 opacity-0 group-hover:opacity-100 transition-all">
-                          <Trash2 size={16} />
-                       </button>
+                       {isAdmin && (
+                           <button onClick={() => handleRemoveMember(member.id)} className="p-2 text-slate-500 hover:text-rose-400 opacity-0 group-hover:opacity-100 transition-all">
+                              <Trash2 size={16} />
+                           </button>
+                       )}
                     </div>
                  ))}
                  {members.length === 0 && (
@@ -289,7 +335,7 @@ export default function TeamsView({ departments = [] }) {
          )}
       </div>
 
-      {/* ADD MEMBER MODAL (AZURE INTEGRATED) - PRESERVED */}
+      {/* ADD MEMBER MODAL (AZURE INTEGRATED) */}
       {isAdding && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
            <div className="bg-[#1e293b] border border-white/10 rounded-2xl shadow-2xl w-full max-w-md overflow-hidden animate-in zoom-in-95">
