@@ -1,42 +1,45 @@
 // src/views/Settings.jsx
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { supabase } from '../lib/supabase';
 import { 
   Building2, Search, Plus, Trash2, 
   Shield, Check, X, Filter, Briefcase, Building, Settings, 
-  ChevronRight, Crown, Laptop, User
+  ChevronRight, ChevronDown, Crown, Laptop, User, Globe
 } from 'lucide-react';
-// We will use standard divs instead of GlassCard to ensure the 'Fancy' look controls are local
-// import { GlassCard, getIcon } from '../components/ui'; 
-// Re-implementing a local getIcon for safety if you want to copy-paste cleanly
-const getIcon = (name, size=16) => {
-    const icons = { Briefcase, Building, Settings, Shield, Users: User, Network: Laptop };
+
+// --- INTERNAL HELPERS ---
+const getIcon = (name, size=16, className="") => {
+    const icons = { Briefcase, Building, Settings, Shield, Users: User, Network: Laptop, Globe };
     const Icn = icons[name] || Briefcase;
-    return <Icn size={size} />;
+    return <Icn size={size} className={className} />;
 };
 
-export default function SettingsView({ categories, tenants, users, departments = [], onUpdate }) {
-  // --- STATE (UNCHANGED) ---
-  const [searchTerm, setSearchTerm] = useState('');
-  const [deptFilter, setDeptFilter] = useState('ALL'); 
-  const [tenantFilter, setTenantFilter] = useState('ALL'); 
-  const [userDeptMap, setUserDeptMap] = useState({}); 
-  const [newCategory, setNewCategory] = useState('');
-  const [newCategoryIcon, setNewCategoryIcon] = useState('Briefcase'); 
-  const [newCategoryDepts, setNewCategoryDepts] = useState([]); 
-  const [isAddingCat, setIsAddingCat] = useState(false);
-  const [editingUser, setEditingUser] = useState(null);
-
-  // --- HELPERS (UNCHANGED) ---
-  const getInitials = (name) => {
+const getInitials = (name) => {
     if (!name) return '??';
     const parts = name.trim().split(/\s+/); 
     if (parts.length === 0) return '??';
     if (parts.length === 1) return parts[0].substring(0, 2).toUpperCase(); 
     return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
-  };
+};
 
-  // --- LOGIC (UNCHANGED) ---
+export default function SettingsView({ categories, tenants, users, departments = [], onUpdate }) {
+  // --- STATE ---
+  const [searchTerm, setSearchTerm] = useState('');
+  const [deptFilter, setDeptFilter] = useState('ALL'); 
+  const [tenantFilter, setTenantFilter] = useState('ALL'); 
+  const [userDeptMap, setUserDeptMap] = useState({}); 
+  
+  // Category State
+  const [newCategory, setNewCategory] = useState('');
+  const [newCategoryIcon, setNewCategoryIcon] = useState('Briefcase'); 
+  const [newCategoryDepts, setNewCategoryDepts] = useState([]); 
+  const [isAddingCat, setIsAddingCat] = useState(false);
+  const [isIconPickerOpen, setIsIconPickerOpen] = useState(false); // NEW: Dropdown state
+
+  // User Edit State
+  const [editingUser, setEditingUser] = useState(null);
+
+  // --- DATA FETCHING & ACTIONS ---
   useEffect(() => {
     const fetchMembers = async () => {
       const { data } = await supabase.from('department_members').select('*');
@@ -106,6 +109,7 @@ export default function SettingsView({ categories, tenants, users, departments =
     onUpdate();
   };
 
+  // --- FILTER LOGIC ---
   const filteredUsers = users.filter(user => {
     const matchesSearch = (user.full_name || '').toLowerCase().includes(searchTerm.toLowerCase()) 
                        || (user.email || '').toLowerCase().includes(searchTerm.toLowerCase());
@@ -115,12 +119,11 @@ export default function SettingsView({ categories, tenants, users, departments =
     return matchesSearch && matchesDept && matchesTenant;
   });
 
-  const availableIcons = ['Briefcase', 'Network', 'Building', 'Settings', 'Shield', 'Users'];
+  const availableIcons = ['Briefcase', 'Network', 'Building', 'Settings', 'Shield', 'Users', 'Globe'];
 
-  // --- UI COMPONENTS ---
-  // A wrapper to replace the "Box" look with a sleek panel
-  const Panel = ({ children, title, icon: Icon, action }) => (
-    <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden flex flex-col h-[calc(100vh-10rem)] transition-all duration-300 hover:shadow-md">
+  // --- UI COMPONENT: PANEL WRAPPER ---
+  const Panel = ({ children, title, icon: Icon, action, className = "" }) => (
+    <div className={`bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden flex flex-col transition-all duration-300 ${className}`}>
        <div className="px-6 py-5 border-b border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-white/5 flex justify-between items-center backdrop-blur-sm">
           <div className="flex items-center gap-3">
              <div className="p-2 bg-white dark:bg-slate-800 rounded-lg shadow-sm text-slate-500 dark:text-slate-400">
@@ -146,27 +149,19 @@ export default function SettingsView({ categories, tenants, users, departments =
              System <span className="text-transparent bg-clip-text bg-gradient-to-r from-blue-600 to-indigo-600">Configuration</span>
            </h1>
            <p className="text-slate-500 dark:text-slate-400 max-w-2xl text-lg">
-             Manage your organization's taxonomy, tenant environments, and user privileges from a single command center.
+             Manage your organization's taxonomy and user privileges.
            </p>
-        </div>
-        <div className="flex gap-3">
-           {/* Stat Pills could go here */}
-           <div className="px-4 py-2 bg-white dark:bg-slate-900 rounded-full border border-slate-200 dark:border-slate-800 shadow-sm text-xs font-semibold text-slate-600 dark:text-slate-300">
-              {users.length} Users
-           </div>
-           <div className="px-4 py-2 bg-white dark:bg-slate-900 rounded-full border border-slate-200 dark:border-slate-800 shadow-sm text-xs font-semibold text-slate-600 dark:text-slate-300">
-              {tenants.length} Tenants
-           </div>
         </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
         
-        {/* --- LEFT: CATEGORIES (3/12) --- */}
-        <div className="lg:col-span-3">
+        {/* --- LEFT: CATEGORIES (4/12) --- */}
+        <div className="lg:col-span-4 h-full">
            <Panel 
              title="Categories" 
              icon={Briefcase}
+             className="h-[calc(100vh-24rem)]" // Fixed height for scrolling
              action={
                <button onClick={() => setIsAddingCat(!isAddingCat)} className="p-2 hover:bg-blue-50 dark:hover:bg-blue-900/20 text-blue-600 rounded-full transition-colors">
                   {isAddingCat ? <X size={18}/> : <Plus size={18}/>}
@@ -177,26 +172,46 @@ export default function SettingsView({ categories, tenants, users, departments =
                  <div className="p-4 bg-slate-50 dark:bg-slate-800/50 rounded-xl border border-dashed border-blue-300 dark:border-blue-700 space-y-4 mb-4 animate-in slide-in-from-top-2">
                     <input 
                       autoFocus
-                      className="w-full text-sm p-2.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 focus:ring-2 focus:ring-blue-500/20 outline-none transition-all"
-                      placeholder="New Category Name..."
+                      className="w-full text-sm p-3 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 focus:ring-2 focus:ring-blue-500/20 outline-none transition-all"
+                      placeholder="Category Name..."
                       value={newCategory}
                       onChange={e => setNewCategory(e.target.value)}
                     />
                     
-                    <div className="flex gap-2 justify-between bg-white dark:bg-slate-900 p-2 rounded-lg border border-slate-100 dark:border-slate-700">
-                       {availableIcons.map(icon => (
-                         <button
-                           key={icon}
-                           onClick={() => setNewCategoryIcon(icon)}
-                           className={`p-2 rounded-md transition-all ${
-                             newCategoryIcon === icon 
-                               ? 'bg-blue-100 text-blue-600 dark:bg-blue-600 dark:text-white' 
-                               : 'text-slate-400 hover:text-slate-600'
-                           }`}
-                         >
-                           {getIcon(icon, 16)}
-                         </button>
-                       ))}
+                    {/* --- NEW: ICON PICKER DROPDOWN --- */}
+                    <div className="relative">
+                        <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1 block">Icon</label>
+                        <button 
+                            onClick={() => setIsIconPickerOpen(!isIconPickerOpen)}
+                            className="w-full flex items-center justify-between p-2.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-700 dark:text-slate-200 hover:border-blue-400 transition-colors"
+                        >
+                            <div className="flex items-center gap-2">
+                                {getIcon(newCategoryIcon, 18, "text-blue-500")}
+                                <span>{newCategoryIcon}</span>
+                            </div>
+                            <ChevronDown size={14} className="text-slate-400"/>
+                        </button>
+
+                        {/* DROPDOWN POPUP */}
+                        {isIconPickerOpen && (
+                            <>
+                                <div className="fixed inset-0 z-10" onClick={() => setIsIconPickerOpen(false)}/>
+                                <div className="absolute top-full left-0 right-0 mt-2 p-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg shadow-xl z-20 grid grid-cols-4 gap-2">
+                                    {availableIcons.map(icon => (
+                                        <button
+                                            key={icon}
+                                            onClick={() => { setNewCategoryIcon(icon); setIsIconPickerOpen(false); }}
+                                            className={`p-2 flex flex-col items-center gap-1 rounded-md transition-all hover:bg-slate-50 dark:hover:bg-slate-700 ${
+                                                newCategoryIcon === icon ? 'bg-blue-50 text-blue-600 ring-1 ring-blue-200' : 'text-slate-500'
+                                            }`}
+                                        >
+                                            {getIcon(icon, 20)}
+                                            <span className="text-[10px]">{icon}</span>
+                                        </button>
+                                    ))}
+                                </div>
+                            </>
+                        )}
                     </div>
 
                     <div className="space-y-2">
@@ -218,7 +233,7 @@ export default function SettingsView({ categories, tenants, users, departments =
                         </div>
                     </div>
 
-                    <button onClick={handleAddCategory} className="w-full bg-slate-900 dark:bg-white text-white dark:text-slate-900 text-xs font-bold py-2.5 rounded-lg hover:shadow-lg hover:scale-[1.02] transition-all">
+                    <button onClick={handleAddCategory} className="w-full bg-slate-900 dark:bg-white text-white dark:text-slate-900 text-xs font-bold py-3 rounded-lg hover:shadow-lg hover:scale-[1.02] transition-all">
                        Save Category
                     </button>
                  </div>
@@ -233,7 +248,6 @@ export default function SettingsView({ categories, tenants, users, departments =
                       <div>
                          <span className="block text-sm font-semibold text-slate-700 dark:text-slate-200">{cat.label}</span>
                          <div className="flex flex-wrap gap-1 mt-1.5">
-                             {/* LOGIC TO SHOW TAGS */}
                              {(() => {
                                let deptNames = [];
                                if (cat.department_ids && Array.isArray(cat.department_ids)) {
@@ -260,25 +274,9 @@ export default function SettingsView({ categories, tenants, users, departments =
            </Panel>
         </div>
 
-        {/* --- MIDDLE: TENANTS (2/12) --- */}
-        <div className="lg:col-span-2">
-           <Panel title="Tenants" icon={Building2}>
-              {tenants.map(t => (
-                <div key={t.id} className="group relative p-4 rounded-xl bg-gradient-to-br from-white to-slate-50 dark:from-slate-800 dark:to-slate-900 border border-slate-200 dark:border-slate-700 hover:border-purple-300 dark:hover:border-purple-500/50 transition-all">
-                   <div className="absolute top-4 right-4 w-2 h-2 rounded-full bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.6)]"></div>
-                   <p className="font-bold text-slate-800 dark:text-white text-sm mb-1">{t.name}</p>
-                   <div className="flex items-center gap-1.5 text-xs text-slate-500 font-mono bg-slate-100 dark:bg-black/20 px-2 py-1 rounded w-fit">
-                      <Shield size={10} /> {t.code || 'N/A'}
-                   </div>
-                   <p className="text-[10px] text-slate-400 mt-2 truncate opacity-0 group-hover:opacity-100 transition-opacity">{t.domain}</p>
-                </div>
-              ))}
-           </Panel>
-        </div>
-
-        {/* --- RIGHT: USERS (7/12) --- */}
-        <div className="lg:col-span-7">
-          <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden flex flex-col h-[calc(100vh-10rem)]">
+        {/* --- RIGHT: USERS (8/12 - EXPANDED) --- */}
+        <div className="lg:col-span-8 h-full">
+          <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden flex flex-col h-[calc(100vh-24rem)]">
               
               {/* TOOLBAR */}
               <div className="p-4 border-b border-slate-100 dark:border-slate-800 flex flex-col xl:flex-row gap-4 items-center bg-slate-50/30 dark:bg-white/5">
@@ -294,7 +292,6 @@ export default function SettingsView({ categories, tenants, users, departments =
                  </div>
                  
                  <div className="flex gap-2 w-full xl:w-auto">
-                    {/* Dept Filter */}
                     <div className="relative flex-1 xl:flex-none">
                        <select 
                          className="w-full pl-3 pr-8 py-2.5 text-xs font-semibold rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 focus:outline-none hover:border-blue-400 transition-colors appearance-none"
@@ -307,7 +304,6 @@ export default function SettingsView({ categories, tenants, users, departments =
                        <Filter className="absolute right-3 top-3 text-slate-400 pointer-events-none" size={14} />
                     </div>
 
-                    {/* Tenant Filter */}
                     <div className="relative flex-1 xl:flex-none">
                        <select 
                          className="w-full pl-3 pr-8 py-2.5 text-xs font-semibold rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 focus:outline-none hover:border-purple-400 transition-colors appearance-none"
@@ -342,7 +338,6 @@ export default function SettingsView({ categories, tenants, users, departments =
                        <div className="flex items-start justify-between">
                           <div className="flex gap-4 items-center">
                              
-                             {/* AVATAR */}
                              <div className={`w-12 h-12 rounded-full flex items-center justify-center font-bold text-lg shadow-sm ${
                                  isSuper ? 'bg-amber-100 text-amber-600 ring-2 ring-amber-500/30' : 
                                  isAdmin ? 'bg-purple-100 text-purple-600' : 'bg-slate-100 text-slate-500'
@@ -358,7 +353,6 @@ export default function SettingsView({ categories, tenants, users, departments =
                                 <p className="text-xs text-slate-500 font-medium">{user.email}</p>
                                 
                                 <div className="flex items-center gap-2 mt-2">
-                                   {/* ROLE BADGE */}
                                    <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wide border ${
                                       isSuper ? 'bg-amber-50 text-amber-700 border-amber-200' : 
                                       isAdmin ? 'bg-purple-50 text-purple-700 border-purple-200' : 
@@ -367,7 +361,6 @@ export default function SettingsView({ categories, tenants, users, departments =
                                       {user.role}
                                    </span>
                                    
-                                   {/* DEPT SELECTOR (Quick Action) */}
                                    <select 
                                       className="text-[10px] pl-2 pr-6 py-0.5 rounded-full border border-slate-200 dark:border-slate-700 bg-transparent text-slate-600 dark:text-slate-400 focus:outline-none focus:border-blue-500 hover:bg-slate-50 cursor-pointer"
                                       value={userDeptMap[user.id] || ''}
@@ -388,11 +381,9 @@ export default function SettingsView({ categories, tenants, users, departments =
                           </button>
                        </div>
 
-                       {/* EXPANDABLE EDIT AREA */}
                        {isEditing && (
                          <div className="mt-6 pt-6 border-t border-slate-100 dark:border-slate-800 animate-in fade-in slide-in-from-top-1">
                             <div className="grid grid-cols-2 gap-6">
-                               {/* ROLE EDIT */}
                                <div className="space-y-2">
                                   <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1">
                                     <Shield size={10}/> System Role
@@ -413,7 +404,6 @@ export default function SettingsView({ categories, tenants, users, departments =
                                   </div>
                                </div>
 
-                               {/* TENANT ACCESS TOGGLES */}
                                <div className="space-y-2">
                                   <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1">
                                     <Building2 size={10}/> Campus Access
@@ -460,6 +450,52 @@ export default function SettingsView({ categories, tenants, users, departments =
               </div>
           </div>
         </div>
+      </div>
+
+      {/* --- BOTTOM SECTION: TENANTS GRID --- */}
+      <div className="pt-6 border-t border-slate-200 dark:border-slate-800">
+         <div className="flex items-center gap-3 mb-6">
+            <div className="p-2 bg-purple-100 dark:bg-purple-900/20 text-purple-600 rounded-lg">
+                <Building2 size={20} />
+            </div>
+            <div>
+                <h3 className="text-lg font-bold text-slate-900 dark:text-white">Authorized Tenants</h3>
+                <p className="text-sm text-slate-500">Active environments and domain configurations.</p>
+            </div>
+         </div>
+         
+         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+            {tenants.map(t => (
+                <div key={t.id} className="group relative p-5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 hover:border-purple-400 dark:hover:border-purple-500 hover:shadow-lg transition-all duration-300">
+                    <div className="absolute top-4 right-4 flex items-center gap-2">
+                        <span className="w-2 h-2 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.4)] animate-pulse"></span>
+                    </div>
+                    
+                    <div className="mb-3">
+                        <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-purple-500 to-indigo-600 flex items-center justify-center text-white font-bold shadow-md">
+                            {t.name.substring(0,2).toUpperCase()}
+                        </div>
+                    </div>
+
+                    <h4 className="font-bold text-slate-900 dark:text-white">{t.name}</h4>
+                    <p className="text-xs text-slate-400 font-mono mt-1 mb-3">{t.domain}</p>
+                    
+                    <div className="flex items-center gap-2">
+                        <span className="text-[10px] font-bold px-2 py-1 bg-slate-100 dark:bg-slate-800 text-slate-500 rounded uppercase tracking-wider">
+                            Code: {t.code || 'N/A'}
+                        </span>
+                    </div>
+                </div>
+            ))}
+            
+            {/* Add Tenant Placeholder (Visual Only) */}
+            <button className="flex flex-col items-center justify-center p-5 rounded-xl border border-dashed border-slate-300 dark:border-slate-700 text-slate-400 hover:text-purple-600 hover:border-purple-400 hover:bg-purple-50 dark:hover:bg-purple-900/10 transition-all gap-2 group">
+                <div className="p-3 rounded-full bg-slate-100 dark:bg-slate-800 group-hover:bg-white dark:group-hover:bg-purple-900/30 transition-colors">
+                    <Plus size={20} />
+                </div>
+                <span className="text-xs font-bold uppercase tracking-wide">Add Tenant</span>
+            </button>
+         </div>
       </div>
     </div>
   );
