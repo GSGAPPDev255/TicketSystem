@@ -17,8 +17,10 @@ export default function SettingsView({ categories, tenants, users, departments =
   // CATEGORY EDIT STATE
   const [newCategory, setNewCategory] = useState('');
   const [newCategoryIcon, setNewCategoryIcon] = useState('Briefcase'); 
-  // CHANGED: Now storing an array of IDs
+  
+  // CHANGED: Switched from single string to Array for multiple departments
   const [newCategoryDepts, setNewCategoryDepts] = useState([]); 
+  
   const [isAddingCat, setIsAddingCat] = useState(false);
 
   // USER EDIT STATE
@@ -33,109 +35,105 @@ export default function SettingsView({ categories, tenants, users, departments =
     return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
   };
 
-  // --- INITIAL DATA SYNC ---
+  // 1. FETCH DEPARTMENT MEMBERSHIPS
   useEffect(() => {
-    if (users && departments) {
-      const map = {};
-      users.forEach(u => {
-        if (u.department) map[u.id] = u.department;
-      });
-      setUserDeptMap(map);
+    const fetchMembers = async () => {
+      const { data } = await supabase.from('department_members').select('*');
+      if (data) {
+        const map = {};
+        data.forEach(m => { map[m.user_id] = m.department_id; });
+        setUserDeptMap(map);
+      }
+    };
+    fetchMembers();
+  }, []);
+
+  // 2. TOGGLE TENANT ACCESS
+  const handleToggleAccess = async (userId, tenantId, hasAccess) => {
+    try {
+      if (hasAccess) {
+        await supabase.from('tenant_access').delete().match({ user_id: userId, tenant_id: tenantId });
+      } else {
+        await supabase.from('tenant_access').insert({ user_id: userId, tenant_id: tenantId });
+      }
+      onUpdate(); 
+    } catch (error) {
+      console.error("Access toggle failed:", error);
     }
-  }, [users, departments]);
+  };
 
-  // --- CATEGORY FUNCTIONS ---
+  // 3. UPDATE USER ROLE
+  const handleUpdateRole = async (userId, newRole) => {
+    await supabase.from('profiles').update({ role: newRole }).eq('id', userId);
+    setEditingUser(null);
+    onUpdate();
+  };
 
-  // NEW: Helper to toggle departments in the array
+  // 4. UPDATE USER DEPARTMENT
+  const handleUpdateDept = async (userId, newDeptId) => {
+    // A. Remove old
+    await supabase.from('department_members').delete().eq('user_id', userId);
+    
+    // B. Add new (if not "None")
+    if (newDeptId) {
+       await supabase.from('department_members').insert({ user_id: userId, department_id: newDeptId });
+    }
+    
+    // C. Update local state
+    setUserDeptMap(prev => ({ ...prev, [userId]: newDeptId }));
+  };
+
+  // --- NEW: CATEGORY DEPT TOGGLE ---
   const toggleCategoryDept = (deptId) => {
     setNewCategoryDepts(prev => {
-      if (prev.includes(deptId)) {
-        return prev.filter(id => id !== deptId);
-      } else {
-        return [...prev, deptId];
-      }
+      if (prev.includes(deptId)) return prev.filter(id => id !== deptId);
+      return [...prev, deptId];
     });
   };
 
+  // 5. ADD CATEGORY (Modified for Arrays)
   const handleAddCategory = async () => {
     if (!newCategory.trim()) return;
+    
+    // We send 'department_ids' as an array. 
+    // We also send 'default_department_id' as the FIRST selection for legacy compatibility if needed, 
+    // or just null if you fully migrated. I'll send both to be safe.
+    const primaryDept = newCategoryDepts.length > 0 ? newCategoryDepts[0] : null;
 
-    try {
-      const { data, error } = await supabase
-        .from('categories')
-        .insert([{
-          label: newCategory,
-          icon: newCategoryIcon,
-          // CHANGED: Sending array of IDs to the new column
-          department_ids: newCategoryDepts 
-        }])
-        .select();
+    await supabase.from('categories').insert({ 
+        label: newCategory, 
+        icon: newCategoryIcon,
+        default_department_id: primaryDept, // Legacy support
+        department_ids: newCategoryDepts      // New Array support
+    });
 
-      if (error) throw error;
-      
-      // Reset State
-      setNewCategory('');
-      setNewCategoryIcon('Briefcase');
-      setNewCategoryDepts([]); // Reset array
-      setIsAddingCat(false);
-      if (onUpdate) onUpdate(); // Refresh parent data
-    } catch (err) {
-      console.error('Error adding category:', err);
-      alert('Failed to add category');
-    }
+    setNewCategory('');
+    setNewCategoryDepts([]);
+    setNewCategoryIcon('Briefcase');
+    setIsAddingCat(false);
+    onUpdate();
   };
 
+  // 6. DELETE CATEGORY
   const handleDeleteCategory = async (id) => {
-    if (!confirm('Are you sure? This will affect ticket routing.')) return;
-    try {
-      const { error } = await supabase
-        .from('categories')
-        .delete()
-        .eq('id', id);
-      if (error) throw error;
-      if (onUpdate) onUpdate();
-    } catch (err) {
-      console.error('Error deleting category:', err);
-    }
-  };
-
-  // --- USER FUNCTIONS ---
-  const handleUpdateUserDept = async (userId, deptName) => {
-    // Optimistic Update
-    setUserDeptMap(prev => ({ ...prev, [userId]: deptName }));
-
-    try {
-      const { error } = await supabase
-        .from('profiles')
-        .update({ department: deptName })
-        .eq('id', userId);
-      if (error) throw error;
-      if (onUpdate) onUpdate();
-    } catch (err) {
-      console.error('Error updating user department:', err);
-      // Revert on fail
-      setUserDeptMap(prev => ({ ...prev, [userId]: users.find(u => u.id === userId)?.department }));
-    }
+    if (!window.confirm("Delete this category?")) return;
+    await supabase.from('categories').delete().eq('id', id);
+    onUpdate();
   };
 
   // --- FILTER LOGIC ---
-  const filteredUsers = users?.filter(user => {
-    const matchesSearch = (user.full_name?.toLowerCase() || '').includes(searchTerm.toLowerCase()) ||
-                          (user.email?.toLowerCase() || '').includes(searchTerm.toLowerCase());
-    const matchesDept = deptFilter === 'ALL' || user.department === deptFilter;
+  const filteredUsers = users.filter(user => {
+    // 1. Search
+    const matchesSearch = (user.full_name || '').toLowerCase().includes(searchTerm.toLowerCase()) 
+                       || (user.email || '').toLowerCase().includes(searchTerm.toLowerCase());
     
-    // Check Tenant Access
-    let matchesTenant = true;
-    if (tenantFilter !== 'ALL') {
-       // We need to check if this user has access to the selected tenant
-       // The 'users' prop likely doesn't have deep nested tenant_access, 
-       // but typically we pass 'tenants' array or use a check.
-       // Based on your UI, it seems we might just be filtering by visually available data
-       // or this part requires the user object to have 'tenant_access' loaded.
-       // Assuming 'users' are just profiles, this filter might be client-side only if data exists.
-       // For now, preserving existing logic structure.
-       matchesTenant = true; // Placeholder if complex logic needed
-    }
+    // 2. Department Filter
+    const userDeptId = userDeptMap[user.id]; 
+    const matchesDept = deptFilter === 'ALL' || userDeptId === deptFilter;
+
+    // 3. Tenant Filter (Restored)
+    // Note: This relies on user.access_list being populated by the parent component or join
+    const matchesTenant = tenantFilter === 'ALL' || (user.access_list && user.access_list.includes(tenantFilter));
 
     return matchesSearch && matchesDept && matchesTenant;
   });
@@ -143,286 +141,285 @@ export default function SettingsView({ categories, tenants, users, departments =
   const availableIcons = ['Briefcase', 'Network', 'Building', 'Settings', 'Shield', 'Users'];
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-         <h1 className="text-3xl font-bold text-slate-900 dark:text-white">System Settings</h1>
+    <div className="max-w-7xl mx-auto space-y-6">
+      
+      {/* HEADER */}
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div>
+           <h1 className="text-2xl font-bold text-slate-900 dark:text-white">System Configuration</h1>
+           <p className="text-slate-500 dark:text-slate-400">Manage categories, tenants, and user access control.</p>
+        </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
         
-        {/* --- LEFT COLUMN: CATEGORIES & TENANTS --- */}
-        <div className="space-y-6">
-          
-          {/* CATEGORIES CARD */}
-          <GlassCard className="p-6">
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="text-lg font-semibold text-slate-900 dark:text-white flex items-center gap-2">
-                <Briefcase size={20} className="text-indigo-500" />
-                Ticket Categories
-              </h2>
-              <button 
-                onClick={() => setIsAddingCat(!isAddingCat)}
-                className="p-2 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-full transition-colors"
-              >
-                {isAddingCat ? <X size={20} /> : <Plus size={20} />}
-              </button>
-            </div>
-
-            {/* ADD CATEGORY FORM */}
-            {isAddingCat && (
-              <div className="mb-6 p-4 bg-slate-50 dark:bg-slate-800/50 rounded-lg border border-slate-200 dark:border-slate-700 space-y-3">
-                <input
-                  type="text"
-                  placeholder="Category Name (e.g. Hardware)"
-                  className="w-full px-3 py-2 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none text-slate-900 dark:text-white"
-                  value={newCategory}
-                  onChange={(e) => setNewCategory(e.target.value)}
-                />
-                
-                {/* ICON SELECTOR */}
-                <div className="flex gap-2">
-                  {availableIcons.map(icon => (
-                    <button
-                      key={icon}
-                      onClick={() => setNewCategoryIcon(icon)}
-                      className={`p-2 rounded-lg border transition-all ${
-                        newCategoryIcon === icon 
-                          ? 'bg-indigo-50 dark:bg-indigo-900/30 border-indigo-500 text-indigo-600 dark:text-indigo-400' 
-                          : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-400 hover:border-indigo-300'
-                      }`}
-                    >
-                      {getIcon(icon, 16)}
-                    </button>
-                  ))}
-                </div>
-
-                {/* MULTI-SELECT DEPARTMENTS (PILLS) */}
-                <div>
-                  <label className="text-xs font-semibold text-slate-500 dark:text-slate-400 mb-2 block uppercase tracking-wider">
-                    Routing Departments
-                  </label>
-                  <div className="flex flex-wrap gap-2">
-                    {departments.map(dept => {
-                      const isSelected = newCategoryDepts.includes(dept.id);
-                      return (
-                        <button
-                          key={dept.id}
-                          onClick={() => toggleCategoryDept(dept.id)}
-                          className={`px-3 py-1.5 rounded-full text-xs font-medium border transition-all ${
-                            isSelected
-                              ? 'bg-indigo-600 border-indigo-600 text-white shadow-sm'
-                              : 'bg-white dark:bg-slate-900 border-slate-300 dark:border-slate-600 text-slate-600 dark:text-slate-300 hover:border-indigo-400'
-                          }`}
-                        >
-                          {dept.name}
-                        </button>
-                      );
-                    })}
-                  </div>
-                  {newCategoryDepts.length === 0 && (
-                    <p className="text-xs text-amber-500 mt-1">Select at least one department for routing.</p>
-                  )}
-                </div>
-
-                <button
-                  onClick={handleAddCategory}
-                  disabled={!newCategory || newCategoryDepts.length === 0}
-                  className="w-full py-2 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg font-medium transition-colors flex items-center justify-center gap-2"
-                >
-                  <Save size={16} />
-                  Save Category
-                </button>
+        {/* --- LEFT COLUMN: CATEGORIES (3/12) --- */}
+        <div className="lg:col-span-3 space-y-6">
+           <GlassCard className="p-0 overflow-hidden flex flex-col h-[calc(100vh-12rem)]">
+              <div className="p-4 border-b border-slate-200 dark:border-white/10 flex justify-between items-center bg-slate-50 dark:bg-white/5">
+                 <h3 className="font-semibold text-slate-900 dark:text-white flex items-center gap-2">
+                   <Briefcase size={18} className="text-blue-500"/> Categories
+                 </h3>
+                 <button onClick={() => setIsAddingCat(!isAddingCat)} className="p-1 hover:bg-slate-200 dark:hover:bg-white/10 rounded">
+                    {isAddingCat ? <X size={18}/> : <Plus size={18}/>}
+                 </button>
               </div>
-            )}
-
-            {/* CATEGORY LIST */}
-            <div className="space-y-3">
-              {categories?.map((cat) => (
-                <div key={cat.id} className="group flex items-center justify-between p-3 bg-white dark:bg-slate-800/50 rounded-lg border border-slate-200 dark:border-slate-700 hover:border-indigo-300 dark:hover:border-indigo-700 transition-all">
-                  <div className="flex items-center gap-3">
-                    <div className="p-2 bg-indigo-50 dark:bg-indigo-900/20 rounded-lg text-indigo-600 dark:text-indigo-400">
-                      {getIcon(cat.icon || 'Briefcase', 18)}
-                    </div>
-                    <div>
-                      <h3 className="font-medium text-slate-900 dark:text-white">{cat.label}</h3>
-                      <div className="flex flex-wrap gap-1 mt-1">
-                        {/* HANDLE BOTH ARRAY (NEW) AND SINGLE ID (LEGACY) FOR DISPLAY */}
-                        {(() => {
-                          let deptNames = [];
-                          // 1. Check new array column
-                          if (cat.department_ids && Array.isArray(cat.department_ids)) {
-                             deptNames = cat.department_ids
-                                .map(id => departments.find(d => d.id === id)?.name)
-                                .filter(Boolean);
-                          } 
-                          // 2. Fallback to old single column if array is empty
-                          else if (cat.default_department_id) {
-                             const d = departments.find(d => d.id === cat.default_department_id);
-                             if (d) deptNames.push(d.name);
-                          }
-
-                          if (deptNames.length === 0) return <span className="text-xs text-slate-400">No Routing</span>;
-
-                          return deptNames.map((name, i) => (
-                            <span key={i} className="text-xs px-2 py-0.5 bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 rounded-md">
-                              {name}
-                            </span>
-                          ));
-                        })()}
-                      </div>
-                    </div>
-                  </div>
-                  <button 
-                    onClick={() => handleDeleteCategory(cat.id)}
-                    className="p-2 text-slate-400 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-all"
-                  >
-                    <Trash2 size={16} />
-                  </button>
-                </div>
-              ))}
               
-              {(!categories || categories.length === 0) && (
-                <div className="text-center py-8 text-slate-400 text-sm">
-                  No categories defined.
-                </div>
-              )}
-            </div>
-          </GlassCard>
+              <div className="p-4 overflow-y-auto custom-scrollbar flex-1 space-y-2">
+                 {isAddingCat && (
+                    <div className="p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg space-y-3 mb-2 border border-blue-100 dark:border-blue-500/30">
+                       
+                       {/* Name Input */}
+                       <input 
+                         autoFocus
+                         className="w-full text-sm p-2 rounded border border-blue-200 dark:border-blue-500/30 bg-white dark:bg-black/20"
+                         placeholder="Category Name"
+                         value={newCategory}
+                         onChange={e => setNewCategory(e.target.value)}
+                       />
 
-          {/* TENANTS CARD (Read Only / Status) */}
-          <GlassCard className="p-6">
-            <div className="flex items-center justify-between mb-4">
-               <h2 className="text-lg font-semibold text-slate-900 dark:text-white flex items-center gap-2">
-                 <Building size={20} className="text-emerald-500" />
-                 Active Tenants
-               </h2>
-               <span className="text-xs font-medium px-2 py-1 bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400 rounded-full">
-                 {tenants?.length || 0} Connected
-               </span>
-            </div>
-            <div className="space-y-3">
-               {tenants?.map(tenant => (
-                 <div key={tenant.id} className="flex items-center justify-between p-3 bg-white dark:bg-slate-800/50 rounded-lg border border-slate-200 dark:border-slate-700">
-                    <div className="flex items-center gap-3">
-                       <div className="w-2 h-2 rounded-full bg-emerald-500"></div>
-                       <div>
-                         <p className="text-sm font-medium text-slate-900 dark:text-white">{tenant.name}</p>
-                         <p className="text-xs text-slate-500">{tenant.domain}</p>
+                       {/* Icon Picker (Restored) */}
+                       <div className="flex gap-2 justify-between">
+                          {availableIcons.map(icon => (
+                            <button
+                              key={icon}
+                              onClick={() => setNewCategoryIcon(icon)}
+                              className={`p-1.5 rounded border transition-all ${
+                                newCategoryIcon === icon 
+                                  ? 'bg-blue-500 border-blue-600 text-white' 
+                                  : 'bg-white dark:bg-black/20 border-blue-200 dark:border-blue-500/30 text-slate-400'
+                              }`}
+                            >
+                              {getIcon(icon, 14)}
+                            </button>
+                          ))}
                        </div>
+
+                       {/* Multi-Select Depts (New Feature) */}
+                       <div>
+                          <p className="text-[10px] font-bold text-blue-800 dark:text-blue-300 mb-1 uppercase">Routing Departments</p>
+                          <div className="flex flex-wrap gap-1.5">
+                             {departments.map(dept => {
+                               const isSelected = newCategoryDepts.includes(dept.id);
+                               return (
+                                 <button
+                                   key={dept.id}
+                                   onClick={() => toggleCategoryDept(dept.id)}
+                                   className={`px-2 py-1 rounded text-[10px] border transition-all ${
+                                     isSelected
+                                       ? 'bg-blue-600 border-blue-600 text-white shadow-sm'
+                                       : 'bg-white dark:bg-black/20 border-blue-200 dark:border-blue-500/30 text-slate-600 dark:text-slate-300'
+                                   }`}
+                                 >
+                                   {dept.name}
+                                 </button>
+                               );
+                             })}
+                          </div>
+                       </div>
+
+                       <button onClick={handleAddCategory} className="w-full bg-blue-600 text-white text-xs font-bold py-1.5 rounded shadow-sm hover:bg-blue-500">
+                          Save Category
+                       </button>
                     </div>
-                    <div className="text-xs font-mono text-slate-400 bg-slate-100 dark:bg-slate-800 px-2 py-1 rounded">
-                       {tenant.code}
-                    </div>
-                 </div>
-               ))}
-            </div>
-          </GlassCard>
+                 )}
+
+                 {categories.map(cat => (
+                   <div key={cat.id} className="group flex items-center justify-between p-3 rounded-lg border border-slate-100 dark:border-white/5 hover:border-blue-200 dark:hover:border-blue-500/50 hover:bg-blue-50 dark:hover:bg-blue-900/10 transition-all">
+                      <div className="flex items-center gap-3">
+                         <div className="p-2 bg-white dark:bg-white/10 rounded-md shadow-sm text-slate-600 dark:text-slate-300">
+                            {getIcon(cat.icon)}
+                         </div>
+                         <div>
+                            <span className="block text-sm font-medium text-slate-900 dark:text-white">{cat.label}</span>
+                            <div className="flex flex-wrap gap-1 mt-1">
+                                {/* DISPLAY: Handle both Array and Legacy Single ID */}
+                                {(() => {
+                                  let deptNames = [];
+                                  if (cat.department_ids && Array.isArray(cat.department_ids)) {
+                                     deptNames = cat.department_ids.map(id => departments.find(d => d.id === id)?.name).filter(Boolean);
+                                  } else if (cat.default_department_id) {
+                                     const d = departments.find(d => d.id === cat.default_department_id);
+                                     if (d) deptNames.push(d.name);
+                                  }
+                                  
+                                  if (deptNames.length === 0) return <span className="text-[10px] text-slate-400">No Routing</span>;
+
+                                  return deptNames.map((name, i) => (
+                                    <span key={i} className="text-[10px] bg-slate-100 dark:bg-white/10 text-slate-500 px-1.5 py-0.5 rounded">
+                                      {name}
+                                    </span>
+                                  ));
+                                })()}
+                            </div>
+                         </div>
+                      </div>
+                      <button onClick={() => handleDeleteCategory(cat.id)} className="text-slate-400 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity">
+                         <Trash2 size={16} />
+                      </button>
+                   </div>
+                 ))}
+              </div>
+           </GlassCard>
         </div>
 
-        {/* --- RIGHT COLUMN: USER MANAGEMENT --- */}
-        <div className="lg:col-span-2">
-          <GlassCard className="h-full flex flex-col">
-              <div className="p-6 border-b border-slate-200 dark:border-slate-700 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                 <div>
-                    <h2 className="text-lg font-semibold text-slate-900 dark:text-white flex items-center gap-2">
-                       <Users size={20} className="text-blue-500" />
-                       User Management
-                    </h2>
-                    <p className="text-sm text-slate-500 dark:text-slate-400">Manage roles and department assignments</p>
+        {/* --- MIDDLE COLUMN: TENANTS LIST (2/12) --- */}
+        {/* PRESERVED EXACTLY AS PROVIDED */}
+        <div className="lg:col-span-2 space-y-6">
+           <GlassCard className="p-0 overflow-hidden flex flex-col h-[calc(100vh-12rem)]">
+              <div className="p-4 border-b border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-white/5">
+                 <h3 className="font-semibold text-slate-900 dark:text-white flex items-center gap-2">
+                   <Building2 size={18} className="text-purple-500"/> Tenants
+                 </h3>
+              </div>
+              <div className="p-4 overflow-y-auto custom-scrollbar flex-1 space-y-2">
+                 {tenants.map(t => (
+                   <div key={t.id} className="p-3 rounded-lg border border-slate-200 dark:border-white/10 bg-slate-50/50 dark:bg-white/5">
+                      <p className="font-bold text-slate-900 dark:text-white text-sm">{t.name}</p>
+                      <p className="text-xs text-slate-500 font-mono mt-1 break-all">{t.domain}</p>
+                   </div>
+                 ))}
+              </div>
+           </GlassCard>
+        </div>
+
+        {/* --- RIGHT COLUMN: USERS (7/12) --- */}
+        {/* PRESERVED EXACTLY AS PROVIDED */}
+        <div className="lg:col-span-7 space-y-6">
+          <GlassCard className="p-0 overflow-hidden flex flex-col h-[calc(100vh-12rem)]">
+              
+              {/* TOOLBAR */}
+              <div className="p-4 border-b border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-white/5 flex flex-col xl:flex-row gap-3">
+                 <div className="relative flex-1">
+                    <Search className="absolute left-3 top-2.5 text-slate-400" size={16} />
+                    <input 
+                      type="text" 
+                      placeholder="Search users..." 
+                      className="w-full pl-9 pr-4 py-2 text-sm rounded-lg border border-slate-200 dark:border-white/10 bg-white dark:bg-black/20 focus:outline-none focus:border-blue-500"
+                      value={searchTerm}
+                      onChange={e => setSearchTerm(e.target.value)}
+                    />
                  </div>
                  
-                 {/* FILTERS */}
-                 <div className="flex items-center gap-2">
+                 <div className="flex gap-2">
+                    {/* DEPARTMENT FILTER */}
                     <div className="relative">
-                       <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-                       <input 
-                         type="text" 
-                         placeholder="Search users..." 
-                         className="pl-9 pr-4 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none w-48"
-                         value={searchTerm}
-                         onChange={(e) => setSearchTerm(e.target.value)}
-                       />
+                       <Filter className="absolute left-3 top-2.5 text-slate-400" size={16} />
+                       <select 
+                         className="pl-9 pr-8 py-2 text-sm rounded-lg border border-slate-200 dark:border-white/10 bg-white dark:bg-black/20 focus:outline-none focus:border-blue-500 appearance-none min-w-[140px]"
+                         value={deptFilter}
+                         onChange={e => setDeptFilter(e.target.value)}
+                       >
+                          <option value="ALL">All Depts</option>
+                          {departments.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
+                       </select>
                     </div>
-                    <select 
-                      className="px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm outline-none"
-                      value={deptFilter}
-                      onChange={(e) => setDeptFilter(e.target.value)}
-                    >
-                       <option value="ALL">All Depts</option>
-                       {departments.map(d => <option key={d.id} value={d.name}>{d.name}</option>)}
-                    </select>
+
+                    {/* TENANT FILTER */}
+                    <div className="relative">
+                       <Building className="absolute left-3 top-2.5 text-slate-400" size={16} />
+                       <select 
+                         className="pl-9 pr-8 py-2 text-sm rounded-lg border border-slate-200 dark:border-white/10 bg-white dark:bg-black/20 focus:outline-none focus:border-blue-500 appearance-none min-w-[140px]"
+                         value={tenantFilter}
+                         onChange={e => setTenantFilter(e.target.value)}
+                       >
+                          <option value="ALL">All Schools</option>
+                          <hr/>
+                          {tenants.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+                       </select>
+                    </div>
                  </div>
               </div>
 
-              {/* USER TABLE HEADER */}
-              <div className="grid grid-cols-12 gap-4 px-6 py-3 bg-slate-50 dark:bg-slate-800/50 border-b border-slate-200 dark:border-slate-700 text-xs font-semibold text-slate-500 uppercase tracking-wider">
-                 <div className="col-span-4">User / Email</div>
-                 <div className="col-span-3">Department</div>
-                 <div className="col-span-5">Tenant Access</div>
-              </div>
-
-              {/* USER LIST SCROLL AREA */}
-              <div className="flex-1 overflow-y-auto p-2 space-y-2 max-h-[600px]">
-                 {filteredUsers?.map(user => (
-                    <div key={user.id} className="group grid grid-cols-12 gap-4 items-center p-4 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors border border-transparent hover:border-slate-200 dark:hover:border-slate-700">
-                       
-                       {/* USER INFO */}
-                       <div className="col-span-4 flex items-center gap-3">
-                          <div className="w-10 h-10 rounded-full bg-indigo-100 dark:bg-indigo-900/30 flex items-center justify-center text-indigo-700 dark:text-indigo-400 font-bold text-sm">
-                             {getInitials(user.full_name || user.email)}
-                          </div>
-                          <div className="min-w-0">
-                             <p className="text-sm font-medium text-slate-900 dark:text-white truncate">{user.full_name || 'Unknown'}</p>
-                             <p className="text-xs text-slate-500 truncate">{user.email}</p>
-                          </div>
-                       </div>
-
-                       {/* DEPARTMENT SELECTOR */}
-                       <div className="col-span-3">
-                          <select
-                             className="w-full text-xs p-2 rounded bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 focus:border-indigo-500 outline-none"
-                             value={userDeptMap[user.id] || ''}
-                             onChange={(e) => handleUpdateUserDept(user.id, e.target.value)}
-                          >
-                             <option value="">No Department</option>
-                             {departments.map(d => (
-                                <option key={d.id} value={d.name}>{d.name}</option>
-                             ))}
-                          </select>
-                       </div>
-
-                       {/* TENANT ACCESS (READ ONLY DISPLAY) */}
-                       <div className="col-span-5">
-                          {/* Note: In a real app we would map 'tenant_access' here.
-                             Visualizing logical access based on passed props.
-                          */}
-                          <div className="flex flex-wrap gap-2">
-                             <div className="relative group/tooltip">
-                                <div className="flex -space-x-2">
-                                   {tenants.slice(0, 3).map((t, i) => {
-                                      // Mock Check: In reality check if user.id is in t.access_list
-                                      const hasAccess = true; // Placeholder
-                                      return (
-                                         <div key={t.id} className={`w-6 h-6 rounded-full flex items-center justify-center text-[10px] border-2 border-white dark:border-slate-800 ${
-                                            hasAccess ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-400'
-                                         }`} title={t.name}>
-                                            {t.name.substring(0,1)}
-                                         </div>
-                                      );
-                                   })}
-                                   {tenants.length > 3 && (
-                                      <div className="w-6 h-6 rounded-full bg-slate-100 dark:bg-slate-800 border-2 border-white dark:border-slate-800 flex items-center justify-center text-[10px] text-slate-500">
-                                         +{tenants.length - 3}
-                                      </div>
-                                   )}
+              {/* USER LIST */}
+              <div className="overflow-y-auto custom-scrollbar flex-1 p-4 grid gap-4">
+                 {filteredUsers.map(user => (
+                    <div key={user.id} className="relative p-4 rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-white/5 shadow-sm hover:shadow-md transition-shadow">
+                       <div className="flex items-start justify-between">
+                          <div className="flex gap-4">
+                             <div className="w-10 h-10 rounded-full bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 flex items-center justify-center font-bold text-sm">
+                                {user.avatar_initials || getInitials(user.full_name)}
+                             </div>
+                             <div>
+                                <h4 className="font-bold text-slate-900 dark:text-white">{user.full_name}</h4>
+                                <p className="text-xs text-slate-500">{user.email}</p>
+                                
+                                <div className="flex items-center gap-2 mt-2">
+                                   {/* ROLE BADGE */}
+                                   <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wide ${
+                                      user.role === 'admin' || user.role === 'super_admin' ? 'bg-purple-100 text-purple-700' : 'bg-slate-100 text-slate-600'
+                                   }`}>
+                                      {user.role}
+                                   </span>
+                                   
+                                   {/* DEPT DROPDOWN */}
+                                   <select 
+                                      className="text-[10px] px-1 py-0.5 rounded border border-slate-200 dark:border-white/10 bg-transparent text-slate-600 dark:text-slate-400 focus:outline-none focus:border-blue-500"
+                                      value={userDeptMap[user.id] || ''}
+                                      onChange={(e) => handleUpdateDept(user.id, e.target.value)}
+                                   >
+                                      <option value="">No Dept</option>
+                                      {departments.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
+                                   </select>
                                 </div>
                              </div>
                           </div>
+                          
+                          <button 
+                            onClick={() => setEditingUser(editingUser === user.id ? null : user.id)}
+                            className="p-2 hover:bg-slate-100 dark:hover:bg-white/10 rounded-lg text-slate-400"
+                          >
+                             <Settings size={16} /> 
+                          </button>
                        </div>
+
+                       {/* EXPANDABLE EDIT AREA */}
+                       {editingUser === user.id && (
+                         <div className="mt-4 pt-4 border-t border-slate-200 dark:border-white/10 animate-in fade-in slide-in-from-top-2">
+                            <div className="grid grid-cols-2 gap-4">
+                               {/* ROLE EDIT */}
+                               <div>
+                                  <label className="text-[10px] font-bold text-slate-400 uppercase mb-1 block">System Role</label>
+                                  <select 
+                                    className="w-full text-xs p-2 rounded border border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-black/20"
+                                    value={user.role || 'user'}
+                                    onChange={(e) => handleUpdateRole(user.id, e.target.value)}
+                                  >
+                                     <option value="user">User</option>
+                                     <option value="technician">Technician</option>
+                                     <option value="manager">Manager</option>
+                                     <option value="admin">Admin</option>
+                                  </select>
+                               </div>
+
+                               {/* TENANT ACCESS TOGGLES */}
+                               <div>
+                                  <label className="text-[10px] font-bold text-slate-400 uppercase mb-1 block">School Access</label>
+                                  <div className="space-y-1 max-h-32 overflow-y-auto custom-scrollbar">
+                                     {tenants.map(t => {
+                                        const hasAccess = user.access_list?.includes(t.id);
+                                        return (
+                                          <div key={t.id} onClick={() => handleToggleAccess(user.id, t.id, hasAccess)} className="flex items-center gap-3 p-2 rounded hover:bg-slate-100 dark:hover:bg-white/5 cursor-pointer group transition-colors">
+                                             <div className={`w-5 h-5 rounded border flex items-center justify-center transition-colors ${
+                                                 hasAccess 
+                                                 ? 'bg-indigo-500 border-indigo-500' 
+                                                 : 'bg-white dark:bg-transparent border-slate-300 dark:border-slate-600 group-hover:border-indigo-400'
+                                             }`}>
+                                                {hasAccess && <Check size={12} className="text-white" />}
+                                             </div>
+                                             <span className={`text-sm font-medium ${hasAccess ? 'text-slate-900 dark:text-white' : 'text-slate-500 dark:text-slate-400'}`}>{t.name}</span>
+                                          </div>
+                                       );
+                                    })}
+                                 </div>
+                              </div>
+                           </div>
+                         </div>
+                       )}
                     </div>
                  ))}
                  
-                 {filteredUsers?.length === 0 && (
+                 {filteredUsers.length === 0 && (
                     <div className="text-center py-10 text-slate-400">
                        <Shield size={48} className="mx-auto mb-2 opacity-20" />
                        <p>No users found matching filters.</p>
