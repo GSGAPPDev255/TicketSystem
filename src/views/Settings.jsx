@@ -2,8 +2,8 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 import { 
-  Building2, Search, Plus, Trash2, Save, 
-  Shield, Check, X, Filter, Users, Briefcase, Network, Building, Settings 
+  Building2, Search, Plus, Trash2, 
+  Shield, Check, X, Filter, Briefcase, Building, Settings 
 } from 'lucide-react';
 import { GlassCard, getIcon } from '../components/ui'; 
 
@@ -24,6 +24,7 @@ export default function SettingsView({ categories, tenants, users, departments =
   const [isAddingCat, setIsAddingCat] = useState(false);
 
   // USER EDIT STATE
+  // Stores the ID of the user currently being edited
   const [editingUser, setEditingUser] = useState(null);
 
   // --- AVATAR HELPER ---
@@ -64,7 +65,14 @@ export default function SettingsView({ categories, tenants, users, departments =
 
   // 3. UPDATE USER ROLE
   const handleUpdateRole = async (userId, newRole) => {
-    await supabase.from('profiles').update({ role: newRole }).eq('id', userId);
+    const { error } = await supabase.from('profiles').update({ role: newRole }).eq('id', userId);
+    
+    if (error) {
+        alert("Error updating role: " + error.message);
+        return;
+    }
+
+    // Close the edit window on success
     setEditingUser(null);
     onUpdate();
   };
@@ -95,16 +103,13 @@ export default function SettingsView({ categories, tenants, users, departments =
   const handleAddCategory = async () => {
     if (!newCategory.trim()) return;
     
-    // We send 'department_ids' as an array. 
-    // We also send 'default_department_id' as the FIRST selection for legacy compatibility if needed, 
-    // or just null if you fully migrated. I'll send both to be safe.
     const primaryDept = newCategoryDepts.length > 0 ? newCategoryDepts[0] : null;
 
     await supabase.from('categories').insert({ 
         label: newCategory, 
         icon: newCategoryIcon,
         default_department_id: primaryDept, // Legacy support
-        department_ids: newCategoryDepts      // New Array support
+        department_ids: newCategoryDepts    // New Array support
     });
 
     setNewCategory('');
@@ -131,8 +136,7 @@ export default function SettingsView({ categories, tenants, users, departments =
     const userDeptId = userDeptMap[user.id]; 
     const matchesDept = deptFilter === 'ALL' || userDeptId === deptFilter;
 
-    // 3. Tenant Filter (Restored)
-    // Note: This relies on user.access_list being populated by the parent component or join
+    // 3. Tenant Filter
     const matchesTenant = tenantFilter === 'ALL' || (user.access_list && user.access_list.includes(tenantFilter));
 
     return matchesSearch && matchesDept && matchesTenant;
@@ -178,7 +182,7 @@ export default function SettingsView({ categories, tenants, users, departments =
                          onChange={e => setNewCategory(e.target.value)}
                        />
 
-                       {/* Icon Picker (Restored) */}
+                       {/* Icon Picker */}
                        <div className="flex gap-2 justify-between">
                           {availableIcons.map(icon => (
                             <button
@@ -195,7 +199,7 @@ export default function SettingsView({ categories, tenants, users, departments =
                           ))}
                        </div>
 
-                       {/* Multi-Select Depts (New Feature) */}
+                       {/* Multi-Select Depts */}
                        <div>
                           <p className="text-[10px] font-bold text-blue-800 dark:text-blue-300 mb-1 uppercase">Routing Departments</p>
                           <div className="flex flex-wrap gap-1.5">
@@ -233,7 +237,6 @@ export default function SettingsView({ categories, tenants, users, departments =
                          <div>
                             <span className="block text-sm font-medium text-slate-900 dark:text-white">{cat.label}</span>
                             <div className="flex flex-wrap gap-1 mt-1">
-                                {/* DISPLAY: Handle both Array and Legacy Single ID */}
                                 {(() => {
                                   let deptNames = [];
                                   if (cat.department_ids && Array.isArray(cat.department_ids)) {
@@ -264,7 +267,6 @@ export default function SettingsView({ categories, tenants, users, departments =
         </div>
 
         {/* --- MIDDLE COLUMN: TENANTS LIST (2/12) --- */}
-        {/* PRESERVED EXACTLY AS PROVIDED */}
         <div className="lg:col-span-2 space-y-6">
            <GlassCard className="p-0 overflow-hidden flex flex-col h-[calc(100vh-12rem)]">
               <div className="p-4 border-b border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-white/5">
@@ -284,7 +286,6 @@ export default function SettingsView({ categories, tenants, users, departments =
         </div>
 
         {/* --- RIGHT COLUMN: USERS (7/12) --- */}
-        {/* PRESERVED EXACTLY AS PROVIDED */}
         <div className="lg:col-span-7 space-y-6">
           <GlassCard className="p-0 overflow-hidden flex flex-col h-[calc(100vh-12rem)]">
               
@@ -302,7 +303,6 @@ export default function SettingsView({ categories, tenants, users, departments =
                  </div>
                  
                  <div className="flex gap-2">
-                    {/* DEPARTMENT FILTER */}
                     <div className="relative">
                        <Filter className="absolute left-3 top-2.5 text-slate-400" size={16} />
                        <select 
@@ -315,7 +315,6 @@ export default function SettingsView({ categories, tenants, users, departments =
                        </select>
                     </div>
 
-                    {/* TENANT FILTER */}
                     <div className="relative">
                        <Building className="absolute left-3 top-2.5 text-slate-400" size={16} />
                        <select 
@@ -345,14 +344,12 @@ export default function SettingsView({ categories, tenants, users, departments =
                                 <p className="text-xs text-slate-500">{user.email}</p>
                                 
                                 <div className="flex items-center gap-2 mt-2">
-                                   {/* ROLE BADGE */}
                                    <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wide ${
                                       user.role === 'admin' || user.role === 'super_admin' ? 'bg-purple-100 text-purple-700' : 'bg-slate-100 text-slate-600'
                                    }`}>
                                       {user.role}
                                    </span>
                                    
-                                   {/* DEPT DROPDOWN */}
                                    <select 
                                       className="text-[10px] px-1 py-0.5 rounded border border-slate-200 dark:border-white/10 bg-transparent text-slate-600 dark:text-slate-400 focus:outline-none focus:border-blue-500"
                                       value={userDeptMap[user.id] || ''}
@@ -380,6 +377,7 @@ export default function SettingsView({ categories, tenants, users, departments =
                                {/* ROLE EDIT */}
                                <div>
                                   <label className="text-[10px] font-bold text-slate-400 uppercase mb-1 block">System Role</label>
+                                  {/* --- FIX IS HERE: Added Super Admin --- */}
                                   <select 
                                     className="w-full text-xs p-2 rounded border border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-black/20"
                                     value={user.role || 'user'}
@@ -389,6 +387,7 @@ export default function SettingsView({ categories, tenants, users, departments =
                                      <option value="technician">Technician</option>
                                      <option value="manager">Manager</option>
                                      <option value="admin">Admin</option>
+                                     <option value="super_admin">Super Admin</option>
                                   </select>
                                </div>
 
