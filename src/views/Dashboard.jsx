@@ -6,46 +6,43 @@ import {
 } from 'recharts';
 import { 
   Activity, AlertCircle, CheckCircle, Clock, TrendingUp, 
-  Users, ArrowUpRight, ArrowDownRight, MoreHorizontal
+  Users, ArrowUpRight, ArrowDownRight, Search, Filter
 } from 'lucide-react';
 
 // --- COLOR PALETTE ---
 const COLORS = ['#6366f1', '#8b5cf6', '#ec4899', '#10b981', '#f59e0b'];
-const STATUS_COLORS = {
-  new: '#3b82f6',       // Blue
-  open: '#8b5cf6',      // Purple
-  pending: '#f59e0b',   // Amber
-  resolved: '#10b981',  // Emerald
-  breached: '#ef4444'   // Red
-};
 
 export default function Dashboard({ tickets = [], departments = [], users = [] }) {
   
-  // --- 1. DATA PROCESSING (The Brains) ---
+  // --- 1. DATA PROCESSING ---
   const stats = useMemo(() => {
-    const total = tickets.length;
-    const open = tickets.filter(t => t.status !== 'resolved' && t.status !== 'closed').length;
-    const breached = tickets.filter(t => t.sla_breached).length;
-    const unassigned = tickets.filter(t => !t.assignee_id && t.status !== 'resolved').length;
-
-    // Calculate "Risk" (Due in < 4 hours)
+    // Safety check: ensure tickets is an array to prevent crashes
+    const safeTickets = Array.isArray(tickets) ? tickets : [];
+    
+    const total = safeTickets.length;
+    const open = safeTickets.filter(t => t.status !== 'resolved' && t.status !== 'closed').length;
+    const resolved = safeTickets.filter(t => t.status === 'resolved' || t.status === 'closed').length;
+    
+    // Risk: Due in < 4 hours AND not resolved
     const now = new Date();
     const fourHoursFromNow = new Date(now.getTime() + 4 * 60 * 60 * 1000);
-    const atRisk = tickets.filter(t => {
-      if (!t.sla_due_at || t.status === 'resolved') return false;
+    const atRisk = safeTickets.filter(t => {
+      if (!t.sla_due_at || t.status === 'resolved' || t.status === 'closed') return false;
       const due = new Date(t.sla_due_at);
       return due > now && due < fourHoursFromNow;
     }).length;
 
-    return { total, open, breached, unassigned, atRisk };
+    const breached = safeTickets.filter(t => t.sla_breached).length;
+
+    return { total, open, resolved, atRisk, breached };
   }, [tickets]);
 
-  // Chart 1: Tickets by Department
+  // Chart 1: Tickets by Department (Includes ALL tickets for historical view)
   const deptData = useMemo(() => {
     const counts = {};
-    tickets.forEach(t => {
-      // Handle both direct department_id and category-based derivation if needed
-      // For now, assuming t.department_id is populated
+    const safeTickets = Array.isArray(tickets) ? tickets : [];
+    
+    safeTickets.forEach(t => {
       const deptId = t.department_id || 'unknown';
       counts[deptId] = (counts[deptId] || 0) + 1;
     });
@@ -56,13 +53,16 @@ export default function Dashboard({ tickets = [], departments = [], users = [] }
         name: dept ? dept.name : 'Unassigned',
         value: counts[id]
       };
-    }).sort((a, b) => b.value - a.value); // Sort highest first
+    }).sort((a, b) => b.value - a.value);
   }, [tickets, departments]);
 
-  // Chart 2: Technician Workload (Top 5)
+  // Chart 2: Active Workload (Only Open Tickets)
   const workloadData = useMemo(() => {
     const counts = {};
-    tickets.filter(t => t.status !== 'resolved').forEach(t => {
+    const safeTickets = Array.isArray(tickets) ? tickets : [];
+
+    // Only count OPEN tickets for workload
+    safeTickets.filter(t => t.status !== 'resolved' && t.status !== 'closed').forEach(t => {
        const assignee = t.assignee_id || 'unassigned';
        counts[assignee] = (counts[assignee] || 0) + 1;
     });
@@ -74,13 +74,14 @@ export default function Dashboard({ tickets = [], departments = [], users = [] }
          return { name: user ? user.full_name.split(' ')[0] : 'Unknown', value: counts[id], color: '#6366f1' };
       })
       .sort((a, b) => b.value - a.value)
-      .slice(0, 5); // Top 5 only
+      .slice(0, 5); 
   }, [tickets, users]);
 
-  // Chart 3: 7-Day Velocity (Area Chart)
+  // Chart 3: Velocity (All Tickets)
   const velocityData = useMemo(() => {
     const days = {};
-    // Initialize last 7 days with 0
+    const safeTickets = Array.isArray(tickets) ? tickets : [];
+
     for(let i=6; i>=0; i--) {
         const d = new Date();
         d.setDate(d.getDate() - i);
@@ -88,7 +89,8 @@ export default function Dashboard({ tickets = [], departments = [], users = [] }
         days[dateStr] = 0;
     }
 
-    tickets.forEach(t => {
+    safeTickets.forEach(t => {
+        if (!t.created_at) return;
         const d = new Date(t.created_at);
         const dateStr = d.toLocaleDateString('en-US', { weekday: 'short' });
         if (days[dateStr] !== undefined) {
@@ -99,101 +101,98 @@ export default function Dashboard({ tickets = [], departments = [], users = [] }
     return Object.keys(days).map(day => ({ name: day, tickets: days[day] }));
   }, [tickets]);
 
+  // Helper for Status Badges
+  const getStatusBadge = (status) => {
+    const styles = {
+      new: 'bg-blue-100 text-blue-700 border-blue-200',
+      open: 'bg-purple-100 text-purple-700 border-purple-200',
+      pending: 'bg-amber-100 text-amber-700 border-amber-200',
+      resolved: 'bg-emerald-100 text-emerald-700 border-emerald-200',
+      closed: 'bg-slate-100 text-slate-700 border-slate-200',
+      breached: 'bg-rose-100 text-rose-700 border-rose-200',
+    };
+    return (
+      <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wide border ${styles[status] || styles.new}`}>
+        {status}
+      </span>
+    );
+  };
 
-  // --- SUB-COMPONENTS ---
-  
-  const StatCard = ({ title, value, sub, icon: Icon, colorClass, trend }) => (
-    <div className="bg-white dark:bg-slate-900 rounded-2xl p-6 border border-slate-200 dark:border-slate-800 shadow-sm relative overflow-hidden group hover:shadow-md transition-all">
-       <div className={`absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity ${colorClass}`}>
+  // --- COMPONENT RENDER ---
+
+  const StatCard = ({ title, value, sub, icon: Icon, colorClass }) => (
+    <div className="bg-white dark:bg-slate-900 rounded-2xl p-5 border border-slate-200 dark:border-slate-800 shadow-sm relative overflow-hidden group hover:shadow-md transition-all">
+       <div className={`absolute top-0 right-0 p-4 opacity-5 group-hover:opacity-10 transition-opacity ${colorClass}`}>
           <Icon size={64} />
        </div>
        <div className="relative z-10">
-          <div className="flex items-center gap-3 mb-2">
-             <div className={`p-2 rounded-lg ${colorClass} bg-opacity-10 text-current`}>
-                <Icon size={20} className={colorClass.replace('text-', '')} />
+          <div className="flex items-center gap-2 mb-2">
+             <div className={`p-1.5 rounded-md ${colorClass} bg-opacity-10 text-current`}>
+                <Icon size={16} className={colorClass.replace('text-', '')} />
              </div>
-             <h3 className="text-sm font-bold text-slate-500 uppercase tracking-wide">{title}</h3>
+             <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wide">{title}</h3>
           </div>
           <div className="flex items-end gap-3">
-             <span className="text-3xl font-extrabold text-slate-900 dark:text-white">{value}</span>
-             {trend && (
-                <span className={`text-xs font-bold mb-1 flex items-center ${trend > 0 ? 'text-emerald-500' : 'text-rose-500'}`}>
-                   {trend > 0 ? <ArrowUpRight size={14}/> : <ArrowDownRight size={14}/>}
-                   {Math.abs(trend)}%
-                </span>
-             )}
+             <span className="text-2xl font-extrabold text-slate-900 dark:text-white">{value}</span>
           </div>
-          <p className="text-xs text-slate-400 mt-2 font-medium">{sub}</p>
+          <p className="text-[10px] text-slate-400 mt-1 font-medium">{sub}</p>
        </div>
     </div>
   );
 
   return (
-    <div className="max-w-[1920px] mx-auto space-y-8 p-6 lg:p-10">
+    <div className="max-w-[1920px] mx-auto space-y-6 p-6 lg:p-10">
       
       {/* HEADER */}
-      <div className="flex flex-col md:flex-row md:items-end justify-between gap-6 pb-6 border-b border-slate-200 dark:border-slate-800">
+      <div className="flex flex-col md:flex-row md:items-end justify-between gap-6 pb-4 border-b border-slate-200 dark:border-slate-800">
          <div>
-            <h1 className="text-3xl font-extrabold tracking-tight text-slate-900 dark:text-white mb-2">
+            <h1 className="text-3xl font-extrabold tracking-tight text-slate-900 dark:text-white mb-1">
               Mission <span className="text-transparent bg-clip-text bg-gradient-to-r from-blue-600 to-indigo-600">Control</span>
             </h1>
-            <p className="text-slate-500 dark:text-slate-400">Live system metrics and performance tracking.</p>
-         </div>
-         <div className="flex items-center gap-2 text-xs font-mono text-slate-400 bg-slate-100 dark:bg-slate-800 px-3 py-1.5 rounded-full">
-            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
-            SYSTEM ONLINE
+            <p className="text-sm text-slate-500 dark:text-slate-400">Live system metrics.</p>
          </div>
       </div>
 
       {/* 1. STATS GRID */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
          <StatCard 
-            title="Active Tickets" 
-            value={stats.open} 
-            sub={`${stats.unassigned} unassigned`} 
+            title="Total Tickets" 
+            value={stats.total} 
+            sub="All time volume" 
             icon={Activity} 
+            colorClass="text-slate-500"
+         />
+         <StatCard 
+            title="Active Queue" 
+            value={stats.open} 
+            sub="Currently unresolved" 
+            icon={Clock} 
             colorClass="text-blue-500"
-            trend={12} // Mock trend
          />
          <StatCard 
             title="Critical Risk" 
             value={stats.atRisk} 
-            sub="Breaching in < 4h" 
+            sub="Breaching < 4h" 
             icon={AlertCircle} 
             colorClass="text-amber-500" 
          />
          <StatCard 
-            title="SLA Breached" 
-            value={stats.breached} 
-            sub="Requires attention" 
-            icon={Clock} 
-            colorClass="text-rose-500" 
-         />
-         <StatCard 
-            title="Resolution Rate" 
-            value="94%" 
-            sub="Avg 4.2h response" 
+            title="Resolved" 
+            value={stats.resolved} 
+            sub="Successfully closed" 
             icon={CheckCircle} 
             colorClass="text-emerald-500"
-            trend={2.4} 
          />
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
          
-         {/* 2. MAIN CHART: VELOCITY (2/3 Width) */}
-         <div className="lg:col-span-2 bg-white dark:bg-slate-900 rounded-2xl p-6 border border-slate-200 dark:border-slate-800 shadow-sm">
-            <div className="flex justify-between items-center mb-6">
-               <div>
-                  <h3 className="font-bold text-slate-900 dark:text-white text-lg">Ticket Velocity</h3>
-                  <p className="text-xs text-slate-500">Incoming volume over the last 7 days.</p>
-               </div>
-               <div className="p-2 bg-slate-50 dark:bg-slate-800 rounded-lg">
-                  <TrendingUp size={18} className="text-blue-500"/>
-               </div>
+         {/* 2. VELOCITY CHART */}
+         <div className="lg:col-span-2 bg-white dark:bg-slate-900 rounded-2xl p-5 border border-slate-200 dark:border-slate-800 shadow-sm">
+            <div className="flex justify-between items-center mb-4">
+               <h3 className="font-bold text-slate-900 dark:text-white text-sm">7-Day Velocity</h3>
             </div>
-            
-            <div className="h-[300px] w-full">
+            <div className="h-[250px] w-full">
                <ResponsiveContainer width="100%" height="100%">
                   <AreaChart data={velocityData}>
                      <defs>
@@ -203,10 +202,10 @@ export default function Dashboard({ tickets = [], departments = [], users = [] }
                         </linearGradient>
                      </defs>
                      <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
-                     <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{fill: '#94a3b8', fontSize: 12}} dy={10} />
-                     <YAxis axisLine={false} tickLine={false} tick={{fill: '#94a3b8', fontSize: 12}} />
+                     <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{fill: '#94a3b8', fontSize: 10}} dy={10} />
+                     <YAxis axisLine={false} tickLine={false} tick={{fill: '#94a3b8', fontSize: 10}} />
                      <Tooltip 
-                        contentStyle={{borderRadius: '12px', border: 'none', boxShadow: '0 4px 12px rgba(0,0,0,0.1)'}}
+                        contentStyle={{borderRadius: '8px', border: 'none', boxShadow: '0 4px 12px rgba(0,0,0,0.1)'}}
                      />
                      <Area type="monotone" dataKey="tickets" stroke="#6366f1" strokeWidth={3} fillOpacity={1} fill="url(#colorTickets)" />
                   </AreaChart>
@@ -214,74 +213,17 @@ export default function Dashboard({ tickets = [], departments = [], users = [] }
             </div>
          </div>
 
-         {/* 3. SIDE CHART: DEPARTMENT DISTRIBUTION (1/3 Width) */}
-         <div className="bg-white dark:bg-slate-900 rounded-2xl p-6 border border-slate-200 dark:border-slate-800 shadow-sm">
-            <h3 className="font-bold text-slate-900 dark:text-white text-lg mb-1">By Department</h3>
-            <p className="text-xs text-slate-500 mb-6">Current active distribution.</p>
-            
-            <div className="h-[250px] w-full relative">
-               <ResponsiveContainer width="100%" height="100%">
-                  <PieChart>
-                     <Pie
-                        data={deptData}
-                        cx="50%"
-                        cy="50%"
-                        innerRadius={60}
-                        outerRadius={80}
-                        paddingAngle={5}
-                        dataKey="value"
-                     >
-                        {deptData.map((entry, index) => (
-                           <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} strokeWidth={0} />
-                        ))}
-                     </Pie>
-                     <Tooltip />
-                  </PieChart>
-               </ResponsiveContainer>
-               {/* Center Text */}
-               <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
-                  <span className="text-3xl font-bold text-slate-800 dark:text-white">{stats.total}</span>
-                  <span className="text-[10px] uppercase text-slate-400 font-bold tracking-wider">Tickets</span>
-               </div>
-            </div>
-
-            {/* Legend */}
-            <div className="mt-4 space-y-2 max-h-[100px] overflow-y-auto custom-scrollbar">
-                {deptData.map((entry, index) => (
-                   <div key={index} className="flex items-center justify-between text-xs">
-                      <div className="flex items-center gap-2">
-                         <span className="w-2 h-2 rounded-full" style={{backgroundColor: COLORS[index % COLORS.length]}}></span>
-                         <span className="text-slate-600 dark:text-slate-300 font-medium">{entry.name}</span>
-                      </div>
-                      <span className="font-bold text-slate-900 dark:text-white">{entry.value}</span>
-                   </div>
-                ))}
-            </div>
-         </div>
-      </div>
-
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-          
-          {/* 4. TECHNICIAN WORKLOAD (New!) */}
-          <div className="bg-white dark:bg-slate-900 rounded-2xl p-6 border border-slate-200 dark:border-slate-800 shadow-sm">
-             <div className="flex justify-between items-center mb-6">
-                <div>
-                   <h3 className="font-bold text-slate-900 dark:text-white text-lg">Technician Load</h3>
-                   <p className="text-xs text-slate-500">Active tickets per staff member.</p>
-                </div>
-                <div className="p-2 bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600 rounded-lg">
-                   <Users size={18} />
-                </div>
-             </div>
-             
-             <div className="h-[200px] w-full">
+         {/* 3. WORKLOAD BAR CHART */}
+         <div className="bg-white dark:bg-slate-900 rounded-2xl p-5 border border-slate-200 dark:border-slate-800 shadow-sm">
+             <h3 className="font-bold text-slate-900 dark:text-white text-sm mb-4">Active Workload</h3>
+             <div className="h-[250px] w-full">
                 <ResponsiveContainer width="100%" height="100%">
-                   <BarChart data={workloadData} layout="vertical" margin={{ left: 0 }}>
+                   <BarChart data={workloadData} layout="vertical" margin={{ left: 0, right: 20 }}>
                       <CartesianGrid strokeDasharray="3 3" horizontal={true} vertical={false} stroke="#e2e8f0"/>
                       <XAxis type="number" hide />
-                      <YAxis dataKey="name" type="category" width={80} tick={{fontSize: 11, fill: '#64748b'}} axisLine={false} tickLine={false} />
+                      <YAxis dataKey="name" type="category" width={70} tick={{fontSize: 10, fill: '#64748b'}} axisLine={false} tickLine={false} />
                       <Tooltip cursor={{fill: 'transparent'}} contentStyle={{borderRadius: '8px'}} />
-                      <Bar dataKey="value" radius={[0, 4, 4, 0]} barSize={20}>
+                      <Bar dataKey="value" radius={[0, 4, 4, 0]} barSize={16}>
                         {workloadData.map((entry, index) => (
                            <Cell key={`cell-${index}`} fill={entry.color || '#6366f1'} />
                         ))}
@@ -290,46 +232,59 @@ export default function Dashboard({ tickets = [], departments = [], users = [] }
                 </ResponsiveContainer>
              </div>
           </div>
+      </div>
 
-          {/* 5. AT RISK LIST (Actionable) */}
-          <div className="bg-white dark:bg-slate-900 rounded-2xl p-6 border border-slate-200 dark:border-slate-800 shadow-sm">
-             <div className="flex justify-between items-center mb-4">
-                <h3 className="font-bold text-slate-900 dark:text-white text-lg flex items-center gap-2">
-                   <AlertCircle size={18} className="text-amber-500" />
-                   Priority Watchlist
-                </h3>
-                <button className="text-xs font-bold text-blue-600 hover:text-blue-700">View All</button>
-             </div>
-             
-             <div className="space-y-3">
-                {tickets.filter(t => t.status !== 'resolved' && t.priority === 'high').slice(0, 4).map(ticket => (
-                   <div key={ticket.id} className="flex items-center justify-between p-3 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-800">
-                      <div className="flex items-center gap-3">
-                         <div className="w-8 h-8 rounded-lg bg-rose-100 dark:bg-rose-900/20 text-rose-600 flex items-center justify-center font-bold text-xs">
-                            !
-                         </div>
-                         <div>
-                            <p className="text-xs font-bold text-slate-900 dark:text-white line-clamp-1">{ticket.subject}</p>
-                            <p className="text-[10px] text-slate-500">#{ticket.friendly_id} • {ticket.category || 'Support'}</p>
-                         </div>
-                      </div>
-                      <div className="text-right">
-                         <span className="block text-[10px] font-bold text-amber-600 bg-amber-50 px-2 py-1 rounded-full border border-amber-100">
-                            Due 2h
-                         </span>
-                      </div>
-                   </div>
-                ))}
-                
-                {tickets.filter(t => t.priority === 'high').length === 0 && (
-                   <div className="text-center py-8 text-slate-400 text-sm">
-                      <CheckCircle size={32} className="mx-auto mb-2 opacity-20" />
-                      No critical tickets. Nice work!
-                   </div>
-                )}
-             </div>
+      {/* 4. LIVE TICKET FEED */}
+      <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden">
+          <div className="px-6 py-4 border-b border-slate-100 dark:border-slate-800 flex justify-between items-center bg-slate-50/50 dark:bg-white/5">
+             <h3 className="font-bold text-slate-900 dark:text-white text-sm flex items-center gap-2">
+                <Activity size={16} className="text-blue-500" />
+                Live Feed (All Activity)
+             </h3>
+             <span className="text-[10px] text-slate-400 font-mono">Real-time</span>
           </div>
-
+          
+          <div className="overflow-x-auto">
+             <table className="w-full text-left text-sm">
+                <thead className="bg-slate-50 dark:bg-slate-950/30 text-slate-500 font-medium">
+                   <tr>
+                      <th className="px-6 py-3 text-xs uppercase tracking-wider">ID</th>
+                      <th className="px-6 py-3 text-xs uppercase tracking-wider">Subject</th>
+                      <th className="px-6 py-3 text-xs uppercase tracking-wider">Status</th>
+                      <th className="px-6 py-3 text-xs uppercase tracking-wider">Priority</th>
+                      <th className="px-6 py-3 text-xs uppercase tracking-wider">Created</th>
+                   </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                   {/* SHOW LAST 10 TICKETS (SORTED NEWEST FIRST) */}
+                   {Array.isArray(tickets) && [...tickets]
+                      .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
+                      .slice(0, 10)
+                      .map(ticket => (
+                       <tr key={ticket.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors">
+                          <td className="px-6 py-3 font-mono text-xs text-slate-500">#{ticket.friendly_id}</td>
+                          <td className="px-6 py-3 font-medium text-slate-900 dark:text-white max-w-xs truncate">
+                             {ticket.subject}
+                          </td>
+                          <td className="px-6 py-3">
+                             {getStatusBadge(ticket.status || 'new')}
+                          </td>
+                          <td className="px-6 py-3 text-xs text-slate-500 capitalize">{ticket.priority}</td>
+                          <td className="px-6 py-3 text-xs text-slate-400">
+                             {new Date(ticket.created_at).toLocaleDateString()}
+                          </td>
+                       </tr>
+                   ))}
+                   {(!tickets || tickets.length === 0) && (
+                       <tr>
+                           <td colSpan="5" className="px-6 py-8 text-center text-slate-400">
+                               No tickets found in the system.
+                           </td>
+                       </tr>
+                   )}
+                </tbody>
+             </table>
+          </div>
       </div>
     </div>
   );
