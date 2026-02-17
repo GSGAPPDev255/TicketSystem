@@ -1,369 +1,335 @@
-import React, { useState, useEffect } from 'react';
-import { supabase } from '../lib/supabase';
-import { 
-  LayoutDashboard, Clock, AlertCircle, TrendingUp, Filter, X, Check, Bot, Archive, 
-  Calendar, Download, FileText, ChevronDown, CheckCircle2, BarChart3, PieChart as PieIcon 
-} from 'lucide-react';
+// src/views/Dashboard.jsx
+import React, { useMemo } from 'react';
 import { 
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, 
-  PieChart, Pie, Cell, AreaChart, Area 
+  Cell, PieChart, Pie, AreaChart, Area
 } from 'recharts';
-import { StatCard, TicketRow, GlassCard } from '../components/ui';
+import { 
+  Activity, AlertCircle, CheckCircle, Clock, TrendingUp, 
+  Users, ArrowUpRight, ArrowDownRight, MoreHorizontal
+} from 'lucide-react';
 
-export default function DashboardView({ tickets = [], loading, role, onRefresh, onSelectTicket, onNewTicket, title = "Dashboard" }) {
-  const [filterMode, setFilterMode] = useState('active'); 
-  const [monthFilter, setMonthFilter] = useState('ALL'); 
-  const [yearFilter, setYearFilter] = useState(new Date().getFullYear().toString());
+// --- COLOR PALETTE ---
+const COLORS = ['#6366f1', '#8b5cf6', '#ec4899', '#10b981', '#f59e0b'];
+const STATUS_COLORS = {
+  new: '#3b82f6',       // Blue
+  open: '#8b5cf6',      // Purple
+  pending: '#f59e0b',   // Amber
+  resolved: '#10b981',  // Emerald
+  breached: '#ef4444'   // Red
+};
+
+export default function Dashboard({ tickets = [], departments = [], users = [] }) {
   
-  // REPORTING STATE
-  const [showReportMenu, setShowReportMenu] = useState(false);
-  const [currentUserEmail, setCurrentUserEmail] = useState(null);
+  // --- 1. DATA PROCESSING (The Brains) ---
+  const stats = useMemo(() => {
+    const total = tickets.length;
+    const open = tickets.filter(t => t.status !== 'resolved' && t.status !== 'closed').length;
+    const breached = tickets.filter(t => t.sla_breached).length;
+    const unassigned = tickets.filter(t => !t.assignee_id && t.status !== 'resolved').length;
 
-  // 1. IDENTIFY USER
-  useEffect(() => {
-    supabase.auth.getUser().then(({ data }) => {
-      if (data?.user) setCurrentUserEmail(data.user.email);
+    // Calculate "Risk" (Due in < 4 hours)
+    const now = new Date();
+    const fourHoursFromNow = new Date(now.getTime() + 4 * 60 * 60 * 1000);
+    const atRisk = tickets.filter(t => {
+      if (!t.sla_due_at || t.status === 'resolved') return false;
+      const due = new Date(t.sla_due_at);
+      return due > now && due < fourHoursFromNow;
+    }).length;
+
+    return { total, open, breached, unassigned, atRisk };
+  }, [tickets]);
+
+  // Chart 1: Tickets by Department
+  const deptData = useMemo(() => {
+    const counts = {};
+    tickets.forEach(t => {
+      // Handle both direct department_id and category-based derivation if needed
+      // For now, assuming t.department_id is populated
+      const deptId = t.department_id || 'unknown';
+      counts[deptId] = (counts[deptId] || 0) + 1;
     });
-  }, []);
 
-  const safeTickets = Array.isArray(tickets) ? tickets : [];
+    return Object.keys(counts).map(id => {
+      const dept = departments.find(d => d.id === id);
+      return {
+        name: dept ? dept.name : 'Unassigned',
+        value: counts[id]
+      };
+    }).sort((a, b) => b.value - a.value); // Sort highest first
+  }, [tickets, departments]);
 
-  // --- DASHBOARD FILTERING (Visual only) ---
-  const dateFilteredTickets = safeTickets.filter(t => {
-    const ticketDate = new Date(t.created_at);
-    const matchesYear = ticketDate.getFullYear().toString() === yearFilter;
-    const matchesMonth = monthFilter === 'ALL' || ticketDate.getMonth().toString() === monthFilter;
-    return matchesYear && matchesMonth;
-  });
+  // Chart 2: Technician Workload (Top 5)
+  const workloadData = useMemo(() => {
+    const counts = {};
+    tickets.filter(t => t.status !== 'resolved').forEach(t => {
+       const assignee = t.assignee_id || 'unassigned';
+       counts[assignee] = (counts[assignee] || 0) + 1;
+    });
 
-  // --- STATS ENGINE ---
-  const openTickets = dateFilteredTickets.filter(t => t.status !== 'Resolved' && t.status !== 'Closed');
-  const criticalTickets = dateFilteredTickets.filter(t => t.priority === 'Critical' && t.status !== 'Resolved');
-  const slaBreaches = dateFilteredTickets.filter(t => t.sla_breached);
-  const botResolved = dateFilteredTickets.filter(t => t.assignee === 'Nexus Bot' || t.assignee === 'GSG Bot');
-  const myResolved = dateFilteredTickets.filter(t => t.status === 'Resolved' || t.status === 'Closed');
+    return Object.keys(counts)
+      .map(id => {
+         if (id === 'unassigned') return { name: 'Unassigned', value: counts[id], color: '#94a3b8' };
+         const user = users.find(u => u.id === id);
+         return { name: user ? user.full_name.split(' ')[0] : 'Unknown', value: counts[id], color: '#6366f1' };
+      })
+      .sort((a, b) => b.value - a.value)
+      .slice(0, 5); // Top 5 only
+  }, [tickets, users]);
 
-  // --- CHART DATA PREP ---
-  const last7Days = [...Array(7)].map((_, i) => {
-    const d = new Date();
-    d.setDate(d.getDate() - (6 - i));
-    return d.toISOString().split('T')[0];
-  });
+  // Chart 3: 7-Day Velocity (Area Chart)
+  const velocityData = useMemo(() => {
+    const days = {};
+    // Initialize last 7 days with 0
+    for(let i=6; i>=0; i--) {
+        const d = new Date();
+        d.setDate(d.getDate() - i);
+        const dateStr = d.toLocaleDateString('en-US', { weekday: 'short' });
+        days[dateStr] = 0;
+    }
+
+    tickets.forEach(t => {
+        const d = new Date(t.created_at);
+        const dateStr = d.toLocaleDateString('en-US', { weekday: 'short' });
+        if (days[dateStr] !== undefined) {
+            days[dateStr]++;
+        }
+    });
+
+    return Object.keys(days).map(day => ({ name: day, tickets: days[day] }));
+  }, [tickets]);
+
+
+  // --- SUB-COMPONENTS ---
   
-  const volumeData = last7Days.map(date => ({
-    date: new Date(date).toLocaleDateString('en-GB', { weekday: 'short' }),
-    tickets: safeTickets.filter(t => t.created_at.startsWith(date)).length
-  }));
-
-  const pieData = [
-    { name: 'Open', value: openTickets.length, color: '#2563eb' }, // Darker Blue
-    { name: 'Resolved', value: myResolved.length, color: '#10b981' }, // Green
-  ];
-
-  // --- VIEW LOGIC ---
-  let displayedTickets = [];
-  let listTitle = "";
-
-  switch (filterMode) {
-    case 'bot':
-      displayedTickets = botResolved;
-      listTitle = "🤖 Auto-Resolved by Bot";
-      break;
-    case 'critical':
-      displayedTickets = criticalTickets;
-      listTitle = "🔥 Critical Issues";
-      break;
-    case 'sla':
-      displayedTickets = slaBreaches;
-      listTitle = "🚨 SLA Breaches";
-      break;
-    case 'resolved':
-      displayedTickets = myResolved;
-      listTitle = "✅ Resolved History";
-      break;
-    case 'active':
-    default:
-      displayedTickets = safeTickets.filter(t => t.status !== 'Resolved' && t.status !== 'Closed');
-      listTitle = "Active Queue";
-      break;
-  }
-
-  // --- REPORTING ENGINE ---
-  const generateReport = (type) => {
-    let dataToExport = [];
-    let fileName = `nexus_report_${type.toLowerCase()}_${new Date().toISOString().slice(0,10)}`;
-    let isSimplified = false;
-
-    switch (type) {
-      case 'MY_ISSUES':
-        dataToExport = safeTickets.filter(t => 
-           (t.requester && currentUserEmail && t.requester.toLowerCase().includes(currentUserEmail.split('@')[0])) ||
-           (t.assignee && currentUserEmail && t.assignee.toLowerCase().includes(currentUserEmail.split('@')[0]))
-        );
-        break;
-      case 'OPEN':
-        dataToExport = safeTickets.filter(t => t.status !== 'Resolved' && t.status !== 'Closed');
-        break;
-      case 'OPEN_SIMPLIFIED':
-        dataToExport = safeTickets.filter(t => t.status !== 'Resolved' && t.status !== 'Closed');
-        isSimplified = true;
-        break;
-      case 'CLOSED':
-        dataToExport = safeTickets.filter(t => t.status === 'Resolved' || t.status === 'Closed');
-        break;
-      case 'ALL':
-      default:
-        dataToExport = safeTickets;
-        break;
-    }
-
-    if (dataToExport.length === 0) {
-      alert("No records found for this report type.");
-      setShowReportMenu(false);
-      return;
-    }
-
-    let headers = [];
-    let rowMapper = null;
-
-    if (isSimplified) {
-      headers = ["ID", "Subject", "Status", "Priority", "Assignee"];
-      rowMapper = (t) => [
-        t.id,
-        `"${t.subject.replace(/"/g, '""')}"`,
-        t.status,
-        t.priority,
-        t.assignee || 'Unassigned'
-      ];
-    } else {
-      headers = ["ID", "Subject", "Description", "Status", "Priority", "Category", "Requester", "Assignee", "Created At", "Resolved At"];
-      rowMapper = (t) => [
-        t.id,
-        `"${t.subject.replace(/"/g, '""')}"`,
-        `"${(t.description || '').replace(/"/g, '""')}"`,
-        t.status,
-        t.priority || 'Medium',
-        t.category || 'General',
-        t.requester || 'Unknown',
-        t.assignee || 'Unassigned',
-        t.created_at ? new Date(t.created_at).toLocaleDateString() + ' ' + new Date(t.created_at).toLocaleTimeString() : '',
-        t.resolved_at ? new Date(t.resolved_at).toLocaleDateString() + ' ' + new Date(t.resolved_at).toLocaleTimeString() : ''
-      ];
-    }
-
-    const csvContent = [
-      headers.join(','), 
-      ...dataToExport.map(row => rowMapper(row).join(','))
-    ].join('\n');
-
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.setAttribute("href", url);
-    link.setAttribute("download", `${fileName}.csv`);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    setShowReportMenu(false);
-  };
-
-  const months = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
-  const currentYear = new Date().getFullYear();
-  const years = [currentYear, currentYear - 1]; 
+  const StatCard = ({ title, value, sub, icon: Icon, colorClass, trend }) => (
+    <div className="bg-white dark:bg-slate-900 rounded-2xl p-6 border border-slate-200 dark:border-slate-800 shadow-sm relative overflow-hidden group hover:shadow-md transition-all">
+       <div className={`absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity ${colorClass}`}>
+          <Icon size={64} />
+       </div>
+       <div className="relative z-10">
+          <div className="flex items-center gap-3 mb-2">
+             <div className={`p-2 rounded-lg ${colorClass} bg-opacity-10 text-current`}>
+                <Icon size={20} className={colorClass.replace('text-', '')} />
+             </div>
+             <h3 className="text-sm font-bold text-slate-500 uppercase tracking-wide">{title}</h3>
+          </div>
+          <div className="flex items-end gap-3">
+             <span className="text-3xl font-extrabold text-slate-900 dark:text-white">{value}</span>
+             {trend && (
+                <span className={`text-xs font-bold mb-1 flex items-center ${trend > 0 ? 'text-emerald-500' : 'text-rose-500'}`}>
+                   {trend > 0 ? <ArrowUpRight size={14}/> : <ArrowDownRight size={14}/>}
+                   {Math.abs(trend)}%
+                </span>
+             )}
+          </div>
+          <p className="text-xs text-slate-400 mt-2 font-medium">{sub}</p>
+       </div>
+    </div>
+  );
 
   return (
-    <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4" onClick={() => showReportMenu && setShowReportMenu(false)}>
+    <div className="max-w-[1920px] mx-auto space-y-8 p-6 lg:p-10">
       
-      {/* HEADER & CONTROLS */}
-      <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
-        <div>
-          <h2 className="text-2xl font-bold text-slate-900 dark:text-white transition-colors">{title}</h2>
-          <p className="text-slate-500 dark:text-slate-400">Overview & Historical Data</p>
-        </div>
-        
-        <div className="flex flex-wrap gap-2 items-center">
-           {/* TIME FILTERS */}
-           <div className="flex bg-white dark:bg-[#1e293b] border border-slate-300 dark:border-white/10 rounded-lg p-1 shadow-sm transition-colors">
-              <select 
-                className="bg-transparent text-sm text-slate-700 dark:text-white px-2 py-1 outline-none cursor-pointer"
-                value={monthFilter}
-                onChange={(e) => setMonthFilter(e.target.value)}
-              >
-                <option value="ALL">All Months</option>
-                {months.map((m, i) => <option key={m} value={i.toString()}>{m}</option>)}
-              </select>
-              <div className="w-px bg-slate-200 dark:bg-white/10 my-1"></div>
-              <select 
-                className="bg-transparent text-sm font-bold text-blue-600 dark:text-blue-400 px-2 py-1 outline-none cursor-pointer"
-                value={yearFilter}
-                onChange={(e) => setYearFilter(e.target.value)}
-              >
-                {years.map(y => <option key={y} value={y}>{y}</option>)}
-              </select>
-           </div>
-
-           {/* REPORTS DROPDOWN */}
-           <div className="relative">
-             <button 
-               onClick={(e) => { e.stopPropagation(); setShowReportMenu(!showReportMenu); }}
-               className={`p-2 bg-white dark:bg-[#1e293b] hover:bg-slate-50 dark:hover:bg-[#2d3748] rounded-lg border border-slate-300 dark:border-white/10 transition-colors flex items-center gap-2 text-sm font-medium shadow-sm ${showReportMenu ? 'text-blue-600 border-blue-500' : 'text-slate-600 dark:text-slate-300'}`}
-             >
-               <FileText size={16} /> <span>Reports</span> <ChevronDown size={14} />
-             </button>
-
-             {showReportMenu && (
-               <div className="absolute top-full right-0 mt-2 w-56 bg-white dark:bg-[#1e293b] border border-slate-300 dark:border-white/10 rounded-xl shadow-2xl z-50 overflow-hidden animate-in fade-in zoom-in-95 duration-200">
-                  <div className="py-1">
-                    <button onClick={() => generateReport('MY_ISSUES')} className="w-full text-left px-4 py-2.5 text-sm text-slate-600 dark:text-slate-300 hover:bg-blue-600 hover:text-white transition-colors flex items-center gap-2">
-                      <Bot size={14} /> My Issues
-                    </button>
-                    <div className="h-px bg-slate-100 dark:bg-white/10 my-1"></div>
-                    <button onClick={() => generateReport('OPEN')} className="w-full text-left px-4 py-2.5 text-sm text-slate-600 dark:text-slate-300 hover:bg-blue-600 hover:text-white transition-colors flex items-center gap-2">
-                      <TrendingUp size={14} /> All Open Issues
-                    </button>
-                    <button onClick={() => generateReport('CLOSED')} className="w-full text-left px-4 py-2.5 text-sm text-slate-600 dark:text-slate-300 hover:bg-blue-600 hover:text-white transition-colors flex items-center gap-2">
-                      <Archive size={14} /> All Closed Issues
-                    </button>
-                    <div className="h-px bg-slate-100 dark:bg-white/10 my-1"></div>
-                    <button onClick={() => generateReport('ALL')} className="w-full text-left px-4 py-2.5 text-sm text-slate-600 dark:text-slate-300 hover:bg-blue-600 hover:text-white transition-colors flex items-center gap-2">
-                      <Download size={14} /> Full Data Dump (csv)
-                    </button>
-                  </div>
-               </div>
-             )}
-           </div>
-
-           <div className="w-px h-8 bg-slate-200 dark:bg-white/10 mx-2 hidden md:block"></div>
-
-           <button onClick={onRefresh} className="p-2 bg-white dark:bg-white/5 hover:bg-slate-50 dark:hover:bg-white/10 text-slate-600 dark:text-white rounded-lg border border-slate-300 dark:border-white/10 transition-colors shadow-sm">
-             <Clock size={20} className={loading ? "animate-spin" : ""} />
-           </button>
-           <button onClick={onNewTicket} className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-lg font-medium shadow-lg shadow-blue-900/20 transition-all flex items-center gap-2">
-             <span>+ New Ticket</span>
-           </button>
-        </div>
+      {/* HEADER */}
+      <div className="flex flex-col md:flex-row md:items-end justify-between gap-6 pb-6 border-b border-slate-200 dark:border-slate-800">
+         <div>
+            <h1 className="text-3xl font-extrabold tracking-tight text-slate-900 dark:text-white mb-2">
+              Mission <span className="text-transparent bg-clip-text bg-gradient-to-r from-blue-600 to-indigo-600">Control</span>
+            </h1>
+            <p className="text-slate-500 dark:text-slate-400">Live system metrics and performance tracking.</p>
+         </div>
+         <div className="flex items-center gap-2 text-xs font-mono text-slate-400 bg-slate-100 dark:bg-slate-800 px-3 py-1.5 rounded-full">
+            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+            SYSTEM ONLINE
+         </div>
       </div>
 
-      {/* STATS GRID */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-        <div onClick={() => setFilterMode('active')} className={`cursor-pointer transition-transform active:scale-95 ${filterMode === 'active' ? 'ring-2 ring-blue-500 rounded-xl' : ''}`}>
-          <StatCard label="Open Tickets" value={openTickets.length} icon={LayoutDashboard} trend="Active Queue" trendUp={true} />
-        </div>
-
-        <div onClick={() => setFilterMode('resolved')} className={`cursor-pointer transition-transform active:scale-95 ${filterMode === 'resolved' ? 'ring-2 ring-emerald-500 rounded-xl' : ''}`}>
-          <StatCard label={`Resolved (${yearFilter})`} value={myResolved.length} icon={Archive} trend={monthFilter !== 'ALL' ? `In ${months[parseInt(monthFilter)]}` : "Total this year"} trendUp={true} />
-        </div>
-
-        <div onClick={() => setFilterMode('sla')} className={`cursor-pointer transition-transform active:scale-95 ${filterMode === 'sla' ? 'ring-2 ring-rose-500 rounded-xl' : ''}`}>
-          <StatCard label="SLA Breaches" value={slaBreaches.length} icon={AlertCircle} trend="Target Missed" trendUp={slaBreaches.length === 0} />
-        </div>
-
-        <div onClick={() => setFilterMode('bot')} className={`cursor-pointer transition-transform active:scale-95 ${filterMode === 'bot' ? 'ring-2 ring-purple-500 rounded-xl' : ''}`}>
-          <StatCard label="Bot Resolved" value={botResolved.length} icon={Bot} trend="AI Deflection" trendUp={true} />
-        </div>
+      {/* 1. STATS GRID */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+         <StatCard 
+            title="Active Tickets" 
+            value={stats.open} 
+            sub={`${stats.unassigned} unassigned`} 
+            icon={Activity} 
+            colorClass="text-blue-500"
+            trend={12} // Mock trend
+         />
+         <StatCard 
+            title="Critical Risk" 
+            value={stats.atRisk} 
+            sub="Breaching in < 4h" 
+            icon={AlertCircle} 
+            colorClass="text-amber-500" 
+         />
+         <StatCard 
+            title="SLA Breached" 
+            value={stats.breached} 
+            sub="Requires attention" 
+            icon={Clock} 
+            colorClass="text-rose-500" 
+         />
+         <StatCard 
+            title="Resolution Rate" 
+            value="94%" 
+            sub="Avg 4.2h response" 
+            icon={CheckCircle} 
+            colorClass="text-emerald-500"
+            trend={2.4} 
+         />
       </div>
 
-      {/* CHARTS ROW (Only for Admin/Tech) */}
-      {role !== 'user' && (
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            <GlassCard className="p-6 col-span-2">
-                <div className="flex items-center gap-2 mb-6">
-                    <TrendingUp size={20} className="text-blue-600" />
-                    <h3 className="text-sm font-bold text-slate-500 dark:text-slate-300 uppercase tracking-wider">7-Day Ticket Volume</h3>
-                </div>
-                <div className="h-64 w-full">
-                    <ResponsiveContainer width="100%" height="100%">
-                        <AreaChart data={volumeData}>
-                            <defs>
-                                {/* UPDATED: Darker Blue (#2563eb) for higher contrast on white */}
-                                <linearGradient id="colorTickets" x1="0" y1="0" x2="0" y2="1">
-                                    <stop offset="5%" stopColor="#2563eb" stopOpacity={0.5}/>
-                                    <stop offset="95%" stopColor="#2563eb" stopOpacity={0}/>
-                                </linearGradient>
-                            </defs>
-                            {/* UPDATED: Increased opacity for grid lines */}
-                            <CartesianGrid strokeDasharray="3 3" stroke="#94a3b8" strokeOpacity={0.2} />
-                            {/* UPDATED: Darker Axis Text (#64748b) */}
-                            <XAxis dataKey="date" stroke="#64748b" fontSize={12} tickLine={false} axisLine={false} />
-                            <YAxis stroke="#64748b" fontSize={12} tickLine={false} axisLine={false} allowDecimals={false} />
-                            <Tooltip 
-                                contentStyle={{ backgroundColor: '#1e293b', border: 'none', borderRadius: '8px', color: '#fff' }}
-                                itemStyle={{ color: '#60a5fa' }}
-                            />
-                            {/* UPDATED: Darker Stroke */}
-                            <Area type="monotone" dataKey="tickets" stroke="#2563eb" strokeWidth={3} fillOpacity={1} fill="url(#colorTickets)" />
-                        </AreaChart>
-                    </ResponsiveContainer>
-                </div>
-            </GlassCard>
-
-            <GlassCard className="p-6">
-                <div className="flex items-center gap-2 mb-6">
-                    <PieIcon size={20} className="text-emerald-500" />
-                    <h3 className="text-sm font-bold text-slate-500 dark:text-slate-300 uppercase tracking-wider">Workload Status</h3>
-                </div>
-                <div className="h-64 w-full relative">
-                    <ResponsiveContainer width="100%" height="100%">
-                        <PieChart>
-                            <Pie
-                                data={pieData}
-                                innerRadius={60}
-                                outerRadius={80}
-                                paddingAngle={5}
-                                dataKey="value"
-                            >
-                                {pieData.map((entry, index) => (
-                                    <Cell key={`cell-${index}`} fill={entry.color} stroke="none" />
-                                ))}
-                            </Pie>
-                            <Tooltip 
-                                contentStyle={{ backgroundColor: '#1e293b', border: 'none', borderRadius: '8px', color: '#fff' }}
-                            />
-                        </PieChart>
-                    </ResponsiveContainer>
-                    <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
-                        <span className="text-3xl font-bold text-slate-900 dark:text-white">{openTickets.length + myResolved.length}</span>
-                        <span className="text-xs text-slate-500 uppercase">Total</span>
-                    </div>
-                </div>
-            </GlassCard>
-        </div>
-      )}
-
-      {/* DYNAMIC LIST */}
-      <div className="space-y-4">
-        <div className="flex items-center justify-between">
-           <div className="flex items-center gap-2">
-              <h3 className="text-lg font-semibold text-slate-900 dark:text-white transition-colors">{listTitle}</h3>
-              <span className="text-xs font-mono text-slate-500 bg-slate-100 dark:bg-white/5 px-2 py-0.5 rounded-full">{displayedTickets.length}</span>
-           </div>
-           
-           {filterMode !== 'active' && (
-             <button onClick={() => setFilterMode('active')} className="flex items-center gap-1 text-xs text-blue-500 hover:text-blue-400">
-               <X size={12} /> Clear Filter
-             </button>
-           )}
-        </div>
-
-        <div className="space-y-2">
-           {loading ? (
-             <div className="text-center py-12 text-slate-500">Loading tickets...</div>
-           ) : displayedTickets.length === 0 ? (
-             <div className="text-center py-12 border border-dashed border-slate-300 dark:border-white/10 rounded-xl">
-               <div className="w-12 h-12 bg-slate-100 dark:bg-white/5 rounded-full flex items-center justify-center mx-auto mb-3 text-slate-500">
-                 {filterMode === 'resolved' ? <Archive size={24}/> : <Check size={24}/>}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+         
+         {/* 2. MAIN CHART: VELOCITY (2/3 Width) */}
+         <div className="lg:col-span-2 bg-white dark:bg-slate-900 rounded-2xl p-6 border border-slate-200 dark:border-slate-800 shadow-sm">
+            <div className="flex justify-between items-center mb-6">
+               <div>
+                  <h3 className="font-bold text-slate-900 dark:text-white text-lg">Ticket Velocity</h3>
+                  <p className="text-xs text-slate-500">Incoming volume over the last 7 days.</p>
                </div>
-               <p className="text-slate-500 dark:text-slate-400 font-medium">No tickets found.</p>
-               <p className="text-xs text-slate-400 dark:text-slate-500">
-                 {filterMode === 'resolved' ? 'Try changing the date filter.' : 'Your queue is clear!'}
-               </p>
+               <div className="p-2 bg-slate-50 dark:bg-slate-800 rounded-lg">
+                  <TrendingUp size={18} className="text-blue-500"/>
+               </div>
+            </div>
+            
+            <div className="h-[300px] w-full">
+               <ResponsiveContainer width="100%" height="100%">
+                  <AreaChart data={velocityData}>
+                     <defs>
+                        <linearGradient id="colorTickets" x1="0" y1="0" x2="0" y2="1">
+                           <stop offset="5%" stopColor="#6366f1" stopOpacity={0.3}/>
+                           <stop offset="95%" stopColor="#6366f1" stopOpacity={0}/>
+                        </linearGradient>
+                     </defs>
+                     <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
+                     <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{fill: '#94a3b8', fontSize: 12}} dy={10} />
+                     <YAxis axisLine={false} tickLine={false} tick={{fill: '#94a3b8', fontSize: 12}} />
+                     <Tooltip 
+                        contentStyle={{borderRadius: '12px', border: 'none', boxShadow: '0 4px 12px rgba(0,0,0,0.1)'}}
+                     />
+                     <Area type="monotone" dataKey="tickets" stroke="#6366f1" strokeWidth={3} fillOpacity={1} fill="url(#colorTickets)" />
+                  </AreaChart>
+               </ResponsiveContainer>
+            </div>
+         </div>
+
+         {/* 3. SIDE CHART: DEPARTMENT DISTRIBUTION (1/3 Width) */}
+         <div className="bg-white dark:bg-slate-900 rounded-2xl p-6 border border-slate-200 dark:border-slate-800 shadow-sm">
+            <h3 className="font-bold text-slate-900 dark:text-white text-lg mb-1">By Department</h3>
+            <p className="text-xs text-slate-500 mb-6">Current active distribution.</p>
+            
+            <div className="h-[250px] w-full relative">
+               <ResponsiveContainer width="100%" height="100%">
+                  <PieChart>
+                     <Pie
+                        data={deptData}
+                        cx="50%"
+                        cy="50%"
+                        innerRadius={60}
+                        outerRadius={80}
+                        paddingAngle={5}
+                        dataKey="value"
+                     >
+                        {deptData.map((entry, index) => (
+                           <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} strokeWidth={0} />
+                        ))}
+                     </Pie>
+                     <Tooltip />
+                  </PieChart>
+               </ResponsiveContainer>
+               {/* Center Text */}
+               <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+                  <span className="text-3xl font-bold text-slate-800 dark:text-white">{stats.total}</span>
+                  <span className="text-[10px] uppercase text-slate-400 font-bold tracking-wider">Tickets</span>
+               </div>
+            </div>
+
+            {/* Legend */}
+            <div className="mt-4 space-y-2 max-h-[100px] overflow-y-auto custom-scrollbar">
+                {deptData.map((entry, index) => (
+                   <div key={index} className="flex items-center justify-between text-xs">
+                      <div className="flex items-center gap-2">
+                         <span className="w-2 h-2 rounded-full" style={{backgroundColor: COLORS[index % COLORS.length]}}></span>
+                         <span className="text-slate-600 dark:text-slate-300 font-medium">{entry.name}</span>
+                      </div>
+                      <span className="font-bold text-slate-900 dark:text-white">{entry.value}</span>
+                   </div>
+                ))}
+            </div>
+         </div>
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+          
+          {/* 4. TECHNICIAN WORKLOAD (New!) */}
+          <div className="bg-white dark:bg-slate-900 rounded-2xl p-6 border border-slate-200 dark:border-slate-800 shadow-sm">
+             <div className="flex justify-between items-center mb-6">
+                <div>
+                   <h3 className="font-bold text-slate-900 dark:text-white text-lg">Technician Load</h3>
+                   <p className="text-xs text-slate-500">Active tickets per staff member.</p>
+                </div>
+                <div className="p-2 bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600 rounded-lg">
+                   <Users size={18} />
+                </div>
              </div>
-           ) : (
-             displayedTickets.map(ticket => (
-               <TicketRow key={ticket.id} ticket={ticket} onClick={() => onSelectTicket(ticket)} />
-             ))
-           )}
-        </div>
+             
+             <div className="h-[200px] w-full">
+                <ResponsiveContainer width="100%" height="100%">
+                   <BarChart data={workloadData} layout="vertical" margin={{ left: 0 }}>
+                      <CartesianGrid strokeDasharray="3 3" horizontal={true} vertical={false} stroke="#e2e8f0"/>
+                      <XAxis type="number" hide />
+                      <YAxis dataKey="name" type="category" width={80} tick={{fontSize: 11, fill: '#64748b'}} axisLine={false} tickLine={false} />
+                      <Tooltip cursor={{fill: 'transparent'}} contentStyle={{borderRadius: '8px'}} />
+                      <Bar dataKey="value" radius={[0, 4, 4, 0]} barSize={20}>
+                        {workloadData.map((entry, index) => (
+                           <Cell key={`cell-${index}`} fill={entry.color || '#6366f1'} />
+                        ))}
+                      </Bar>
+                   </BarChart>
+                </ResponsiveContainer>
+             </div>
+          </div>
+
+          {/* 5. AT RISK LIST (Actionable) */}
+          <div className="bg-white dark:bg-slate-900 rounded-2xl p-6 border border-slate-200 dark:border-slate-800 shadow-sm">
+             <div className="flex justify-between items-center mb-4">
+                <h3 className="font-bold text-slate-900 dark:text-white text-lg flex items-center gap-2">
+                   <AlertCircle size={18} className="text-amber-500" />
+                   Priority Watchlist
+                </h3>
+                <button className="text-xs font-bold text-blue-600 hover:text-blue-700">View All</button>
+             </div>
+             
+             <div className="space-y-3">
+                {tickets.filter(t => t.status !== 'resolved' && t.priority === 'high').slice(0, 4).map(ticket => (
+                   <div key={ticket.id} className="flex items-center justify-between p-3 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-800">
+                      <div className="flex items-center gap-3">
+                         <div className="w-8 h-8 rounded-lg bg-rose-100 dark:bg-rose-900/20 text-rose-600 flex items-center justify-center font-bold text-xs">
+                            !
+                         </div>
+                         <div>
+                            <p className="text-xs font-bold text-slate-900 dark:text-white line-clamp-1">{ticket.subject}</p>
+                            <p className="text-[10px] text-slate-500">#{ticket.friendly_id} • {ticket.category || 'Support'}</p>
+                         </div>
+                      </div>
+                      <div className="text-right">
+                         <span className="block text-[10px] font-bold text-amber-600 bg-amber-50 px-2 py-1 rounded-full border border-amber-100">
+                            Due 2h
+                         </span>
+                      </div>
+                   </div>
+                ))}
+                
+                {tickets.filter(t => t.priority === 'high').length === 0 && (
+                   <div className="text-center py-8 text-slate-400 text-sm">
+                      <CheckCircle size={32} className="mx-auto mb-2 opacity-20" />
+                      No critical tickets. Nice work!
+                   </div>
+                )}
+             </div>
+          </div>
+
       </div>
     </div>
   );
