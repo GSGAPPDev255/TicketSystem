@@ -466,7 +466,16 @@ function AppContent({ session }) {
 
     switch (activeView) {
       case 'dashboard': 
-        return <DashboardView tickets={tickets} loading={loading} role={role} onRefresh={fetchTickets} onSelectTicket={setSelectedTicket} onNewTicket={() => handleNavigation('new-ticket')} />;
+        return (
+          <DashboardView 
+            tickets={tickets} 
+            loading={loading} 
+            role={role} 
+            onRefresh={fetchTickets} 
+            onSelectTicket={setSelectedTicket} 
+            onNewTicket={() => handleNavigation('new-ticket')} 
+          />
+        );
       case 'my-queue': 
         return <DashboardView title="My Active Tickets" tickets={tickets.filter(t => t.assignee_id === session.user.id && t.status !== 'Resolved' && t.status !== 'Closed')} loading={loading} role={role} onRefresh={fetchTickets} onSelectTicket={setSelectedTicket} />; 
       case 'new-ticket': 
