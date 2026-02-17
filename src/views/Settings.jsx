@@ -3,31 +3,31 @@ import React, { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 import { 
   Building2, Search, Plus, Trash2, 
-  Shield, Check, X, Filter, Briefcase, Building, Settings 
+  Shield, Check, X, Filter, Briefcase, Building, Settings, 
+  ChevronRight, Crown, Laptop, User
 } from 'lucide-react';
-import { GlassCard, getIcon } from '../components/ui'; 
+// We will use standard divs instead of GlassCard to ensure the 'Fancy' look controls are local
+// import { GlassCard, getIcon } from '../components/ui'; 
+// Re-implementing a local getIcon for safety if you want to copy-paste cleanly
+const getIcon = (name, size=16) => {
+    const icons = { Briefcase, Building, Settings, Shield, Users: User, Network: Laptop };
+    const Icn = icons[name] || Briefcase;
+    return <Icn size={size} />;
+};
 
 export default function SettingsView({ categories, tenants, users, departments = [], onUpdate }) {
-  // SEARCH & FILTER STATE
+  // --- STATE (UNCHANGED) ---
   const [searchTerm, setSearchTerm] = useState('');
   const [deptFilter, setDeptFilter] = useState('ALL'); 
   const [tenantFilter, setTenantFilter] = useState('ALL'); 
   const [userDeptMap, setUserDeptMap] = useState({}); 
-
-  // CATEGORY EDIT STATE
   const [newCategory, setNewCategory] = useState('');
   const [newCategoryIcon, setNewCategoryIcon] = useState('Briefcase'); 
-  
-  // CHANGED: Switched from single string to Array for multiple departments
   const [newCategoryDepts, setNewCategoryDepts] = useState([]); 
-  
   const [isAddingCat, setIsAddingCat] = useState(false);
-
-  // USER EDIT STATE
-  // Stores the ID of the user currently being edited
   const [editingUser, setEditingUser] = useState(null);
 
-  // --- AVATAR HELPER ---
+  // --- HELPERS (UNCHANGED) ---
   const getInitials = (name) => {
     if (!name) return '??';
     const parts = name.trim().split(/\s+/); 
@@ -36,7 +36,7 @@ export default function SettingsView({ categories, tenants, users, departments =
     return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
   };
 
-  // 1. FETCH DEPARTMENT MEMBERSHIPS
+  // --- LOGIC (UNCHANGED) ---
   useEffect(() => {
     const fetchMembers = async () => {
       const { data } = await supabase.from('department_members').select('*');
@@ -49,7 +49,6 @@ export default function SettingsView({ categories, tenants, users, departments =
     fetchMembers();
   }, []);
 
-  // 2. TOGGLE TENANT ACCESS
   const handleToggleAccess = async (userId, tenantId, hasAccess) => {
     try {
       if (hasAccess) {
@@ -63,35 +62,21 @@ export default function SettingsView({ categories, tenants, users, departments =
     }
   };
 
-  // 3. UPDATE USER ROLE
   const handleUpdateRole = async (userId, newRole) => {
     const { error } = await supabase.from('profiles').update({ role: newRole }).eq('id', userId);
-    
-    if (error) {
-        alert("Error updating role: " + error.message);
-        return;
-    }
-
-    // Close the edit window on success
+    if (error) { alert("Error: " + error.message); return; }
     setEditingUser(null);
     onUpdate();
   };
 
-  // 4. UPDATE USER DEPARTMENT
   const handleUpdateDept = async (userId, newDeptId) => {
-    // A. Remove old
     await supabase.from('department_members').delete().eq('user_id', userId);
-    
-    // B. Add new (if not "None")
     if (newDeptId) {
        await supabase.from('department_members').insert({ user_id: userId, department_id: newDeptId });
     }
-    
-    // C. Update local state
     setUserDeptMap(prev => ({ ...prev, [userId]: newDeptId }));
   };
 
-  // --- NEW: CATEGORY DEPT TOGGLE ---
   const toggleCategoryDept = (deptId) => {
     setNewCategoryDepts(prev => {
       if (prev.includes(deptId)) return prev.filter(id => id !== deptId);
@@ -99,19 +84,15 @@ export default function SettingsView({ categories, tenants, users, departments =
     });
   };
 
-  // 5. ADD CATEGORY (Modified for Arrays)
   const handleAddCategory = async () => {
     if (!newCategory.trim()) return;
-    
     const primaryDept = newCategoryDepts.length > 0 ? newCategoryDepts[0] : null;
-
     await supabase.from('categories').insert({ 
         label: newCategory, 
         icon: newCategoryIcon,
-        default_department_id: primaryDept, // Legacy support
-        department_ids: newCategoryDepts    // New Array support
+        default_department_id: primaryDept,
+        department_ids: newCategoryDepts
     });
-
     setNewCategory('');
     setNewCategoryDepts([]);
     setNewCategoryIcon('Briefcase');
@@ -119,243 +100,280 @@ export default function SettingsView({ categories, tenants, users, departments =
     onUpdate();
   };
 
-  // 6. DELETE CATEGORY
   const handleDeleteCategory = async (id) => {
     if (!window.confirm("Delete this category?")) return;
     await supabase.from('categories').delete().eq('id', id);
     onUpdate();
   };
 
-  // --- FILTER LOGIC ---
   const filteredUsers = users.filter(user => {
-    // 1. Search
     const matchesSearch = (user.full_name || '').toLowerCase().includes(searchTerm.toLowerCase()) 
                        || (user.email || '').toLowerCase().includes(searchTerm.toLowerCase());
-    
-    // 2. Department Filter
     const userDeptId = userDeptMap[user.id]; 
     const matchesDept = deptFilter === 'ALL' || userDeptId === deptFilter;
-
-    // 3. Tenant Filter
     const matchesTenant = tenantFilter === 'ALL' || (user.access_list && user.access_list.includes(tenantFilter));
-
     return matchesSearch && matchesDept && matchesTenant;
   });
 
   const availableIcons = ['Briefcase', 'Network', 'Building', 'Settings', 'Shield', 'Users'];
 
+  // --- UI COMPONENTS ---
+  // A wrapper to replace the "Box" look with a sleek panel
+  const Panel = ({ children, title, icon: Icon, action }) => (
+    <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden flex flex-col h-[calc(100vh-10rem)] transition-all duration-300 hover:shadow-md">
+       <div className="px-6 py-5 border-b border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-white/5 flex justify-between items-center backdrop-blur-sm">
+          <div className="flex items-center gap-3">
+             <div className="p-2 bg-white dark:bg-slate-800 rounded-lg shadow-sm text-slate-500 dark:text-slate-400">
+               <Icon size={18} />
+             </div>
+             <h3 className="font-bold text-slate-800 dark:text-slate-100">{title}</h3>
+          </div>
+          {action}
+       </div>
+       <div className="flex-1 overflow-y-auto custom-scrollbar p-4 space-y-3">
+          {children}
+       </div>
+    </div>
+  );
+
   return (
-    <div className="max-w-7xl mx-auto space-y-6">
+    <div className="max-w-[1600px] mx-auto space-y-8 p-6">
       
-      {/* HEADER */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+      {/* HEADER SECTION */}
+      <div className="flex flex-col md:flex-row md:items-end justify-between gap-6 pb-6 border-b border-slate-200 dark:border-slate-800">
         <div>
-           <h1 className="text-2xl font-bold text-slate-900 dark:text-white">System Configuration</h1>
-           <p className="text-slate-500 dark:text-slate-400">Manage categories, tenants, and user access control.</p>
+           <h1 className="text-4xl font-extrabold tracking-tight text-slate-900 dark:text-white mb-2">
+             System <span className="text-transparent bg-clip-text bg-gradient-to-r from-blue-600 to-indigo-600">Configuration</span>
+           </h1>
+           <p className="text-slate-500 dark:text-slate-400 max-w-2xl text-lg">
+             Manage your organization's taxonomy, tenant environments, and user privileges from a single command center.
+           </p>
+        </div>
+        <div className="flex gap-3">
+           {/* Stat Pills could go here */}
+           <div className="px-4 py-2 bg-white dark:bg-slate-900 rounded-full border border-slate-200 dark:border-slate-800 shadow-sm text-xs font-semibold text-slate-600 dark:text-slate-300">
+              {users.length} Users
+           </div>
+           <div className="px-4 py-2 bg-white dark:bg-slate-900 rounded-full border border-slate-200 dark:border-slate-800 shadow-sm text-xs font-semibold text-slate-600 dark:text-slate-300">
+              {tenants.length} Tenants
+           </div>
         </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
         
-        {/* --- LEFT COLUMN: CATEGORIES (3/12) --- */}
-        <div className="lg:col-span-3 space-y-6">
-           <GlassCard className="p-0 overflow-hidden flex flex-col h-[calc(100vh-12rem)]">
-              <div className="p-4 border-b border-slate-200 dark:border-white/10 flex justify-between items-center bg-slate-50 dark:bg-white/5">
-                 <h3 className="font-semibold text-slate-900 dark:text-white flex items-center gap-2">
-                   <Briefcase size={18} className="text-blue-500"/> Categories
-                 </h3>
-                 <button onClick={() => setIsAddingCat(!isAddingCat)} className="p-1 hover:bg-slate-200 dark:hover:bg-white/10 rounded">
-                    {isAddingCat ? <X size={18}/> : <Plus size={18}/>}
-                 </button>
-              </div>
-              
-              <div className="p-4 overflow-y-auto custom-scrollbar flex-1 space-y-2">
-                 {isAddingCat && (
-                    <div className="p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg space-y-3 mb-2 border border-blue-100 dark:border-blue-500/30">
-                       
-                       {/* Name Input */}
-                       <input 
-                         autoFocus
-                         className="w-full text-sm p-2 rounded border border-blue-200 dark:border-blue-500/30 bg-white dark:bg-black/20"
-                         placeholder="Category Name"
-                         value={newCategory}
-                         onChange={e => setNewCategory(e.target.value)}
-                       />
-
-                       {/* Icon Picker */}
-                       <div className="flex gap-2 justify-between">
-                          {availableIcons.map(icon => (
-                            <button
-                              key={icon}
-                              onClick={() => setNewCategoryIcon(icon)}
-                              className={`p-1.5 rounded border transition-all ${
-                                newCategoryIcon === icon 
-                                  ? 'bg-blue-500 border-blue-600 text-white' 
-                                  : 'bg-white dark:bg-black/20 border-blue-200 dark:border-blue-500/30 text-slate-400'
-                              }`}
-                            >
-                              {getIcon(icon, 14)}
-                            </button>
-                          ))}
-                       </div>
-
-                       {/* Multi-Select Depts */}
-                       <div>
-                          <p className="text-[10px] font-bold text-blue-800 dark:text-blue-300 mb-1 uppercase">Routing Departments</p>
-                          <div className="flex flex-wrap gap-1.5">
-                             {departments.map(dept => {
-                               const isSelected = newCategoryDepts.includes(dept.id);
-                               return (
-                                 <button
-                                   key={dept.id}
-                                   onClick={() => toggleCategoryDept(dept.id)}
-                                   className={`px-2 py-1 rounded text-[10px] border transition-all ${
-                                     isSelected
-                                       ? 'bg-blue-600 border-blue-600 text-white shadow-sm'
-                                       : 'bg-white dark:bg-black/20 border-blue-200 dark:border-blue-500/30 text-slate-600 dark:text-slate-300'
-                                   }`}
-                                 >
-                                   {dept.name}
-                                 </button>
-                               );
-                             })}
-                          </div>
-                       </div>
-
-                       <button onClick={handleAddCategory} className="w-full bg-blue-600 text-white text-xs font-bold py-1.5 rounded shadow-sm hover:bg-blue-500">
-                          Save Category
-                       </button>
+        {/* --- LEFT: CATEGORIES (3/12) --- */}
+        <div className="lg:col-span-3">
+           <Panel 
+             title="Categories" 
+             icon={Briefcase}
+             action={
+               <button onClick={() => setIsAddingCat(!isAddingCat)} className="p-2 hover:bg-blue-50 dark:hover:bg-blue-900/20 text-blue-600 rounded-full transition-colors">
+                  {isAddingCat ? <X size={18}/> : <Plus size={18}/>}
+               </button>
+             }
+           >
+              {isAddingCat && (
+                 <div className="p-4 bg-slate-50 dark:bg-slate-800/50 rounded-xl border border-dashed border-blue-300 dark:border-blue-700 space-y-4 mb-4 animate-in slide-in-from-top-2">
+                    <input 
+                      autoFocus
+                      className="w-full text-sm p-2.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 focus:ring-2 focus:ring-blue-500/20 outline-none transition-all"
+                      placeholder="New Category Name..."
+                      value={newCategory}
+                      onChange={e => setNewCategory(e.target.value)}
+                    />
+                    
+                    <div className="flex gap-2 justify-between bg-white dark:bg-slate-900 p-2 rounded-lg border border-slate-100 dark:border-slate-700">
+                       {availableIcons.map(icon => (
+                         <button
+                           key={icon}
+                           onClick={() => setNewCategoryIcon(icon)}
+                           className={`p-2 rounded-md transition-all ${
+                             newCategoryIcon === icon 
+                               ? 'bg-blue-100 text-blue-600 dark:bg-blue-600 dark:text-white' 
+                               : 'text-slate-400 hover:text-slate-600'
+                           }`}
+                         >
+                           {getIcon(icon, 16)}
+                         </button>
+                       ))}
                     </div>
-                 )}
 
-                 {categories.map(cat => (
-                   <div key={cat.id} className="group flex items-center justify-between p-3 rounded-lg border border-slate-100 dark:border-white/5 hover:border-blue-200 dark:hover:border-blue-500/50 hover:bg-blue-50 dark:hover:bg-blue-900/10 transition-all">
-                      <div className="flex items-center gap-3">
-                         <div className="p-2 bg-white dark:bg-white/10 rounded-md shadow-sm text-slate-600 dark:text-slate-300">
-                            {getIcon(cat.icon)}
-                         </div>
-                         <div>
-                            <span className="block text-sm font-medium text-slate-900 dark:text-white">{cat.label}</span>
-                            <div className="flex flex-wrap gap-1 mt-1">
-                                {(() => {
-                                  let deptNames = [];
-                                  if (cat.department_ids && Array.isArray(cat.department_ids)) {
-                                     deptNames = cat.department_ids.map(id => departments.find(d => d.id === id)?.name).filter(Boolean);
-                                  } else if (cat.default_department_id) {
-                                     const d = departments.find(d => d.id === cat.default_department_id);
-                                     if (d) deptNames.push(d.name);
-                                  }
-                                  
-                                  if (deptNames.length === 0) return <span className="text-[10px] text-slate-400">No Routing</span>;
+                    <div className="space-y-2">
+                        <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Routed Departments</label>
+                        <div className="flex flex-wrap gap-2">
+                          {departments.map(dept => (
+                             <button
+                               key={dept.id}
+                               onClick={() => toggleCategoryDept(dept.id)}
+                               className={`px-2.5 py-1 rounded-md text-[10px] font-medium border transition-all ${
+                                 newCategoryDepts.includes(dept.id)
+                                   ? 'bg-blue-600 border-blue-600 text-white'
+                                   : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-500 hover:border-blue-300'
+                               }`}
+                             >
+                               {dept.name}
+                             </button>
+                          ))}
+                        </div>
+                    </div>
 
-                                  return deptNames.map((name, i) => (
-                                    <span key={i} className="text-[10px] bg-slate-100 dark:bg-white/10 text-slate-500 px-1.5 py-0.5 rounded">
-                                      {name}
-                                    </span>
-                                  ));
-                                })()}
-                            </div>
+                    <button onClick={handleAddCategory} className="w-full bg-slate-900 dark:bg-white text-white dark:text-slate-900 text-xs font-bold py-2.5 rounded-lg hover:shadow-lg hover:scale-[1.02] transition-all">
+                       Save Category
+                    </button>
+                 </div>
+              )}
+
+              {categories.map(cat => (
+                <div key={cat.id} className="group flex items-start justify-between p-3 rounded-xl border border-transparent hover:border-slate-200 dark:hover:border-slate-700 hover:bg-white dark:hover:bg-slate-800 transition-all hover:shadow-sm">
+                   <div className="flex gap-3">
+                      <div className="mt-0.5 w-8 h-8 rounded-full bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600 dark:text-indigo-400 flex items-center justify-center">
+                         {getIcon(cat.icon, 14)}
+                      </div>
+                      <div>
+                         <span className="block text-sm font-semibold text-slate-700 dark:text-slate-200">{cat.label}</span>
+                         <div className="flex flex-wrap gap-1 mt-1.5">
+                             {/* LOGIC TO SHOW TAGS */}
+                             {(() => {
+                               let deptNames = [];
+                               if (cat.department_ids && Array.isArray(cat.department_ids)) {
+                                  deptNames = cat.department_ids.map(id => departments.find(d => d.id === id)?.name).filter(Boolean);
+                               } else if (cat.default_department_id) {
+                                  const d = departments.find(d => d.id === cat.default_department_id);
+                                  if (d) deptNames.push(d.name);
+                               }
+                               if (deptNames.length === 0) return <span className="text-[10px] text-slate-400 italic">Global</span>;
+                               return deptNames.map((name, i) => (
+                                 <span key={i} className="text-[10px] bg-slate-100 dark:bg-slate-700 text-slate-500 dark:text-slate-300 px-1.5 py-0.5 rounded-md border border-slate-200 dark:border-slate-600">
+                                   {name}
+                                 </span>
+                               ));
+                             })()}
                          </div>
                       </div>
-                      <button onClick={() => handleDeleteCategory(cat.id)} className="text-slate-400 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity">
-                         <Trash2 size={16} />
-                      </button>
                    </div>
-                 ))}
-              </div>
-           </GlassCard>
+                   <button onClick={() => handleDeleteCategory(cat.id)} className="text-slate-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-all">
+                      <Trash2 size={14} />
+                   </button>
+                </div>
+              ))}
+           </Panel>
         </div>
 
-        {/* --- MIDDLE COLUMN: TENANTS LIST (2/12) --- */}
-        <div className="lg:col-span-2 space-y-6">
-           <GlassCard className="p-0 overflow-hidden flex flex-col h-[calc(100vh-12rem)]">
-              <div className="p-4 border-b border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-white/5">
-                 <h3 className="font-semibold text-slate-900 dark:text-white flex items-center gap-2">
-                   <Building2 size={18} className="text-purple-500"/> Tenants
-                 </h3>
-              </div>
-              <div className="p-4 overflow-y-auto custom-scrollbar flex-1 space-y-2">
-                 {tenants.map(t => (
-                   <div key={t.id} className="p-3 rounded-lg border border-slate-200 dark:border-white/10 bg-slate-50/50 dark:bg-white/5">
-                      <p className="font-bold text-slate-900 dark:text-white text-sm">{t.name}</p>
-                      <p className="text-xs text-slate-500 font-mono mt-1 break-all">{t.domain}</p>
+        {/* --- MIDDLE: TENANTS (2/12) --- */}
+        <div className="lg:col-span-2">
+           <Panel title="Tenants" icon={Building2}>
+              {tenants.map(t => (
+                <div key={t.id} className="group relative p-4 rounded-xl bg-gradient-to-br from-white to-slate-50 dark:from-slate-800 dark:to-slate-900 border border-slate-200 dark:border-slate-700 hover:border-purple-300 dark:hover:border-purple-500/50 transition-all">
+                   <div className="absolute top-4 right-4 w-2 h-2 rounded-full bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.6)]"></div>
+                   <p className="font-bold text-slate-800 dark:text-white text-sm mb-1">{t.name}</p>
+                   <div className="flex items-center gap-1.5 text-xs text-slate-500 font-mono bg-slate-100 dark:bg-black/20 px-2 py-1 rounded w-fit">
+                      <Shield size={10} /> {t.code || 'N/A'}
                    </div>
-                 ))}
-              </div>
-           </GlassCard>
+                   <p className="text-[10px] text-slate-400 mt-2 truncate opacity-0 group-hover:opacity-100 transition-opacity">{t.domain}</p>
+                </div>
+              ))}
+           </Panel>
         </div>
 
-        {/* --- RIGHT COLUMN: USERS (7/12) --- */}
-        <div className="lg:col-span-7 space-y-6">
-          <GlassCard className="p-0 overflow-hidden flex flex-col h-[calc(100vh-12rem)]">
+        {/* --- RIGHT: USERS (7/12) --- */}
+        <div className="lg:col-span-7">
+          <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden flex flex-col h-[calc(100vh-10rem)]">
               
               {/* TOOLBAR */}
-              <div className="p-4 border-b border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-white/5 flex flex-col xl:flex-row gap-3">
-                 <div className="relative flex-1">
-                    <Search className="absolute left-3 top-2.5 text-slate-400" size={16} />
+              <div className="p-4 border-b border-slate-100 dark:border-slate-800 flex flex-col xl:flex-row gap-4 items-center bg-slate-50/30 dark:bg-white/5">
+                 <div className="relative flex-1 w-full">
+                    <Search className="absolute left-3 top-3 text-slate-400" size={18} />
                     <input 
                       type="text" 
-                      placeholder="Search users..." 
-                      className="w-full pl-9 pr-4 py-2 text-sm rounded-lg border border-slate-200 dark:border-white/10 bg-white dark:bg-black/20 focus:outline-none focus:border-blue-500"
+                      placeholder="Find a user..." 
+                      className="w-full pl-10 pr-4 py-2.5 text-sm rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/20 transition-all shadow-sm"
                       value={searchTerm}
                       onChange={e => setSearchTerm(e.target.value)}
                     />
                  </div>
                  
-                 <div className="flex gap-2">
-                    <div className="relative">
-                       <Filter className="absolute left-3 top-2.5 text-slate-400" size={16} />
+                 <div className="flex gap-2 w-full xl:w-auto">
+                    {/* Dept Filter */}
+                    <div className="relative flex-1 xl:flex-none">
                        <select 
-                         className="pl-9 pr-8 py-2 text-sm rounded-lg border border-slate-200 dark:border-white/10 bg-white dark:bg-black/20 focus:outline-none focus:border-blue-500 appearance-none min-w-[140px]"
+                         className="w-full pl-3 pr-8 py-2.5 text-xs font-semibold rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 focus:outline-none hover:border-blue-400 transition-colors appearance-none"
                          value={deptFilter}
                          onChange={e => setDeptFilter(e.target.value)}
                        >
-                          <option value="ALL">All Depts</option>
+                          <option value="ALL">All Departments</option>
                           {departments.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
                        </select>
+                       <Filter className="absolute right-3 top-3 text-slate-400 pointer-events-none" size={14} />
                     </div>
 
-                    <div className="relative">
-                       <Building className="absolute left-3 top-2.5 text-slate-400" size={16} />
+                    {/* Tenant Filter */}
+                    <div className="relative flex-1 xl:flex-none">
                        <select 
-                         className="pl-9 pr-8 py-2 text-sm rounded-lg border border-slate-200 dark:border-white/10 bg-white dark:bg-black/20 focus:outline-none focus:border-blue-500 appearance-none min-w-[140px]"
+                         className="w-full pl-3 pr-8 py-2.5 text-xs font-semibold rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 focus:outline-none hover:border-purple-400 transition-colors appearance-none"
                          value={tenantFilter}
                          onChange={e => setTenantFilter(e.target.value)}
                        >
-                          <option value="ALL">All Schools</option>
+                          <option value="ALL">All Campuses</option>
                           <hr/>
                           {tenants.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
                        </select>
+                       <Building className="absolute right-3 top-3 text-slate-400 pointer-events-none" size={14} />
                     </div>
                  </div>
               </div>
 
               {/* USER LIST */}
-              <div className="overflow-y-auto custom-scrollbar flex-1 p-4 grid gap-4">
-                 {filteredUsers.map(user => (
-                    <div key={user.id} className="relative p-4 rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-white/5 shadow-sm hover:shadow-md transition-shadow">
+              <div className="overflow-y-auto custom-scrollbar flex-1 p-4 space-y-3 bg-slate-50 dark:bg-slate-950/50">
+                 {filteredUsers.map(user => {
+                    const isEditing = editingUser === user.id;
+                    const isSuper = user.role === 'super_admin';
+                    const isAdmin = user.role === 'admin';
+
+                    return (
+                    <div 
+                      key={user.id} 
+                      className={`relative p-4 rounded-xl border transition-all duration-300 ${
+                          isEditing 
+                          ? 'bg-white dark:bg-slate-900 border-blue-500 shadow-lg ring-1 ring-blue-500/20' 
+                          : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 hover:border-blue-300 dark:hover:border-slate-600 hover:shadow-md'
+                      }`}
+                    >
                        <div className="flex items-start justify-between">
-                          <div className="flex gap-4">
-                             <div className="w-10 h-10 rounded-full bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 flex items-center justify-center font-bold text-sm">
+                          <div className="flex gap-4 items-center">
+                             
+                             {/* AVATAR */}
+                             <div className={`w-12 h-12 rounded-full flex items-center justify-center font-bold text-lg shadow-sm ${
+                                 isSuper ? 'bg-amber-100 text-amber-600 ring-2 ring-amber-500/30' : 
+                                 isAdmin ? 'bg-purple-100 text-purple-600' : 'bg-slate-100 text-slate-500'
+                             }`}>
                                 {user.avatar_initials || getInitials(user.full_name)}
                              </div>
+
                              <div>
-                                <h4 className="font-bold text-slate-900 dark:text-white">{user.full_name}</h4>
-                                <p className="text-xs text-slate-500">{user.email}</p>
+                                <div className="flex items-center gap-2">
+                                    <h4 className="font-bold text-slate-800 dark:text-white text-base">{user.full_name}</h4>
+                                    {isSuper && <Crown size={14} className="text-amber-500 fill-amber-500" />}
+                                </div>
+                                <p className="text-xs text-slate-500 font-medium">{user.email}</p>
                                 
                                 <div className="flex items-center gap-2 mt-2">
-                                   <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wide ${
-                                      user.role === 'admin' || user.role === 'super_admin' ? 'bg-purple-100 text-purple-700' : 'bg-slate-100 text-slate-600'
+                                   {/* ROLE BADGE */}
+                                   <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wide border ${
+                                      isSuper ? 'bg-amber-50 text-amber-700 border-amber-200' : 
+                                      isAdmin ? 'bg-purple-50 text-purple-700 border-purple-200' : 
+                                      'bg-slate-50 text-slate-600 border-slate-200'
                                    }`}>
                                       {user.role}
                                    </span>
                                    
+                                   {/* DEPT SELECTOR (Quick Action) */}
                                    <select 
-                                      className="text-[10px] px-1 py-0.5 rounded border border-slate-200 dark:border-white/10 bg-transparent text-slate-600 dark:text-slate-400 focus:outline-none focus:border-blue-500"
+                                      className="text-[10px] pl-2 pr-6 py-0.5 rounded-full border border-slate-200 dark:border-slate-700 bg-transparent text-slate-600 dark:text-slate-400 focus:outline-none focus:border-blue-500 hover:bg-slate-50 cursor-pointer"
                                       value={userDeptMap[user.id] || ''}
                                       onChange={(e) => handleUpdateDept(user.id, e.target.value)}
                                    >
-                                      <option value="">No Dept</option>
+                                      <option value="">No Department</option>
                                       {departments.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
                                    </select>
                                 </div>
@@ -363,50 +381,64 @@ export default function SettingsView({ categories, tenants, users, departments =
                           </div>
                           
                           <button 
-                            onClick={() => setEditingUser(editingUser === user.id ? null : user.id)}
-                            className="p-2 hover:bg-slate-100 dark:hover:bg-white/10 rounded-lg text-slate-400"
+                            onClick={() => setEditingUser(isEditing ? null : user.id)}
+                            className={`p-2 rounded-lg transition-colors ${isEditing ? 'bg-blue-100 text-blue-600' : 'text-slate-300 hover:bg-slate-100 hover:text-slate-600'}`}
                           >
-                             <Settings size={16} /> 
+                             {isEditing ? <X size={20} /> : <Settings size={20} />} 
                           </button>
                        </div>
 
                        {/* EXPANDABLE EDIT AREA */}
-                       {editingUser === user.id && (
-                         <div className="mt-4 pt-4 border-t border-slate-200 dark:border-white/10 animate-in fade-in slide-in-from-top-2">
-                            <div className="grid grid-cols-2 gap-4">
+                       {isEditing && (
+                         <div className="mt-6 pt-6 border-t border-slate-100 dark:border-slate-800 animate-in fade-in slide-in-from-top-1">
+                            <div className="grid grid-cols-2 gap-6">
                                {/* ROLE EDIT */}
-                               <div>
-                                  <label className="text-[10px] font-bold text-slate-400 uppercase mb-1 block">System Role</label>
-                                  {/* --- FIX IS HERE: Added Super Admin --- */}
-                                  <select 
-                                    className="w-full text-xs p-2 rounded border border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-black/20"
-                                    value={user.role || 'user'}
-                                    onChange={(e) => handleUpdateRole(user.id, e.target.value)}
-                                  >
-                                     <option value="user">User</option>
-                                     <option value="technician">Technician</option>
-                                     <option value="manager">Manager</option>
-                                     <option value="admin">Admin</option>
-                                     <option value="super_admin">Super Admin</option>
-                                  </select>
+                               <div className="space-y-2">
+                                  <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1">
+                                    <Shield size={10}/> System Role
+                                  </label>
+                                  <div className="relative">
+                                    <select 
+                                        className="w-full text-sm p-3 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 focus:ring-2 focus:ring-blue-500/20 outline-none appearance-none"
+                                        value={user.role || 'user'}
+                                        onChange={(e) => handleUpdateRole(user.id, e.target.value)}
+                                    >
+                                        <option value="user">Standard User</option>
+                                        <option value="technician">Technician</option>
+                                        <option value="manager">Manager</option>
+                                        <option value="admin">Administrator</option>
+                                        <option value="super_admin">Super Administrator</option>
+                                    </select>
+                                    <ChevronRight className="absolute right-3 top-3.5 text-slate-400 rotate-90" size={14} />
+                                  </div>
                                </div>
 
                                {/* TENANT ACCESS TOGGLES */}
-                               <div>
-                                  <label className="text-[10px] font-bold text-slate-400 uppercase mb-1 block">School Access</label>
-                                  <div className="space-y-1 max-h-32 overflow-y-auto custom-scrollbar">
+                               <div className="space-y-2">
+                                  <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1">
+                                    <Building2 size={10}/> Campus Access
+                                  </label>
+                                  <div className="space-y-1.5 max-h-32 overflow-y-auto custom-scrollbar p-1">
                                      {tenants.map(t => {
                                         const hasAccess = user.access_list?.includes(t.id);
                                         return (
-                                          <div key={t.id} onClick={() => handleToggleAccess(user.id, t.id, hasAccess)} className="flex items-center gap-3 p-2 rounded hover:bg-slate-100 dark:hover:bg-white/5 cursor-pointer group transition-colors">
-                                             <div className={`w-5 h-5 rounded border flex items-center justify-center transition-colors ${
+                                          <div 
+                                            key={t.id} 
+                                            onClick={() => handleToggleAccess(user.id, t.id, hasAccess)} 
+                                            className={`flex items-center gap-3 p-2 rounded-lg cursor-pointer border transition-all ${
+                                                hasAccess 
+                                                ? 'bg-blue-50 border-blue-200 dark:bg-blue-900/20 dark:border-blue-800' 
+                                                : 'bg-white border-transparent hover:bg-slate-50'
+                                            }`}
+                                          >
+                                             <div className={`w-5 h-5 rounded-md border flex items-center justify-center transition-all ${
                                                  hasAccess 
-                                                 ? 'bg-indigo-500 border-indigo-500' 
-                                                 : 'bg-white dark:bg-transparent border-slate-300 dark:border-slate-600 group-hover:border-indigo-400'
+                                                 ? 'bg-blue-500 border-blue-500' 
+                                                 : 'bg-white border-slate-300'
                                              }`}>
                                                 {hasAccess && <Check size={12} className="text-white" />}
                                              </div>
-                                             <span className={`text-sm font-medium ${hasAccess ? 'text-slate-900 dark:text-white' : 'text-slate-500 dark:text-slate-400'}`}>{t.name}</span>
+                                             <span className={`text-xs font-semibold ${hasAccess ? 'text-blue-700 dark:text-blue-300' : 'text-slate-500'}`}>{t.name}</span>
                                           </div>
                                        );
                                     })}
@@ -416,16 +448,17 @@ export default function SettingsView({ categories, tenants, users, departments =
                          </div>
                        )}
                     </div>
-                 ))}
+                 )})}
                  
                  {filteredUsers.length === 0 && (
-                    <div className="text-center py-10 text-slate-400">
-                       <Shield size={48} className="mx-auto mb-2 opacity-20" />
-                       <p>No users found matching filters.</p>
+                    <div className="text-center py-20 text-slate-400 bg-white dark:bg-slate-900 rounded-2xl border border-dashed border-slate-200 dark:border-slate-800">
+                       <Shield size={48} className="mx-auto mb-4 opacity-10" />
+                       <p className="font-medium">No users found.</p>
+                       <p className="text-xs opacity-50">Try adjusting your filters.</p>
                     </div>
                  )}
               </div>
-          </GlassCard>
+          </div>
         </div>
       </div>
     </div>
