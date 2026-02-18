@@ -1,7 +1,8 @@
+// src/components/ui.jsx
 import React, { useState, useEffect, useRef } from 'react';
 import { supabase } from '../lib/supabase';
 import { 
-  ArrowLeft, Clock, Send, Users, Paperclip,
+  ArrowLeft, Clock, Send, Users, Paperclip, Building2, // Added Building2
   Briefcase, Monitor, Cpu, Wifi, ShieldAlert, Wrench, Zap, Globe, FileText, CheckCircle2,
   TrendingUp, TrendingDown, Activity, X
 } from 'lucide-react';
@@ -167,11 +168,13 @@ export const Modal = ({ isOpen, onClose, title, children }) => {
 };
 
 // --- TICKET DETAIL VIEW ---
-export const TicketDetailView = ({ ticket, onBack }) => {
+// UPDATED: Now accepts 'departments' prop
+export const TicketDetailView = ({ ticket, onBack, departments = [] }) => {
   const [updates, setUpdates] = useState([]);
   const [newUpdate, setNewUpdate] = useState('');
   const [status, setStatus] = useState(ticket.status);
   const [assigneeId, setAssigneeId] = useState(ticket.assignee_id || '');
+  const [departmentId, setDepartmentId] = useState(ticket.department_id || ''); // NEW STATE
   const [staffMembers, setStaffMembers] = useState([]);
   const [loading, setLoading] = useState(false);
   const [currentUser, setCurrentUser] = useState(null); 
@@ -204,8 +207,14 @@ export const TicketDetailView = ({ ticket, onBack }) => {
         if (data) setRequesterEmail(data.email);
     }
     if (ticket.department_id) {
-        const { data } = await supabase.from('departments').select('team_email').eq('id', ticket.department_id).single();
-        if (data) setDepartmentEmail(data.team_email);
+        // Initial load of dept email
+        const dept = departments.find(d => d.id === ticket.department_id);
+        if (dept) setDepartmentEmail(dept.team_email);
+        else {
+            // Fallback fetch if departments prop isn't fully loaded yet
+            const { data } = await supabase.from('departments').select('team_email').eq('id', ticket.department_id).single();
+            if (data) setDepartmentEmail(data.team_email);
+        }
     }
   };
 
@@ -260,7 +269,23 @@ export const TicketDetailView = ({ ticket, onBack }) => {
     }
   };
 
-  // 5. HANDLE STATUS SELECT (INTERCEPT FOR RESOLUTION)
+  // 5. HANDLE DEPARTMENT TRANSFER (NEW)
+  const handleDeptChange = async (newDeptId) => {
+    setDepartmentId(newDeptId);
+    
+    // Update DB
+    await supabase.from('tickets').update({ department_id: newDeptId || null }).eq('id', ticket.id);
+    
+    // Log Message
+    const deptName = departments.find(d => d.id === newDeptId)?.name || 'Unassigned';
+    await logSystemMessage(`Transferred ticket to ${deptName} department.`);
+
+    // Update Email Context for future replies
+    const newDept = departments.find(d => d.id === newDeptId);
+    setDepartmentEmail(newDept?.team_email || '');
+  };
+
+  // 6. HANDLE STATUS SELECT (INTERCEPT FOR RESOLUTION)
   const handleStatusSelect = (newStatus) => {
     if (newStatus === 'Resolved' || newStatus === 'Closed') {
         setPendingStatus(newStatus);
@@ -270,7 +295,7 @@ export const TicketDetailView = ({ ticket, onBack }) => {
     }
   };
 
-  // 6. EXECUTE STATUS UPDATE (DB + EMAIL)
+  // 7. EXECUTE STATUS UPDATE (DB + EMAIL)
   const updateStatusInDb = async (newStatus, resolutionReason = null) => {
     setStatus(newStatus);
     
@@ -317,7 +342,7 @@ export const TicketDetailView = ({ ticket, onBack }) => {
     }
   };
 
-  // 7. CONFIRM RESOLUTION (FROM MODAL)
+  // 8. CONFIRM RESOLUTION (FROM MODAL)
   const confirmResolution = async () => {
       if (!resolutionNote.trim()) return alert("Please provide a resolution reason.");
       await updateStatusInDb(pendingStatus, resolutionNote);
@@ -325,13 +350,13 @@ export const TicketDetailView = ({ ticket, onBack }) => {
       setResolutionNote('');
   };
 
-  // 8. TAKE OWNERSHIP
+  // 9. TAKE OWNERSHIP
   const assignToMe = async () => {
     if (!currentUser) return;
     await handleAssign(currentUser.id);
   };
 
-  // 9. POST UPDATE
+  // 10. POST UPDATE
   const handlePostUpdate = async () => {
     if (!newUpdate.trim()) return;
     setLoading(true);
@@ -444,7 +469,7 @@ export const TicketDetailView = ({ ticket, onBack }) => {
            </div>
            <p className="text-slate-700 dark:text-slate-300 leading-relaxed whitespace-pre-wrap">{ticket.description || 'No description provided.'}</p>
            
-           {/* --- ATTACHMENT SECTION (CONSTRAINED) --- */}
+           {/* --- ATTACHMENT SECTION --- */}
            {ticket.attachment_url && (
               <div className="mt-6 pt-6 border-t border-slate-200 dark:border-white/5">
                 <h4 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-3 flex items-center gap-2">
@@ -456,7 +481,6 @@ export const TicketDetailView = ({ ticket, onBack }) => {
                     href={ticket.attachment_url} 
                     target="_blank" 
                     rel="noopener noreferrer"
-                    // ADDED: max-w-sm and max-h-64 to prevent it from eating the screen
                     className="block w-full max-w-sm rounded-xl overflow-hidden border border-slate-200 dark:border-white/10 hover:border-blue-500 transition-all shadow-sm group relative"
                   >
                     <img 
@@ -549,6 +573,24 @@ export const TicketDetailView = ({ ticket, onBack }) => {
                   {staffMembers.map(staff => <option key={staff.id} value={staff.id}>{staff.full_name} ({staff.role})</option>)}
                 </select>
                 <div className="absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none text-slate-400"><Users size={14} /></div>
+              </div>
+           </div>
+
+           {/* --- NEW: DEPARTMENT TRANSFER --- */}
+           <div className="pt-4 border-t border-slate-200 dark:border-white/5">
+              <div className="flex justify-between items-center mb-2">
+                <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Department</label>
+              </div>
+              <div className="relative">
+                <select 
+                  className="w-full bg-slate-100 dark:bg-black/30 border border-slate-300 dark:border-white/10 rounded-lg px-3 py-2 pl-9 text-sm text-slate-900 dark:text-white focus:outline-none focus:border-blue-500/50 appearance-none"
+                  value={departmentId}
+                  onChange={(e) => handleDeptChange(e.target.value)}
+                >
+                  <option value="">No Department</option>
+                  {departments.map(dept => <option key={dept.id} value={dept.id}>{dept.name}</option>)}
+                </select>
+                <div className="absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none text-slate-400"><Building2 size={14} /></div>
               </div>
            </div>
 
