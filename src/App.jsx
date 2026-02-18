@@ -459,6 +459,7 @@ function AppContent({ session }) {
 
   const role = profile?.role || 'user'; 
 
+  // --- VIEW RENDERER (Updated for Dashboard) ---
   const renderView = () => {
     if (selectedTicket) {
       return <TicketDetailView ticket={selectedTicket} onBack={() => { setSelectedTicket(null); fetchTickets(); }} />;
@@ -466,9 +467,21 @@ function AppContent({ session }) {
 
     switch (activeView) {
       case 'dashboard': 
-        return <DashboardView tickets={tickets} loading={loading} role={role} onRefresh={fetchTickets} onSelectTicket={setSelectedTicket} onNewTicket={() => handleNavigation('new-ticket')} />;
+        return (
+          <DashboardView 
+            tickets={tickets} 
+            loading={loading} 
+            role={role} 
+            onRefresh={fetchTickets}
+            // CRITICAL UPDATES HERE:
+            onTicketClick={setSelectedTicket} // 1. Renamed from onSelectTicket
+            departments={departments}         // 2. Added departments
+            users={users}                     // 3. Added users
+            onNewTicket={() => handleNavigation('new-ticket')} 
+          />
+        );
       case 'my-queue': 
-        return <DashboardView title="My Active Tickets" tickets={tickets.filter(t => t.assignee_id === session.user.id && t.status !== 'Resolved' && t.status !== 'Closed')} loading={loading} role={role} onRefresh={fetchTickets} onSelectTicket={setSelectedTicket} />; 
+        return <DashboardView title="My Active Tickets" tickets={tickets.filter(t => t.assignee_id === session.user.id && t.status !== 'Resolved' && t.status !== 'Closed')} loading={loading} role={role} onRefresh={fetchTickets} onTicketClick={setSelectedTicket} />; 
       case 'new-ticket': 
         return <NewTicketView categories={categories} kbArticles={kbArticles} onSubmit={handleCreateTicket} />;
       case 'teams': 
