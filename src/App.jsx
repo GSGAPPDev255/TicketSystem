@@ -461,7 +461,8 @@ function AppContent({ session }) {
 
   const renderView = () => {
     if (selectedTicket) {
-      return <TicketDetailView ticket={selectedTicket} onBack={() => { setSelectedTicket(null); fetchTickets(); }} />;
+      // --- THIS IS THE CRITICAL LINE THAT ENABLES THE DEPARTMENT DROPDOWN ---
+      return <TicketDetailView ticket={selectedTicket} departments={departments} onBack={() => { setSelectedTicket(null); fetchTickets(); }} />;
     }
 
     switch (activeView) {
