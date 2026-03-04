@@ -151,7 +151,43 @@ export default function TeamsView({ departments = [], role = 'user', onUpdate })
 
   const handleCreateDept = async () => {
       if (!newDeptName.trim()) return;
-      await supabase.from('departments').insert({ name: newDeptName });
+      
+      // Get current user
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        alert('Not authenticated');
+        return;
+      }
+
+      // Get user's tenant
+      const { data: tenantAccess, error: accessError } = await supabase
+        .from('tenant_access')
+        .select('tenant_id')
+        .eq('user_id', user.id)
+        .limit(1)
+        .single();
+
+      if (accessError || !tenantAccess) {
+        alert('No tenant access found. Please contact administrator.');
+        console.error('Tenant access error:', accessError);
+        return;
+      }
+
+      // Insert department WITH tenant_id (THE FIX!)
+      const { error } = await supabase
+        .from('departments')
+        .insert({ 
+          name: newDeptName,
+          tenant_id: tenantAccess.tenant_id
+        });
+
+      if (error) {
+        console.error('Error creating department:', error);
+        alert('Failed to create department: ' + error.message);
+        return;
+      }
+
+      // Success
       setNewDeptName('');
       setIsCreatingDept(false);
       if (onUpdate) onUpdate(); 
