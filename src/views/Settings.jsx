@@ -87,15 +87,55 @@ export default function SettingsView({ categories, tenants, users, departments =
     });
   };
 
-  const handleAddCategory = async () => {
+ // ========================================
+// PASTE THIS INTO src/views/Settings.jsx
+// Replace handleAddCategory (around line 90-104)
+// ========================================
+
+const handleAddCategory = async () => {
     if (!newCategory.trim()) return;
+    
+    // Get current user
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) {
+      alert('Not authenticated');
+      return;
+    }
+
+    // Get user's tenant
+    const { data: tenantAccess, error: accessError } = await supabase
+      .from('tenant_access')
+      .select('tenant_id')
+      .eq('user_id', user.id)
+      .limit(1)
+      .single();
+
+    if (accessError || !tenantAccess) {
+      alert('No tenant access found.');
+      console.error('Tenant access error:', accessError);
+      return;
+    }
+
     const primaryDept = newCategoryDepts.length > 0 ? newCategoryDepts[0] : null;
-    await supabase.from('categories').insert({ 
+    
+    // Insert category WITH tenant_id (THE FIX!)
+    const { error } = await supabase
+      .from('categories')
+      .insert({ 
+        tenant_id: tenantAccess.tenant_id,  // ✅ ADDED!
         label: newCategory, 
         icon: newCategoryIcon,
         default_department_id: primaryDept,
         department_ids: newCategoryDepts
-    });
+      });
+
+    if (error) {
+      console.error('Error creating category:', error);
+      alert('Failed to create category: ' + error.message);
+      return;
+    }
+
+    // Success - clear form
     setNewCategory('');
     setNewCategoryDepts([]);
     setNewCategoryIcon('Briefcase');
