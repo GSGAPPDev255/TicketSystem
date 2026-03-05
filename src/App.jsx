@@ -350,7 +350,7 @@ function AppContent({ session }) {
   // 6. REFETCH ON VIEW CHANGE
   useEffect(() => {
     // Refetch data when view changes
-    if (user) {
+    if (!session?.user?.id) return;  // ✅ CORRECT
       fetchGlobals();
     }
   }, [activeView]); // ✅ Trigger on view change
