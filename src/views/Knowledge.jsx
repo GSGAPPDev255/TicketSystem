@@ -52,17 +52,36 @@ export default function KnowledgeView({ articles, categories, onUpdate }) {
       
       if (error) alert(error.message);
     } else {
-      // CREATE
+      // CREATE - with tenant_id
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        alert('Not authenticated');
+        return;
+      }
+      const { data: tenantAccess, error: accessError } = await supabase
+        .from('tenant_access')
+        .select('tenant_id')
+        .eq('user_id', user.id)
+        .limit(1)
+        .single();
+      if (accessError || !tenantAccess) {
+        alert('No tenant access found.');
+        return;
+      }
       const { error } = await supabase
         .from('kb_articles')
         .insert({
+          tenant_id: tenantAccess.tenant_id,  // ✅ ADDED!
           title: formData.title,
           category: formData.category,
           content: formData.content,
           views: 0
         });
-
-      if (error) alert(error.message);
+      if (error) {
+        console.error('KB Article error:', error);
+        alert('Failed to create article: ' + error.message);
+        return;
+      }
     }
 
     setIsModalOpen(false);
