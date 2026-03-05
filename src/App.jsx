@@ -347,7 +347,15 @@ function AppContent({ session }) {
     return () => supabase.removeChannel(sub);
   }, [session]);
 
-  // 6. HANDLE TICKET CREATION
+  // 6. REFETCH ON VIEW CHANGE
+  useEffect(() => {
+    // Refetch data when view changes
+    if (user) {
+      fetchGlobals();
+    }
+  }, [activeView]); // ✅ Trigger on view change
+
+  // 7. HANDLE TICKET CREATION
   const handleCreateTicket = async (formData) => {
     const requesterId = session?.user?.id;
     const requesterName = profile?.full_name || session?.user?.user_metadata?.full_name || 'User'; 
