@@ -9,6 +9,7 @@ export default function NewTicketView({ categories, kbArticles, onSubmit }) {
   const [description, setDescription] = useState('');
   const [category, setCategory] = useState('');
   const [priority, setPriority] = useState('Medium');
+  const [location, setLocation] = useState('');
   const [file, setFile] = useState(null);
   const [uploading, setUploading] = useState(false);
   
@@ -82,6 +83,7 @@ export default function NewTicketView({ categories, kbArticles, onSubmit }) {
       setSubject('');
       setDescription('');
       setCategory('');
+      setLocation('');
   };
 
   const handleFileChange = (e) => {
@@ -95,6 +97,10 @@ export default function NewTicketView({ categories, kbArticles, onSubmit }) {
         alert("Please fill in all required fields.");
         return;
     }
+    if (!location.trim()) {
+        alert("Please enter a location.");
+        return;
+    }
     setUploading(true);
     let attachmentUrl = null;
     if (file) {
@@ -106,7 +112,7 @@ export default function NewTicketView({ categories, kbArticles, onSubmit }) {
           attachmentUrl = publicUrl;
       }
     }
-    await onSubmit({ subject, description, category, priority, attachment_url: attachmentUrl });
+    await onSubmit({ subject, description, category, priority, location, attachment_url: attachmentUrl });
     setUploading(false);
   };
 
@@ -165,6 +171,21 @@ export default function NewTicketView({ categories, kbArticles, onSubmit }) {
                   onChange={e => setDescription(e.target.value)} 
                   placeholder="Please list any steps you've already tried..."
                 />
+              </div>
+
+              {/* LOCATION */}
+              <div>
+                <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">
+                  Location <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  value={location}
+                  onChange={e => setLocation(e.target.value)}
+                  placeholder="e.g., Room 204, Building A, West Campus"
+                  className="w-full bg-slate-100 dark:bg-black/30 border border-slate-300 dark:border-white/10 rounded-xl px-4 py-4 text-slate-900 dark:text-white focus:border-blue-500/50 outline-none placeholder:text-slate-400 dark:placeholder:text-slate-600 transition-all"
+                />
+                <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">Where is the issue located? Be specific to help IT find you.</p>
               </div>
 
               {/* METADATA GRID */}
