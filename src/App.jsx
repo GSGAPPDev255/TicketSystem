@@ -52,7 +52,7 @@ function Sidebar({ activeView, onNavigate, session, profile, myTicketCount, isMo
 
       <div className="px-4 mb-6">
         <select 
-          className="w-full bg-slate-100 dark:bg-black/20 border border-slate-200 dark:border-white/10 rounded-lg px-3 py-2 text-sm text-slate-700 dark:text-slate-300 focus:outline-none focus:border-blue-500/50 transition-colors"
+          className="w-full bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-600 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 transition-colors"
           value={currentTenant?.id || ''}
           onChange={(e) => {
             const t = tenants.find(t => t.id === e.target.value);
@@ -354,7 +354,14 @@ function AppContent({ session }) {
     fetchGlobals();
   }, [activeView]); // ✅ Trigger on view change
 
-  // 7. HANDLE TICKET CREATION
+  // 7. REFETCH ON TENANT CHANGE
+  useEffect(() => {
+    if (!session?.user?.id || !currentTenant) return;
+    fetchTickets(); // Refresh tickets for new tenant
+    fetchGlobals(); // Refresh global data (categories, departments, etc.)
+  }, [currentTenant?.id]); // Trigger when tenant ID changes
+
+  // 8. HANDLE TICKET CREATION
   const handleCreateTicket = async (formData) => {
     const requesterId = session?.user?.id;
     const requesterName = profile?.full_name || session?.user?.user_metadata?.full_name || 'User'; 
