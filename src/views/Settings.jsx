@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { supabase } from '../lib/supabase';
 import { 
-  Building2, Search, Plus, Trash2, 
+  Building2, Search, Plus, Trash2, Save,
   Shield, Check, X, Filter, Briefcase, Building, Settings, 
   ChevronRight, ChevronDown, Crown, Laptop, User, Globe, MoreHorizontal
 } from 'lucide-react';
@@ -38,6 +38,12 @@ export default function SettingsView({ categories, tenants, users, departments =
 
   // User Edit State
   const [editingUser, setEditingUser] = useState(null);
+
+  // Category Edit State
+  const [editingCategory, setEditingCategory] = useState(null);
+  const [editCategoryName, setEditCategoryName] = useState('');
+  const [editCategoryIcon, setEditCategoryIcon] = useState('Briefcase');
+  const [editCategoryDepts, setEditCategoryDepts] = useState([]);
 
   // --- DATA FETCHING & ACTIONS ---
   useEffect(() => {
@@ -147,6 +153,39 @@ const handleAddCategory = async () => {
     if (!window.confirm("Delete this category?")) return;
     await supabase.from('categories').delete().eq('id', id);
     onUpdate();
+  };
+
+  const handleEditCategory = async () => {
+    if (!editCategoryName.trim()) return;
+
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) { alert('Not authenticated'); return; }
+
+    const primaryDept = editCategoryDepts.length > 0 ? editCategoryDepts[0] : null;
+
+    const { error } = await supabase
+      .from('categories')
+      .update({
+        label: editCategoryName,
+        icon: editCategoryIcon,
+        default_department_id: primaryDept,
+        department_ids: editCategoryDepts
+      })
+      .eq('id', editingCategory);
+
+    if (error) { alert('Failed to update category: ' + error.message); return; }
+
+    setEditingCategory(null);
+    setEditCategoryName('');
+    setEditCategoryIcon('Briefcase');
+    setEditCategoryDepts([]);
+    onUpdate();
+  };
+
+  const toggleEditCategoryDept = (deptId) => {
+    setEditCategoryDepts(prev => 
+      prev.includes(deptId) ? prev.filter(id => id !== deptId) : [...prev, deptId]
+    );
   };
 
   // --- FILTER LOGIC ---
@@ -276,38 +315,126 @@ const handleAddCategory = async () => {
                  </div>
               )}
 
-              {categories.map(cat => (
-                <div key={cat.id} className="group flex items-start justify-between p-2.5 rounded-lg border border-transparent hover:border-slate-200 dark:hover:border-slate-700 hover:bg-white dark:hover:bg-slate-800 transition-all">
-                   <div className="flex gap-3">
+              {categories.map(cat => {
+                const isEditing = editingCategory === cat.id;
+
+                if (isEditing) {
+                  return (
+                    <div key={cat.id} className="p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-300 dark:border-blue-700 space-y-3 animate-in slide-in-from-top-2">
+                      <input
+                        autoFocus
+                        className="w-full text-xs p-2 rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 focus:ring-2 focus:ring-blue-500/20 outline-none"
+                        placeholder="Category Name..."
+                        value={editCategoryName}
+                        onChange={e => setEditCategoryName(e.target.value)}
+                      />
+
+                      {/* Icon Picker */}
+                      <div className="space-y-1">
+                        <label className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">Icon</label>
+                        <div className="flex flex-wrap gap-1">
+                          {availableIcons.map(icon => (
+                            <button
+                              key={icon}
+                              onClick={() => setEditCategoryIcon(icon)}
+                              className={`p-1.5 rounded border transition-all ${
+                                editCategoryIcon === icon
+                                  ? 'bg-blue-600 border-blue-600 text-white'
+                                  : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-500 hover:border-blue-300'
+                              }`}
+                            >
+                              {getIcon(icon, 12)}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+
+                      {/* Routing */}
+                      <div className="space-y-1">
+                        <label className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">Routing</label>
+                        <div className="flex flex-wrap gap-1">
+                          {departments.map(dept => (
+                            <button
+                              key={dept.id}
+                              onClick={() => toggleEditCategoryDept(dept.id)}
+                              className={`px-2 py-0.5 rounded text-[9px] font-bold border transition-all ${
+                                editCategoryDepts.includes(dept.id)
+                                  ? 'bg-blue-600 border-blue-600 text-white'
+                                  : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-500 hover:border-blue-300'
+                              }`}
+                            >
+                              {dept.name}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+
+                      <div className="flex gap-2">
+                        <button
+                          onClick={handleEditCategory}
+                          className="flex-1 bg-green-600 text-white text-xs py-1.5 rounded hover:bg-green-500 flex items-center justify-center gap-1"
+                        >
+                          <Save size={12}/> Save
+                        </button>
+                        <button
+                          onClick={() => { setEditingCategory(null); setEditCategoryName(''); setEditCategoryIcon('Briefcase'); setEditCategoryDepts([]); }}
+                          className="flex-1 bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300 text-xs py-1.5 rounded hover:bg-slate-300 dark:hover:bg-slate-600 flex items-center justify-center gap-1"
+                        >
+                          <X size={12}/> Cancel
+                        </button>
+                      </div>
+                    </div>
+                  );
+                }
+
+                // Normal display mode
+                return (
+                  <div key={cat.id} className="group flex items-start justify-between p-2.5 rounded-lg border border-transparent hover:border-slate-200 dark:hover:border-slate-700 hover:bg-white dark:hover:bg-slate-800 transition-all">
+                    <div className="flex gap-3">
                       <div className="mt-0.5 text-slate-400 group-hover:text-blue-500 transition-colors">
-                         {getIcon(cat.icon, 16)}
+                        {getIcon(cat.icon, 16)}
                       </div>
                       <div>
-                         <span className="block text-xs font-semibold text-slate-700 dark:text-slate-200 leading-none mb-1.5">{cat.label}</span>
-                         <div className="flex flex-wrap gap-1">
-                             {(() => {
-                               let deptNames = [];
-                               if (cat.department_ids && Array.isArray(cat.department_ids)) {
-                                  deptNames = cat.department_ids.map(id => departments.find(d => d.id === id)?.name).filter(Boolean);
-                               } else if (cat.default_department_id) {
-                                  const d = departments.find(d => d.id === cat.default_department_id);
-                                  if (d) deptNames.push(d.name);
-                               }
-                               if (deptNames.length === 0) return <span className="text-[9px] text-slate-400 italic">Global</span>;
-                               return deptNames.map((name, i) => (
-                                 <span key={i} className="text-[9px] bg-slate-100 dark:bg-slate-700 text-slate-500 dark:text-slate-300 px-1.5 py-0.5 rounded border border-slate-200 dark:border-slate-600">
-                                   {name}
-                                 </span>
-                               ));
-                             })()}
-                         </div>
+                        <span className="block text-xs font-semibold text-slate-700 dark:text-slate-200 leading-none mb-1.5">{cat.label}</span>
+                        <div className="flex flex-wrap gap-1">
+                          {(() => {
+                            let deptNames = [];
+                            if (cat.department_ids && Array.isArray(cat.department_ids)) {
+                              deptNames = cat.department_ids.map(id => departments.find(d => d.id === id)?.name).filter(Boolean);
+                            } else if (cat.default_department_id) {
+                              const d = departments.find(d => d.id === cat.default_department_id);
+                              if (d) deptNames.push(d.name);
+                            }
+                            if (deptNames.length === 0) return <span className="text-[9px] text-slate-400 italic">Global</span>;
+                            return deptNames.map((name, i) => (
+                              <span key={i} className="text-[9px] bg-slate-100 dark:bg-slate-700 text-slate-500 dark:text-slate-300 px-1.5 py-0.5 rounded border border-slate-200 dark:border-slate-600">
+                                {name}
+                              </span>
+                            ));
+                          })()}
+                        </div>
                       </div>
-                   </div>
-                   <button onClick={() => handleDeleteCategory(cat.id)} className="text-slate-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-all">
-                      <Trash2 size={12} />
-                   </button>
-                </div>
-              ))}
+                    </div>
+                    <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-all">
+                      <button
+                        onClick={() => {
+                          setEditingCategory(cat.id);
+                          setEditCategoryName(cat.label);
+                          setEditCategoryIcon(cat.icon || 'Briefcase');
+                          setEditCategoryDepts(cat.department_ids || [cat.default_department_id].filter(Boolean));
+                        }}
+                        className="p-1 text-slate-300 hover:text-blue-500 transition-colors"
+                        title="Edit category"
+                      >
+                        <Settings size={12} />
+                      </button>
+                      <button onClick={() => handleDeleteCategory(cat.id)} className="p-1 text-slate-300 hover:text-red-500 transition-colors">
+                        <Trash2 size={12} />
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
            </Panel>
         </div>
 
