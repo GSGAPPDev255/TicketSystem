@@ -279,24 +279,37 @@ function AppContent({ session }) {
 
   // 3. FETCH GLOBAL DATA
   const fetchGlobals = async () => {
-    const [cats, depts, kb, allUsers, allAccess] = await Promise.all([
-      supabase.from('categories').select('*').order('label'),
-      supabase.from('departments').select('*').order('name'),
-      supabase.from('kb_articles').select('*').order('title'),
+    // Fetch global data (users, access lists)
+    const [allUsers, allAccess] = await Promise.all([
       supabase.from('profiles').select('*').order('full_name'),
       supabase.from('tenant_access').select('*')
     ]);
-    
-    if (cats.data) setCategories(cats.data);
-    if (depts.data) setDepartments(depts.data);
-    if (kb.data) setKbArticles(kb.data);
-    
+
+    // Process users with access lists
     if (allUsers.data && allAccess.data) {
-        const processedUsers = allUsers.data.map(u => ({
-            ...u,
-            access_list: allAccess.data.filter(a => a.user_id === u.id).map(a => a.tenant_id)
-        }));
-        setUsers(processedUsers);
+      const processedUsers = allUsers.data.map(u => ({
+        ...u,
+        access_list: allAccess.data.filter(a => a.user_id === u.id).map(a => a.tenant_id)
+      }));
+      setUsers(processedUsers);
+    }
+
+    // Fetch TENANT-SPECIFIC data if tenant is selected
+    if (currentTenant) {
+      const [cats, depts, kb] = await Promise.all([
+        supabase.from('categories').select('*').eq('tenant_id', currentTenant.id).order('label'),
+        supabase.from('departments').select('*').eq('tenant_id', currentTenant.id).order('name'),
+        supabase.from('kb_articles').select('*').eq('tenant_id', currentTenant.id).order('title')
+      ]);
+
+      if (cats.data) setCategories(cats.data);
+      if (depts.data) setDepartments(depts.data);
+      if (kb.data) setKbArticles(kb.data);
+    } else {
+      // No tenant selected - clear tenant-specific data
+      setCategories([]);
+      setDepartments([]);
+      setKbArticles([]);
     }
   };
 
